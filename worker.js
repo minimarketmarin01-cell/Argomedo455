@@ -297,6 +297,27 @@ async function obtenerStoreId(env) {
   return { storeId, detectadoAhora: true, totalTiendas: tiendas.length, nombreTienda: tiendas[0].name };
 }
 
+// Encuentra el impuesto "IVA" ya configurado en el Back Office de Loyverse (Loyverse
+// no permite crear impuestos por API, solo asignarlos — por eso debe existir de
+// antemano en la cuenta). Se cachea en D1 igual que el store_id, para no consultar
+// /taxes en cada creación de producto. Prioriza por nombre "IVA", luego por tasa 19%,
+// y como último recurso usa el único impuesto configurado si solo hay uno.
+async function obtenerIvaTaxId(env) {
+  const guardado = await get(env, "SELECT valor FROM config WHERE clave = 'iva_tax_id'");
+  if (guardado && guardado.valor) return guardado.valor;
+
+  const taxes = await loyverseGetAll(env, "/taxes", "taxes");
+  if (!taxes.length) throw new Error("No hay ningún impuesto configurado en Loyverse Back Office (crea el IVA 19% ahí primero)");
+
+  let iva = taxes.find(t => /iva/i.test(t.name || ""));
+  if (!iva) iva = taxes.find(t => Math.abs((Number(t.rate) || 0) - 0.19) < 0.005 || Math.abs((Number(t.rate) || 0) - 19) < 0.5);
+  if (!iva && taxes.length === 1) iva = taxes[0];
+  if (!iva) throw new Error("No se pudo identificar cuál impuesto es el IVA en Loyverse (revisa nombre/tasa en Back Office)");
+
+  await run(env, "INSERT INTO config (clave, valor) VALUES ('iva_tax_id', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor", iva.id);
+  return iva.id;
+}
+
 // ============================================================
 //  SINCRONIZAR CATÁLOGO COMPLETO (Loyverse → D1)
 //  Trae items + categorías + inventario y guarda/actualiza la
@@ -538,11 +559,27 @@ async function accionCrearProducto(env, payload) {
   const soldByWeight = !!payload.soldByWeight;
 
   const { storeId } = await obtenerStoreId(env);
+
+  // El IVA debe quedar activado en Loyverse desde la creación — sin esto, el producto
+  // se crea "sin impuesto" y hay que activarlo a mano en Loyverse cada vez. Si por algún
+  // motivo no se puede identificar el impuesto (ej. no está configurado en Loyverse
+  // Back Office todavía), NO se bloquea la creación del producto — se avisa aparte para
+  // que se active manualmente esta vez.
+  let taxes = [];
+  let avisoImpuesto = null;
+  try {
+    const ivaTaxId = await obtenerIvaTaxId(env);
+    taxes = [{ id: ivaTaxId }];
+  } catch (e) {
+    avisoImpuesto = "⚠️ El producto se creó SIN impuesto activado (" + e.message + "). Actívalo a mano en Loyverse.";
+  }
+
   const nuevoItem = {
     item_name: nombre,
     track_stock: trackStock,
     sold_by_weight: soldByWeight,
     is_composite: false,
+    taxes: taxes,
     variants: [{
       sku: sku, barcode: barcode, cost: costo, default_price: precio, default_pricing_type: "FIXED",
       stores: [{ store_id: storeId, price: precio, pricing_type: "FIXED", available_for_sale: true }]
@@ -592,7 +629,7 @@ async function accionCrearProducto(env, payload) {
     }
   }
 
-  return { sku, nombre, idLoyverse: creado.id, variantId: v.variant_id, precio, costo, stock: stockFinal, barcode, track: trackStock, peso: soldByWeight };
+  return { sku, nombre, idLoyverse: creado.id, variantId: v.variant_id, precio, costo, stock: stockFinal, barcode, track: trackStock, peso: soldByWeight, avisoImpuesto };
 }
 
 
