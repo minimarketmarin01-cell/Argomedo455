@@ -127,6 +127,15 @@ async function asegurarTablas(env) {
     clave TEXT PRIMARY KEY,
     valor TEXT
   )`);
+
+  // Migración: columna con_iva en `productos` (tablas creadas antes de este cambio
+  // no la tienen todavía). SQLite/D1 no soporta "ADD COLUMN IF NOT EXISTS", así que
+  // se intenta y se ignora el error si ya existe.
+  try {
+    await run(env, `ALTER TABLE productos ADD COLUMN con_iva INTEGER DEFAULT 0`);
+  } catch (e) {
+    // ya existía la columna — normal en ejecuciones posteriores a la primera.
+  }
 }
 
 // ============================================================
@@ -340,6 +349,13 @@ async function sincronizarCatalogo(env) {
   const mapaStock = {};
   inventario.forEach(x => { mapaStock[x.variant_id] = x.in_stock; });
 
+  // Se necesita el id del impuesto IVA para saber, producto por producto, si lo
+  // tiene activado o no (para mostrar el botón "Activar IVA" en la app). Si no se
+  // puede detectar (ej. no está configurado en Loyverse Back Office todavía), se
+  // sigue sincronizando igual pero con_iva queda en 0 para todos.
+  let ivaTaxId = null;
+  try { ivaTaxId = await obtenerIvaTaxId(env); } catch (e) { /* se avisa solo al crear/activar, no bloquea el sync */ }
+
   const stmts = [];
   const saltados = [];
   items.forEach(it => {
@@ -352,20 +368,21 @@ async function sincronizarCatalogo(env) {
     if (v.stores && v.stores[0] && v.stores[0].price != null) precio = v.stores[0].price;
     const stock = mapaStock[v.variant_id] != null ? mapaStock[v.variant_id] : null;
     const peso = !!(it.sold_by_weight || it.soldByWeight);
+    const conIva = ivaTaxId ? (Array.isArray(it.taxes) && it.taxes.some(t => t.id === ivaTaxId)) : false;
 
     // ON CONFLICT: si el sku ya existe en D1, NO se toca `proveedor` ni `sector`
     // (columnas que esta sentencia ni siquiera incluye) — solo se refrescan los
     // datos que sí vienen de Loyverse.
     stmts.push(env.DB.prepare(
-      `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, stock, sold_by_weight, track_stock)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(sku) DO UPDATE SET
          id_loyverse=excluded.id_loyverse, variant_id=excluded.variant_id, nombre=excluded.nombre,
          categoria=excluded.categoria, barcode=excluded.barcode, precio=excluded.precio,
          costo=excluded.costo, stock=excluded.stock, sold_by_weight=excluded.sold_by_weight,
-         track_stock=excluded.track_stock`
+         track_stock=excluded.track_stock, con_iva=excluded.con_iva`
     ).bind(v.sku, it.id, v.variant_id, it.item_name, mapaCategorias[it.category_id] || "SIN CATEGORÍA",
-      v.barcode || "", precio || 0, v.cost || 0, stock, peso ? 1 : 0, it.track_stock ? 1 : 0));
+      v.barcode || "", precio || 0, v.cost || 0, stock, peso ? 1 : 0, it.track_stock ? 1 : 0, conIva ? 1 : 0));
   });
 
   await batchRun(env, stmts, 500);
@@ -438,7 +455,7 @@ async function sincronizarCatalogo(env) {
 // ============================================================
 async function catalogoCompacto(env) {
   const { results } = await env.DB.prepare(
-    `SELECT sku, nombre, categoria, proveedor, barcode, precio, costo, stock, sold_by_weight, track_stock
+    `SELECT sku, nombre, categoria, proveedor, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva
      FROM productos ORDER BY nombre`
   ).all();
 
@@ -452,7 +469,8 @@ async function catalogoCompacto(env) {
     coste: p.costo || 0,
     stock: p.stock,
     peso: !!p.sold_by_weight,
-    track: !!p.track_stock
+    track: !!p.track_stock,
+    iva: !!p.con_iva
   }));
 }
 
@@ -577,6 +595,34 @@ async function accionHabilitarTrackStock(env, payload) {
   const item = await loyverseGet(env, "/items/" + it.id_loyverse, {});
   await loyversePost(env, "/items", Object.assign({}, item, { track_stock: true }));
   await run(env, "UPDATE productos SET track_stock = 1, stock = COALESCE(stock, 0) WHERE sku = ?", sku);
+  return { ok: true, yaEstaba: false };
+}
+
+
+// ============================================================
+//  ACTIVAR IVA
+//  Algunos productos quedaron creados en Loyverse SIN el impuesto
+//  IVA asignado (ej. porque al crearlos no se pudo detectar el
+//  impuesto todavía). Sin esto, Loyverse vende el producto sin
+//  cobrar IVA. Se activa reenviando el ítem completo con el
+//  impuesto IVA agregado a su lista de taxes (sin tocar otros
+//  impuestos que ya pudiera tener).
+// ============================================================
+async function accionActivarIva(env, payload) {
+  const sku = String((payload && payload.sku) || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("Producto no encontrado: " + sku);
+  if (it.con_iva) return { ok: true, yaEstaba: true };
+  if (!it.id_loyverse) throw new Error("Falta el id de Loyverse (vuelve a sincronizar el catálogo)");
+
+  const ivaTaxId = await obtenerIvaTaxId(env);
+  const item = await loyverseGet(env, "/items/" + it.id_loyverse, {});
+  const yaTieneEseImpuesto = Array.isArray(item.taxes) && item.taxes.some(t => t.id === ivaTaxId);
+  const nuevosTaxes = yaTieneEseImpuesto ? (item.taxes || []) : [...(item.taxes || []), { id: ivaTaxId }];
+
+  await loyversePost(env, "/items", Object.assign({}, item, { taxes: nuevosTaxes }));
+  await run(env, "UPDATE productos SET con_iva = 1 WHERE sku = ?", sku);
   return { ok: true, yaEstaba: false };
 }
 
@@ -771,10 +817,17 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'activar_iva', payload:{sku} }  →  activa el impuesto IVA en
+      // Loyverse para un producto que se creó/quedó sin él.
+      if (action === "activar_iva") {
+        const resultado = await accionActivarIva(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo. POST: lote_nuevo, crear_producto, habilitar_track_stock",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);

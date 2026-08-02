@@ -252,6 +252,7 @@ button{font-family:inherit}
         <div class="s" id="rc-cat">—</div>
         <div class="stock" id="rc-stock">Stock actual: —</div>
         <button class="btn-secondary hidden" id="rc-activar-inv" style="margin-top:10px;color:var(--cielo-d);border-color:var(--cielo)" type="button">🔓 Activar inventario para este producto</button>
+        <button class="btn-secondary hidden" id="rc-activar-iva" style="margin-top:10px;color:#b45309;border-color:#f0c987" type="button">🧾 Activar IVA para este producto</button>
       </div>
     </div>
 
@@ -567,6 +568,7 @@ function rcReset(){
   document.getElementById('rc-results').innerHTML='';
   document.getElementById('rc-picked').classList.remove('on');
   document.getElementById('rc-activar-inv').classList.add('hidden');
+  document.getElementById('rc-activar-iva').classList.add('hidden');
   document.getElementById('rc-cantidad-field').style.display='none';
   document.getElementById('rc-costo-field').style.display='none';
   document.getElementById('rc-fecha-field').style.display='none';
@@ -642,6 +644,17 @@ function rcPick(ref){
   rcSetIva('con');
   rcSetModo('unidad');
 
+  // El botón de IVA es independiente del de inventario — se muestra si el producto
+  // no tiene el impuesto IVA activado en Loyverse, sea cual sea su estado de stock.
+  const btnIva=document.getElementById('rc-activar-iva');
+  if(!it.iva){
+    btnIva.classList.remove('hidden');
+    btnIva.disabled=false;
+    btnIva.textContent='🧾 Activar IVA para este producto';
+  }else{
+    btnIva.classList.add('hidden');
+  }
+
   if(!it.track){
     document.getElementById('rc-cantidad-field').style.display='none';
     document.getElementById('rc-fecha-field').style.display='none';
@@ -680,6 +693,28 @@ document.getElementById('rc-activar-inv').onclick=async()=>{
   }catch(e){
     showToast('❌ Error de conexión al activar');
     btn.disabled=false; btn.textContent='🔓 Activar inventario para este producto';
+  }
+};
+
+document.getElementById('rc-activar-iva').onclick=async()=>{
+  const it=rcState.item; if(!it)return;
+  const btn=document.getElementById('rc-activar-iva');
+  btn.disabled=true; btn.textContent='Activando…';
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'activar_iva',payload:{sku:it.ref}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      it.iva=true; persist();
+      btn.textContent=j.yaEstaba?'✅ IVA ya estaba activado':'✅ IVA activado';
+      showToast('🧾 IVA activado · '+it.nombre);
+      setTimeout(()=>{ btn.classList.add('hidden'); },900);
+    }else{
+      showToast('❌ '+((j&&j.error)||'No se pudo activar el IVA en Loyverse'));
+      btn.disabled=false; btn.textContent='🧾 Activar IVA para este producto';
+    }
+  }catch(e){
+    showToast('❌ Error de conexión al activar IVA');
+    btn.disabled=false; btn.textContent='🧾 Activar IVA para este producto';
   }
 };
 
