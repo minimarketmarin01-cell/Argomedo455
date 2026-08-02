@@ -155,6 +155,14 @@ async function asegurarTablas(env) {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nombre TEXT UNIQUE
   )`);
+
+  // Registro de eventos de Webhook ya procesados (Loyverse → Worker). Evita aplicar
+  // dos veces el mismo evento si Loyverse lo reintenta o si llega duplicado.
+  await run(env, `CREATE TABLE IF NOT EXISTS webhook_eventos (
+    event_id TEXT PRIMARY KEY,
+    tipo TEXT,
+    recibido_en TEXT
+  )`);
 }
 
 // ============================================================
@@ -465,6 +473,125 @@ async function sincronizarCatalogo(env) {
     ejemplosSaltados: saltados.slice(0, 10),
     eliminados
   };
+}
+
+// ============================================================
+//  WEBHOOKS DE LOYVERSE (tiempo real → D1)
+//  Loyverse envía POST a /webhook/loyverse cuando cambia stock o
+//  productos. Esto evita tener que sincronizar el catálogo completo
+//  (3.000+ productos) para reflejar un solo cambio.
+//
+//  IMPORTANTE — pendiente de confirmar contra la documentación
+//  actual de Loyverse antes de activar en producción:
+//   - nombre exacto del header de firma (se prueban dos variantes
+//     comunes: "loyverse-signature" y "x-loyverse-signature")
+//   - forma exacta del payload por tipo de evento
+//  Recomendado: registrar el webhook, mandar UN evento de prueba,
+//  revisar `webhook_eventos`/logs, y ajustar si hace falta antes
+//  de confiar en esto para producción.
+// ============================================================
+
+// Verifica la clave secreta que va en la URL del webhook (?clave=...). Se usa esto
+// en vez de la firma HMAC porque los webhooks creados desde el dashboard de Loyverse
+// (a diferencia de los creados vía OAuth 2.0) no envían header de firma.
+function claveWebhookValida(env, url) {
+  const esperada = env.LOYVERSE_WEBHOOK_SECRET;
+  if (!esperada) return true; // sin clave configurada, no se valida (solo para pruebas)
+  return url.searchParams.get("clave") === esperada;
+}
+
+async function eventoYaProcesado(env, eventId) {
+  return !!(await get(env, "SELECT event_id FROM webhook_eventos WHERE event_id = ?", eventId));
+}
+
+async function marcarEventoProcesado(env, eventId, tipo) {
+  await run(env, "INSERT OR IGNORE INTO webhook_eventos (event_id, tipo, recibido_en) VALUES (?,?,?)", eventId, tipo, fechaHoraDDMMAAAA());
+}
+
+// Aplica cambios de stock recibidos por webhook (inventory_levels.update).
+// Solo toca `stock`, no vuelve a tocar precio/nombre/etc.
+async function aplicarCambiosInventario(env, niveles) {
+  if (!niveles || !niveles.length) return 0;
+  const { storeId } = await obtenerStoreId(env);
+  let actualizados = 0;
+  for (const nivel of niveles) {
+    if (nivel.store_id && nivel.store_id !== storeId) continue; // otra tienda, no nos afecta
+    const fila = await get(env, "SELECT sku FROM productos WHERE variant_id = ?", nivel.variant_id);
+    if (!fila) continue; // producto no está en D1 todavía (ej. creado fuera de la app) — un sync completo lo traerá
+    await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", nivel.in_stock, fila.sku);
+    actualizados++;
+  }
+  return actualizados;
+}
+
+// Aplica cambios de producto recibidos por webhook (items.update): nombre, precio,
+// costo, categoría, código de barras, IVA. Nunca toca `stock` (eso lo maneja el
+// webhook de inventario) ni `proveedor`/`sector` (campos propios de la app).
+async function aplicarCambiosItems(env, items) {
+  if (!items || !items.length) return 0;
+
+  const categorias = await loyverseGetAll(env, "/categories", "categories");
+  const mapaCategorias = {};
+  categorias.forEach(c => { mapaCategorias[c.id] = c.name; });
+
+  let ivaTaxId = null;
+  try { ivaTaxId = await obtenerIvaTaxId(env); } catch (e) { /* no bloquea */ }
+
+  let actualizados = 0;
+  for (const it of items) {
+    const v = (it.variants && it.variants[0]) ? it.variants[0] : null;
+    if (!v || !v.sku) continue;
+
+    let precio = v.default_price;
+    if (v.stores && v.stores[0] && v.stores[0].price != null) precio = v.stores[0].price;
+    const peso = !!(it.sold_by_weight || it.soldByWeight);
+    const conIva = ivaTaxId ? (Array.isArray(it.tax_ids) && it.tax_ids.includes(ivaTaxId)) : false;
+
+    await run(env,
+      `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, sold_by_weight, track_stock, con_iva)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(sku) DO UPDATE SET
+         id_loyverse=excluded.id_loyverse, variant_id=excluded.variant_id, nombre=excluded.nombre,
+         categoria=excluded.categoria, barcode=excluded.barcode, precio=excluded.precio,
+         costo=excluded.costo, sold_by_weight=excluded.sold_by_weight,
+         track_stock=excluded.track_stock, con_iva=excluded.con_iva`,
+      v.sku, it.id, v.variant_id, it.item_name, mapaCategorias[it.category_id] || "SIN CATEGORÍA",
+      v.barcode || "", precio || 0, v.cost || 0, peso ? 1 : 0, it.track_stock ? 1 : 0, conIva ? 1 : 0);
+    actualizados++;
+  }
+  return actualizados;
+}
+
+// Punto de entrada: recibe el POST crudo de Loyverse, valida la clave de la URL,
+// evita reprocesar duplicados, y delega según el tipo de evento.
+async function manejarWebhookLoyverse(request, env, url) {
+  if (!claveWebhookValida(env, url)) return json({ ok: false, error: "Clave inválida" }, 401);
+
+  const rawBody = await request.text();
+  let evento;
+  try { evento = JSON.parse(rawBody); } catch (e) { return json({ ok: false, error: "JSON inválido" }, 400); }
+
+  const tipo = evento.type || evento.event_type || "desconocido";
+  const eventId = evento.id || evento.event_id || (tipo + ":" + (evento.created_at || Date.now()));
+
+  if (await eventoYaProcesado(env, eventId)) {
+    return json({ ok: true, ignorado: true, motivo: "evento ya procesado" });
+  }
+
+  const resultado = { tipo, procesados: 0 };
+  try {
+    if (tipo === "inventory_levels.update" && evento.inventory_levels) {
+      resultado.procesados = await aplicarCambiosInventario(env, evento.inventory_levels);
+    } else if (tipo === "items.update" && evento.items) {
+      resultado.procesados = await aplicarCambiosItems(env, evento.items);
+    } else {
+      resultado.noManejado = true; // tipo recibido pero sin handler todavía (se registra igual)
+    }
+  } finally {
+    await marcarEventoProcesado(env, eventId, tipo);
+  }
+
+  return json({ ok: true, ...resultado });
 }
 
 // ============================================================
@@ -924,6 +1051,19 @@ export default {
     }
 
     const url = new URL(request.url);
+
+    // POST /webhook/loyverse — Loyverse envía su propio formato de body (no el
+    // {action,payload} de la app), así que se atiende aparte y antes del parseo
+    // genérico de abajo.
+    if (request.method === "POST" && url.pathname === "/webhook/loyverse") {
+      try {
+        await asegurarTablas(env);
+        return await manejarWebhookLoyverse(request, env, url);
+      } catch (e) {
+        return json({ ok: false, error: e.message }, 500);
+      }
+    }
+
     let action = url.searchParams.get("action");
     let payload = null;
 
@@ -1052,7 +1192,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, historial_producto, proveedores_sectores. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, historial_producto, proveedores_sectores. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
