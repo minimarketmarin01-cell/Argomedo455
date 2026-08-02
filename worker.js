@@ -311,9 +311,11 @@ async function obtenerStoreId(env) {
 // antemano en la cuenta). Se cachea en D1 igual que el store_id, para no consultar
 // /taxes en cada creación de producto. Prioriza por nombre "IVA", luego por tasa 19%,
 // y como último recurso usa el único impuesto configurado si solo hay uno.
-async function obtenerIvaTaxId(env) {
-  const guardado = await get(env, "SELECT valor FROM config WHERE clave = 'iva_tax_id'");
-  if (guardado && guardado.valor) return guardado.valor;
+async function obtenerIvaTaxId(env, forzarRefresco) {
+  if (!forzarRefresco) {
+    const guardado = await get(env, "SELECT valor FROM config WHERE clave = 'iva_tax_id'");
+    if (guardado && guardado.valor) return guardado.valor;
+  }
 
   const taxes = await loyverseGetAll(env, "/taxes", "taxes");
   if (!taxes.length) throw new Error("No hay ningún impuesto configurado en Loyverse Back Office (crea el IVA 19% ahí primero)");
@@ -668,10 +670,11 @@ async function accionCrearProducto(env, payload) {
   // motivo no se puede identificar el impuesto (ej. no está configurado en Loyverse
   // Back Office todavía), NO se bloquea la creación del producto — se avisa aparte para
   // que se active manualmente esta vez.
+  let ivaTaxId = null;
   let taxes = [];
   let avisoImpuesto = null;
   try {
-    const ivaTaxId = await obtenerIvaTaxId(env);
+    ivaTaxId = await obtenerIvaTaxId(env);
     taxes = [{ id: ivaTaxId }];
   } catch (e) {
     avisoImpuesto = "⚠️ El producto se creó SIN impuesto activado (" + e.message + "). Actívalo a mano en Loyverse.";
@@ -706,11 +709,31 @@ async function accionCrearProducto(env, payload) {
   const v = creado && creado.variants && creado.variants[0];
   if (!v || !v.variant_id) throw new Error("Loyverse no devolvió la variante creada — no se pudo confirmar");
 
+  // Verificación real: no basta con que el POST no haya dado error — hay que confirmar
+  // contra lo que Loyverse efectivamente devolvió que el impuesto quedó asignado. Si no
+  // quedó (ej. el ID de IVA cacheado en D1 estaba obsoleto), se reintenta UNA vez
+  // re-detectando el impuesto desde cero (ignorando el caché) antes de rendirse y avisar.
+  let ivaConfirmado = ivaTaxId ? (Array.isArray(creado.taxes) && creado.taxes.some(t => t.id === ivaTaxId)) : false;
+  if (ivaTaxId && !ivaConfirmado) {
+    try {
+      const ivaTaxIdFresco = await obtenerIvaTaxId(env, true); // forzarRefresco=true, ignora el caché
+      const reenviado = await loyversePost(env, "/items", Object.assign({}, creado, { taxes: [{ id: ivaTaxIdFresco }] }));
+      ivaTaxId = ivaTaxIdFresco;
+      creado = reenviado;
+      ivaConfirmado = Array.isArray(creado.taxes) && creado.taxes.some(t => t.id === ivaTaxIdFresco);
+      if (!ivaConfirmado) {
+        avisoImpuesto = "⚠️ El producto se creó pero el IVA no quedó activado en Loyverse (verificado tras reintento). Actívalo desde el botón 'Activar IVA' en la app o a mano en Loyverse.";
+      }
+    } catch (e) {
+      avisoImpuesto = "⚠️ El producto se creó pero el IVA no quedó activado (" + e.message + "). Actívalo desde el botón 'Activar IVA' en la app o a mano en Loyverse.";
+    }
+  }
+
   // Guarda en D1 (proveedor/sector quedan vacíos — se clasifican después desde la app).
   await run(env,
-    `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, stock, sold_by_weight, track_stock)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    sku, creado.id, v.variant_id, nombre, "SIN CATEGORÍA", barcode, precio, costo, trackStock ? 0 : null, soldByWeight ? 1 : 0, trackStock ? 1 : 0);
+    `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sku, creado.id, v.variant_id, nombre, "SIN CATEGORÍA", barcode, precio, costo, trackStock ? 0 : null, soldByWeight ? 1 : 0, trackStock ? 1 : 0, ivaConfirmado ? 1 : 0);
 
   await run(env,
     `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
@@ -783,6 +806,14 @@ export default {
       if (action === "reset_store_id") {
         await run(env, "DELETE FROM config WHERE clave = 'store_id'");
         return json({ ok: true, mensaje: "store_id borrado. Se detectará de nuevo en la próxima sincronización." });
+      }
+
+      // GET /?action=reset_iva_tax_id  →  borra el ID de impuesto IVA guardado en caché
+      // (por si quedó apuntando a un impuesto viejo/incorrecto). La próxima creación o
+      // activación de IVA lo vuelve a detectar desde cero contra Loyverse.
+      if (action === "reset_iva_tax_id") {
+        await run(env, "DELETE FROM config WHERE clave = 'iva_tax_id'");
+        return json({ ok: true, mensaje: "iva_tax_id borrado. Se detectará de nuevo en la próxima creación/activación de IVA." });
       }
 
       // GET /?action=sync  →  trae el catálogo completo de Loyverse y lo guarda en D1

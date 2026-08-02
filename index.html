@@ -1258,7 +1258,7 @@ document.getElementById('cp-guardar').onclick=async()=>{
       });
       persist();
       showToast('✅ Producto creado: '+j.nombre+' (SKU '+j.sku+')');
-      if(j.avisoImpuesto) setTimeout(()=>showToast(j.avisoImpuesto),2800);
+      if(j.avisoImpuesto) setTimeout(()=>alert(j.avisoImpuesto),300);
       cerrarModal('cp-ov');
       if(cpState.origen==='rc'){ openRecibir(); rcPick(j.sku); }
     }else{
