@@ -371,7 +371,7 @@ async function sincronizarCatalogo(env) {
     if (v.stores && v.stores[0] && v.stores[0].price != null) precio = v.stores[0].price;
     const stock = mapaStock[v.variant_id] != null ? mapaStock[v.variant_id] : null;
     const peso = !!(it.sold_by_weight || it.soldByWeight);
-    const conIva = ivaTaxId ? (Array.isArray(it.taxes) && it.taxes.some(t => t.id === ivaTaxId)) : false;
+    const conIva = ivaTaxId ? (Array.isArray(it.tax_ids) && it.tax_ids.includes(ivaTaxId)) : false;
 
     // ON CONFLICT: si el sku ya existe en D1, NO se toca `proveedor` ni `sector`
     // (columnas que esta sentencia ni siquiera incluye) — solo se refrescan los
@@ -622,10 +622,18 @@ async function accionActivarIva(env, payload) {
 
   const ivaTaxId = await obtenerIvaTaxId(env);
   const item = await loyverseGet(env, "/items/" + it.id_loyverse, {});
-  const yaTieneEseImpuesto = Array.isArray(item.taxes) && item.taxes.some(t => t.id === ivaTaxId);
-  const nuevosTaxes = yaTieneEseImpuesto ? (item.taxes || []) : [...(item.taxes || []), { id: ivaTaxId }];
+  const taxIdsActuales = Array.isArray(item.tax_ids) ? item.tax_ids : [];
+  const yaTieneEseImpuesto = taxIdsActuales.includes(ivaTaxId);
+  const nuevosTaxIds = yaTieneEseImpuesto ? taxIdsActuales : [...taxIdsActuales, ivaTaxId];
 
-  await loyversePost(env, "/items", Object.assign({}, item, { taxes: nuevosTaxes }));
+  const actualizado = await loyversePost(env, "/items", Object.assign({}, item, { tax_ids: nuevosTaxIds }));
+
+  // Verificación real contra lo que Loyverse devolvió — antes esto se daba por hecho
+  // sin comprobar, así que el botón podía marcarse "activado" sin que el impuesto
+  // realmente hubiera quedado asignado en Loyverse.
+  const confirmado = Array.isArray(actualizado.tax_ids) && actualizado.tax_ids.includes(ivaTaxId);
+  if (!confirmado) throw new Error("Loyverse no confirmó el impuesto asignado (revisa el impuesto IVA en el Back Office)");
+
   await run(env, "UPDATE productos SET con_iva = 1 WHERE sku = ?", sku);
   return { ok: true, yaEstaba: false };
 }
@@ -675,12 +683,12 @@ async function accionCrearProducto(env, payload) {
   // que se active manualmente esta vez. Si el usuario desmarcó "IVA" a propósito (ej.
   // producto exento), no se intenta activar ni se avisa nada.
   let ivaTaxId = null;
-  let taxes = [];
+  let taxIds = [];
   let avisoImpuesto = null;
   if (quiereIva) {
     try {
       ivaTaxId = await obtenerIvaTaxId(env);
-      taxes = [{ id: ivaTaxId }];
+      taxIds = [ivaTaxId];
     } catch (e) {
       avisoImpuesto = "⚠️ El producto se creó SIN impuesto activado (" + e.message + "). Actívalo a mano en Loyverse.";
     }
@@ -691,7 +699,7 @@ async function accionCrearProducto(env, payload) {
     track_stock: trackStock,
     sold_by_weight: soldByWeight,
     is_composite: false,
-    taxes: taxes,
+    tax_ids: taxIds,
     variants: [{
       sku: sku, barcode: barcode, cost: costo, default_price: precio, default_pricing_type: "FIXED",
       stores: [{ store_id: storeId, price: precio, pricing_type: "FIXED", available_for_sale: activo }]
@@ -719,14 +727,14 @@ async function accionCrearProducto(env, payload) {
   // contra lo que Loyverse efectivamente devolvió que el impuesto quedó asignado. Si no
   // quedó (ej. el ID de IVA cacheado en D1 estaba obsoleto), se reintenta UNA vez
   // re-detectando el impuesto desde cero (ignorando el caché) antes de rendirse y avisar.
-  let ivaConfirmado = ivaTaxId ? (Array.isArray(creado.taxes) && creado.taxes.some(t => t.id === ivaTaxId)) : false;
+  let ivaConfirmado = ivaTaxId ? (Array.isArray(creado.tax_ids) && creado.tax_ids.includes(ivaTaxId)) : false;
   if (ivaTaxId && !ivaConfirmado) {
     try {
       const ivaTaxIdFresco = await obtenerIvaTaxId(env, true); // forzarRefresco=true, ignora el caché
-      const reenviado = await loyversePost(env, "/items", Object.assign({}, creado, { taxes: [{ id: ivaTaxIdFresco }] }));
+      const reenviado = await loyversePost(env, "/items", Object.assign({}, creado, { tax_ids: [ivaTaxIdFresco] }));
       ivaTaxId = ivaTaxIdFresco;
       creado = reenviado;
-      ivaConfirmado = Array.isArray(creado.taxes) && creado.taxes.some(t => t.id === ivaTaxIdFresco);
+      ivaConfirmado = Array.isArray(creado.tax_ids) && creado.tax_ids.includes(ivaTaxIdFresco);
       if (!ivaConfirmado) {
         avisoImpuesto = "⚠️ El producto se creó pero el IVA no quedó activado en Loyverse (verificado tras reintento). Actívalo desde el botón 'Activar IVA' en la app o a mano en Loyverse.";
       }
