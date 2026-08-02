@@ -1254,13 +1254,36 @@ document.getElementById('cp-guardar').onclick=async()=>{
       (DB.items=DB.items||[]).push({
         ref:j.sku, nombre:j.nombre, cat:'SIN CATEGORÍA', prov:'SIN PROVEEDOR',
         barcode:j.barcode||'', precio:j.precio||0, coste:j.costo||0, stock:j.stock,
-        peso:j.peso, track:j.track
+        peso:j.peso, track:j.track, iva:!!j.iva
       });
       persist();
       showToast('✅ Producto creado: '+j.nombre+' (SKU '+j.sku+')');
-      if(j.avisoImpuesto) setTimeout(()=>alert(j.avisoImpuesto),300);
       cerrarModal('cp-ov');
       if(cpState.origen==='rc'){ openRecibir(); rcPick(j.sku); }
+      // Si el IVA no quedó activado (ni siquiera tras el reintento automático del
+      // servidor), se ofrece activarlo aquí mismo con un toque, en vez de solo avisar
+      // y obligar a ir a buscarlo después en "Recibir mercadería".
+      if(j.avisoImpuesto){
+        setTimeout(async()=>{
+          const quiere=confirm((j.avisoImpuesto)+'\n\n¿Activar el IVA ahora?');
+          if(!quiere)return;
+          try{
+            const res2=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'activar_iva',payload:{sku:j.sku}})});
+            const j2=await res2.json();
+            if(j2&&j2.ok){
+              const it=(DB.items||[]).find(i=>i.ref===j.sku);
+              if(it)it.iva=true;
+              persist();
+              showToast('🧾 IVA activado · '+j.nombre);
+              if(rcState.item&&rcState.item.ref===j.sku)rcPick(j.sku);
+            }else{
+              showToast('❌ '+((j2&&j2.error)||'No se pudo activar el IVA'));
+            }
+          }catch(e){
+            showToast('❌ Error de conexión al activar IVA');
+          }
+        },350);
+      }
     }else{
       showToast('❌ Error: '+((j&&j.error)||'no se pudo crear el producto'));
     }

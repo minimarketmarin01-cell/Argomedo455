@@ -755,7 +755,7 @@ async function accionCrearProducto(env, payload) {
     }
   }
 
-  return { sku, nombre, idLoyverse: creado.id, variantId: v.variant_id, precio, costo, stock: stockFinal, barcode, track: trackStock, peso: soldByWeight, avisoImpuesto };
+  return { sku, nombre, idLoyverse: creado.id, variantId: v.variant_id, precio, costo, stock: stockFinal, barcode, track: trackStock, peso: soldByWeight, iva: ivaConfirmado, avisoImpuesto };
 }
 
 
