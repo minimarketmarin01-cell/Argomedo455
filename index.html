@@ -217,6 +217,7 @@ button{font-family:inherit}
         <div class="n" id="rc-nom">—</div>
         <div class="s" id="rc-cat">—</div>
         <div class="stock" id="rc-stock">Stock actual: —</div>
+        <button class="btn-secondary hidden" id="rc-activar-inv" style="margin-top:10px;color:var(--cielo);border-color:var(--cielo-d)" type="button">🔓 Activar inventario para este producto</button>
       </div>
     </div>
 
@@ -276,6 +277,54 @@ button{font-family:inherit}
   <div class="scan-frame"><div class="box"></div></div>
   <button class="scan-close" id="scanner-close">✕</button>
   <div class="scan-hint">Apunta al código de barras</div>
+</div>
+
+<!-- ===== MODAL: CREAR PRODUCTO NUEVO ===== -->
+<div class="ov hidden" id="cp-ov">
+  <div class="ov-head">
+    <h3>🆕 Crear producto</h3>
+    <button class="ov-close" id="cp-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="field">
+      <label>Nombre del producto</label>
+      <input id="cp-nombre" placeholder="Ej: Coca Cola 1.5L" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Código de barras <span style="text-transform:none;font-weight:400">(opcional)</span></label>
+      <div class="search-row">
+        <input id="cp-barcode" inputmode="numeric" placeholder="Ej: 7804673910023">
+        <button class="scan-btn" id="cp-scan" type="button" aria-label="Escanear código">📷</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>Costo y precio de venta</label>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1">
+          <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">COSTO</div>
+          <input id="cp-costo" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font-family:'JetBrains Mono';width:100%">
+        </div>
+        <div style="flex:1">
+          <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">PRECIO VENTA</div>
+          <input id="cp-precio" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font-family:'JetBrains Mono';width:100%">
+        </div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Stock inicial <span style="text-transform:none;font-weight:400">(opcional)</span></label>
+      <input id="cp-stock" inputmode="decimal" placeholder="0">
+    </div>
+    <div class="field">
+      <label>Se vende por peso (kg)</label>
+      <div class="toggle-row">
+        <button type="button" class="toggle-btn active" id="cp-peso-no" data-v="0">No, por unidad</button>
+        <button type="button" class="toggle-btn" id="cp-peso-si" data-v="1">Sí, por kg</button>
+      </div>
+    </div>
+  </div>
+  <div class="ov-foot">
+    <button class="btn-primary" id="cp-guardar">Crear producto en Loyverse</button>
+  </div>
 </div>
 
 <script>
@@ -430,14 +479,19 @@ function rcPick(ref){
   document.getElementById('rc-stock').textContent='Stock actual: '+stockTxt;
 
   if(!it.track){
-    // Producto sin seguimiento de inventario: no se puede sumar stock todavía.
+    // Producto sin seguimiento de inventario: se ofrece activarlo (1 toque) en vez de
+    // solo bloquear — así no hay que ir a Loyverse a mano para recibir este producto.
     document.getElementById('rc-cantidad-field').style.display='none';
     document.getElementById('rc-costo-field').style.display='none';
     document.getElementById('rc-fecha-field').style.display='none';
-    showToast('⚠️ Este producto no tiene seguimiento de inventario activado en Loyverse');
+    const btnActivar=document.getElementById('rc-activar-inv');
+    btnActivar.classList.remove('hidden');
+    btnActivar.disabled=false;
+    btnActivar.textContent='🔓 Activar inventario para este producto';
     document.getElementById('rc-guardar').disabled=true;
     return;
   }
+  document.getElementById('rc-activar-inv').classList.add('hidden');
 
   document.getElementById('rc-cantidad-field').style.display='block';
   document.getElementById('rc-costo-field').style.display='block';
@@ -462,8 +516,33 @@ document.getElementById('rc-search').oninput=e=>{
   if(lista.length){
     box.innerHTML=lista.map(it=>`<div class="result-item" data-ref="${it.ref}"><div class="n">${it.nombre}</div><div class="s">${it.prov}${it.barcode?' · '+it.barcode:''}</div></div>`).join('');
     box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>rcPick(el.dataset.ref));
+  }else if(q.trim().length>=3){
+    box.innerHTML='<div class="result-item" style="color:var(--muted)">Sin coincidencias. <span id="rc-crear-nuevo" style="color:var(--cielo);font-weight:700;text-decoration:underline">Crear producto nuevo</span></div>';
+    document.getElementById('rc-crear-nuevo').onclick=()=>openCrearProducto(q.trim());
   }else{
-    box.innerHTML=q.trim().length>=2?'<div class="result-item" style="color:var(--muted);cursor:default">Sin coincidencias</div>':'';
+    box.innerHTML='';
+  }
+};
+
+document.getElementById('rc-activar-inv').onclick=async()=>{
+  const it=rcState.item; if(!it)return;
+  const btn=document.getElementById('rc-activar-inv');
+  btn.disabled=true; btn.textContent='Verificando…';
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'habilitar_track_stock',payload:{sku:it.ref}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      it.track=true; persist();
+      btn.textContent=j.yaEstaba?'✅ Inventario ya activado':'✅ Inventario activado';
+      showToast('🔓 Seguimiento activado · '+it.nombre);
+      setTimeout(()=>rcPick(it.ref),700); // refresca la vista con los campos ya habilitados
+    }else{
+      showToast('❌ '+((j&&j.error)||'No se pudo activar en Loyverse'));
+      btn.disabled=false; btn.textContent='🔓 Activar inventario para este producto';
+    }
+  }catch(e){
+    showToast('❌ Error de conexión al activar');
+    btn.disabled=false; btn.textContent='🔓 Activar inventario para este producto';
   }
 };
 
@@ -622,6 +701,90 @@ document.getElementById('rc-scan').onclick=()=>{
       document.getElementById('rc-search').dispatchEvent(new Event('input',{bubbles:true}));
     }
   });
+};
+
+// ============================================================
+//  MÓDULO: CREAR PRODUCTO NUEVO
+//  Se abre desde Recepción cuando una búsqueda no encuentra nada
+//  (mismo patrón que Marín) — crea el producto en Loyverse con un
+//  SKU asignado automáticamente, y vuelve a Recepción con él ya
+//  seleccionado, listo para recibir stock.
+// ============================================================
+const cpState={ peso:false, origen:null };
+
+function openCrearProducto(nombreSugerido){
+  cpState.peso=false;
+  cpState.origen=document.getElementById('rc-ov').classList.contains('hidden')?null:'rc';
+  document.getElementById('cp-nombre').value=nombreSugerido||'';
+  document.getElementById('cp-barcode').value=/^\d{6,}$/.test(nombreSugerido||'')?nombreSugerido:'';
+  if(/^\d{6,}$/.test(nombreSugerido||''))document.getElementById('cp-nombre').value='';
+  document.getElementById('cp-costo').value='';
+  document.getElementById('cp-precio').value='';
+  document.getElementById('cp-stock').value='';
+  cpSetPeso(false);
+  closeRecibir();
+  abrirModal('cp-ov');
+  document.getElementById('cp-nombre').focus();
+}
+function closeCrearProducto(){
+  cerrarModal('cp-ov');
+  if(cpState.origen==='rc') openRecibir();
+}
+document.getElementById('cp-close').onclick=closeCrearProducto;
+
+function cpSetPeso(esPeso){
+  cpState.peso=esPeso;
+  document.getElementById('cp-peso-no').classList.toggle('active',!esPeso);
+  document.getElementById('cp-peso-si').classList.toggle('active',esPeso);
+}
+document.getElementById('cp-peso-no').onclick=()=>cpSetPeso(false);
+document.getElementById('cp-peso-si').onclick=()=>cpSetPeso(true);
+
+document.getElementById('cp-scan').onclick=()=>{
+  cerrarModal('cp-ov');
+  openScanner(code=>{
+    abrirModal('cp-ov');
+    document.getElementById('cp-barcode').value=code;
+  });
+};
+
+document.getElementById('cp-guardar').onclick=async()=>{
+  const nombre=document.getElementById('cp-nombre').value.trim();
+  if(!nombre){ showToast('⚠️ Escribe el nombre del producto'); return; }
+  const btn=document.getElementById('cp-guardar');
+  btn.disabled=true; btn.textContent='Creando…';
+  try{
+    const payload={
+      nombre,
+      barcode:document.getElementById('cp-barcode').value.trim(),
+      costo:document.getElementById('cp-costo').value,
+      precio:document.getElementById('cp-precio').value,
+      stockInicial:document.getElementById('cp-stock').value,
+      soldByWeight:cpState.peso,
+      trackStock:true
+    };
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'crear_producto',payload})});
+    const j=await res.json();
+    if(j&&j.ok){
+      // Agrega el producto recién creado a la copia local, para que aparezca en
+      // búsquedas inmediatamente sin esperar a la próxima sincronización.
+      (DB.items=DB.items||[]).push({
+        ref:j.sku, nombre:j.nombre, cat:'SIN CATEGORÍA', prov:'SIN PROVEEDOR',
+        barcode:j.barcode||'', precio:j.precio||0, coste:j.costo||0, stock:j.stock,
+        peso:j.peso, track:j.track
+      });
+      persist();
+      showToast('✅ Producto creado: '+j.nombre+' (SKU '+j.sku+')');
+      cerrarModal('cp-ov');
+      if(cpState.origen==='rc'){ openRecibir(); rcPick(j.sku); }
+    }else{
+      showToast('❌ Error: '+((j&&j.error)||'no se pudo crear el producto'));
+    }
+  }catch(e){
+    showToast('❌ Error de conexión al crear el producto');
+  }finally{
+    btn.disabled=false; btn.textContent='Crear producto en Loyverse';
+  }
 };
 
 // ============================================================
