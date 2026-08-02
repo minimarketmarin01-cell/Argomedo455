@@ -1,0 +1,691 @@
+/****************************************************************
+ *  ARGOMEDO 455 · WORKER (Cloudflare)
+ *  ---------------------------------------------------------
+ *  PASO 3: tablas D1 + prueba de conexión a Loyverse.
+ *  PASO 4: sincronización real del catálogo (Loyverse → D1),
+ *          con detección automática del store_id (no hace falta
+ *          buscarlo a mano — se detecta solo la primera vez y
+ *          queda guardado en D1 para las siguientes veces).
+ *
+ *  Módulos que vendrán en pasos siguientes (todavía NO están
+ *  implementados aquí a propósito, para ir paso a paso):
+ *   - Armar pedido (carrito + sugeridos + WhatsApp)
+ *   - Recibir mercadería (lote_nuevo) con fecha de vencimiento
+ ****************************************************************/
+
+// ============================================================
+//  CONFIG
+// ============================================================
+const LOYVERSE_API = "https://api.loyverse.com/v1.0";
+const PAGE = 250; // tamaño de página al paginar listados de Loyverse
+
+// ============================================================
+//  CORS + RESPUESTAS
+// ============================================================
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type"
+};
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+  });
+}
+
+// ============================================================
+//  HELPERS D1
+// ============================================================
+async function run(env, sql, ...params) {
+  const stmt = params.length ? env.DB.prepare(sql).bind(...params) : env.DB.prepare(sql);
+  return stmt.run();
+}
+
+async function get(env, sql, ...params) {
+  const stmt = params.length ? env.DB.prepare(sql).bind(...params) : env.DB.prepare(sql);
+  return stmt.first();
+}
+
+// Ejecuta muchas sentencias D1 preparadas en un solo viaje (batch), partiendo en trozos
+// (chunks) para no exceder límites de D1. Con 3.200+ productos, NUNCA se debe hacer un
+// INSERT/UPDATE por producto en loop — eso sería miles de round-trips y sería lentísimo.
+async function batchRun(env, stmts, chunkSize = 500) {
+  for (let i = 0; i < stmts.length; i += chunkSize) {
+    const chunk = stmts.slice(i, i + chunkSize);
+    if (chunk.length) await env.DB.batch(chunk);
+  }
+  return stmts.length;
+}
+
+// ============================================================
+//  CREAR TABLAS (si no existen) — se ejecuta en cada request al
+//  endpoint de setup, es seguro llamarlo varias veces.
+// ============================================================
+async function asegurarTablas(env) {
+  // Catálogo cacheado de Loyverse (evita golpear la API en cada búsqueda).
+  await run(env, `CREATE TABLE IF NOT EXISTS productos (
+    sku TEXT PRIMARY KEY,
+    id_loyverse TEXT,
+    variant_id TEXT,
+    nombre TEXT,
+    categoria TEXT,
+    proveedor TEXT,
+    barcode TEXT,
+    precio REAL,
+    costo REAL,
+    stock REAL,
+    sold_by_weight INTEGER DEFAULT 0,
+    track_stock INTEGER DEFAULT 1
+  )`);
+
+  // Lotes de mercadería recibida con su fecha de vencimiento.
+  await run(env, `CREATE TABLE IF NOT EXISTS vencimientos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_ingreso TEXT,
+    sku TEXT,
+    producto TEXT,
+    categoria TEXT,
+    unidad TEXT,
+    lote TEXT,
+    cantidad REAL,
+    fecha_vencimiento TEXT,
+    estado TEXT,
+    fecha_revision TEXT,
+    revisado_por TEXT
+  )`);
+
+  // Productos pedidos a proveedor que aún no han llegado (para el módulo Armar pedido).
+  await run(env, `CREATE TABLE IF NOT EXISTS pedidos_pendientes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT,
+    sku TEXT,
+    barcode TEXT,
+    producto TEXT,
+    proveedor TEXT,
+    cantidad REAL
+  )`);
+
+  // Registro histórico de acciones (auditoría), útil para depurar y para el historial.
+  await run(env, `CREATE TABLE IF NOT EXISTS auditoria (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT,
+    accion TEXT,
+    sku TEXT,
+    producto TEXT,
+    categoria TEXT,
+    id_loyverse TEXT,
+    stock REAL,
+    motivo TEXT,
+    responsable TEXT
+  )`);
+
+  // Configuración simple clave/valor (aquí se guarda el store_id de Loyverse una vez
+  // detectado automáticamente, para no tener que volver a consultarlo cada vez).
+  await run(env, `CREATE TABLE IF NOT EXISTS config (
+    clave TEXT PRIMARY KEY,
+    valor TEXT
+  )`);
+}
+
+// ============================================================
+//  FECHA/HORA — Cloudflare Workers corre en UTC; estas funciones
+//  traducen a la hora real de Santiago para que fechas de ingreso
+//  y auditoría coincidan con lo que el equipo ve en la tienda.
+// ============================================================
+function chileNowParts() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Santiago", day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false
+  }).formatToParts(new Date());
+  const get = t => parts.find(p => p.type === t).value;
+  return { dd: get("day"), mm: get("month"), yyyy: get("year"), hh: get("hour"), mi: get("minute") };
+}
+function fechaDDMMAAAA() {
+  const p = chileNowParts();
+  return p.dd + "/" + p.mm + "/" + p.yyyy;
+}
+function fechaHoraDDMMAAAA() {
+  const p = chileNowParts();
+  return p.dd + "/" + p.mm + "/" + p.yyyy + " " + p.hh + ":" + p.mi;
+}
+// Valida "DD/MM/AAAA" y devuelve un objeto Date, o null si no es válida.
+function parseFechaDDMMAAAA(s) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(s || "").trim());
+  if (!m) return null;
+  const d = new Date(+m[3], +m[2] - 1, +m[1]);
+  if (d.getFullYear() !== +m[3] || d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[1]) return null; // rechaza 31/02, etc.
+  return d;
+}
+
+
+// ============================================================
+//  PRUEBA DE CONEXIÓN A LOYVERSE
+//  Trae los datos de la(s) tienda(s) asociadas al token — si esto
+//  responde bien, confirma que LOYVERSE_API_TOKEN es válido.
+// ============================================================
+async function probarLoyverse(env) {
+  const res = await fetch(LOYVERSE_API + "/stores", {
+    headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN }
+  });
+  if (!res.ok) {
+    const texto = await res.text();
+    throw new Error("Loyverse respondió " + res.status + ": " + texto);
+  }
+  return res.json();
+}
+
+// ============================================================
+//  LOYVERSE — helpers genéricos de lectura
+// ============================================================
+// GET simple (una página), con reintento automático si Loyverse responde
+// "too many requests" (429) o un error temporal de servidor (5xx).
+async function loyverseGet(env, endpoint, params, intento = 0) {
+  const qs = new URLSearchParams();
+  Object.keys(params || {}).forEach(k => {
+    if (params[k] !== null && params[k] !== undefined && params[k] !== "") qs.set(k, params[k]);
+  });
+  const res = await fetch(LOYVERSE_API + endpoint + "?" + qs.toString(), {
+    headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN }
+  });
+  if (res.status === 429 || res.status >= 500) {
+    if (intento >= 5) throw new Error(endpoint + " HTTP " + res.status + " tras 5 reintentos");
+    await new Promise(r => setTimeout(r, 1500 * (intento + 1)));
+    return loyverseGet(env, endpoint, params, intento + 1);
+  }
+  if (!res.ok) throw new Error(endpoint + " HTTP " + res.status + ": " + (await res.text()).slice(0, 200));
+  return res.json();
+}
+
+// GET con paginación automática (sigue el "cursor" hasta traer todo).
+async function loyverseGetAll(env, endpoint, key, extra) {
+  let all = [], cursor = null;
+  do {
+    const params = Object.assign({ limit: PAGE }, extra || {});
+    if (cursor) params.cursor = cursor;
+    const data = await loyverseGet(env, endpoint, params);
+    all = all.concat(data[key] || []);
+    cursor = data.cursor || null;
+  } while (cursor);
+  return all;
+}
+
+// ============================================================
+//  LOYVERSE — helpers de ESCRITURA (afectan datos reales de la tienda)
+// ============================================================
+async function loyversePost(env, endpoint, body) {
+  const res = await fetch(LOYVERSE_API + endpoint, {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN, "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(endpoint + " HTTP " + res.status + ": " + (await res.text()).slice(0, 200));
+  return res.json();
+}
+
+// Stock fresco de UNA variante — se usa antes de sumar/restar, para no trabajar
+// con un valor cacheado y viejo de D1 que podría causar descuadres.
+async function stockFrescoDeVariante(env, storeId, variantId) {
+  const data = await loyverseGet(env, "/inventory", { store_id: storeId, variant_ids: variantId });
+  const nivel = (data.inventory_levels || []).find(x => x.variant_id === variantId);
+  return nivel ? nivel.in_stock : null;
+}
+
+// Suma cantidad al stock actual de un producto (lee fresco de Loyverse, escribe el
+// nuevo total, y refleja el cambio también en la caché D1 `productos`).
+async function sumarStockLoyverse(env, productoRow, cantidad) {
+  if (!productoRow.track_stock) return { ok: false, motivo: "producto sin seguimiento de inventario ('Activar inventario' primero)" };
+  if (!productoRow.variant_id) return { ok: false, motivo: "falta variant_id (vuelve a sincronizar el catálogo)" };
+
+  const { storeId } = await obtenerStoreId(env);
+  const stockActual = await stockFrescoDeVariante(env, storeId, productoRow.variant_id);
+  if (stockActual == null) return { ok: false, motivo: "Loyverse no devolvió inventario para este producto" };
+
+  const nuevoStock = Math.round((stockActual + cantidad) * 1000) / 1000;
+  await loyversePost(env, "/inventory", {
+    inventory_levels: [{ variant_id: productoRow.variant_id, store_id: storeId, stock_after: nuevoStock }]
+  });
+  await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", nuevoStock, productoRow.sku);
+  return { ok: true, antes: stockActual, despues: nuevoStock };
+}
+
+// Actualiza costo y/o precio de venta de un producto en Loyverse. Loyverse requiere
+// reenviar el ítem completo con la variante modificada (no acepta un PATCH parcial
+// de un solo campo), así que primero se lee el ítem entero y se modifica en memoria.
+async function actualizarPrecioCostoLoyverse(env, idLoyverse, variantId, precioNuevo, costoNuevo) {
+  const { storeId } = await obtenerStoreId(env);
+  const item = await loyverseGet(env, "/items/" + idLoyverse, {});
+  const variantes = (item.variants || []).map(v => {
+    if (v.variant_id !== variantId) return v;
+    const copia = Object.assign({}, v);
+    if (costoNuevo != null) copia.cost = costoNuevo;
+    if (precioNuevo != null) {
+      copia.default_price = precioNuevo;
+      // Loyverse usa el precio a nivel de TIENDA (stores[].price) para vender, no
+      // default_price, cuando existe un override "FIXED" para esa tienda — que es
+      // justo lo que se crea en accionCrearProducto. Si solo se actualiza
+      // default_price, el precio de venta real en caja no cambia. Por eso hay que
+      // tocar también la entrada de stores[] correspondiente a esta tienda.
+      const stores = (v.stores || []).map(s =>
+        s.store_id === storeId ? Object.assign({}, s, { price: precioNuevo, pricing_type: "FIXED" }) : s
+      );
+      if (!stores.some(s => s.store_id === storeId)) {
+        stores.push({ store_id: storeId, price: precioNuevo, pricing_type: "FIXED", available_for_sale: true });
+      }
+      copia.stores = stores;
+    }
+    return copia;
+  });
+  await loyversePost(env, "/items", Object.assign({}, item, { variants: variantes }));
+}
+
+
+//  Si la cuenta tiene más de una tienda, se usa la primera y se
+//  avisa en la respuesta (por si en el futuro hace falta elegir).
+// ============================================================
+async function obtenerStoreId(env) {
+  const guardado = await get(env, "SELECT valor FROM config WHERE clave = 'store_id'");
+  if (guardado && guardado.valor) return { storeId: guardado.valor, detectadoAhora: false, totalTiendas: null };
+
+  const data = await probarLoyverse(env);
+  const tiendas = data.stores || [];
+  if (!tiendas.length) throw new Error("Loyverse no devolvió ninguna tienda para este token.");
+
+  const storeId = tiendas[0].id;
+  await run(env, "INSERT INTO config (clave, valor) VALUES ('store_id', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor", storeId);
+  return { storeId, detectadoAhora: true, totalTiendas: tiendas.length, nombreTienda: tiendas[0].name };
+}
+
+// ============================================================
+//  SINCRONIZAR CATÁLOGO COMPLETO (Loyverse → D1)
+//  Trae items + categorías + inventario y guarda/actualiza la
+//  tabla `productos`. Proveedor y Sector son campos propios de la
+//  app (no existen en Loyverse) — nunca se pisan aquí: si el
+//  producto ya existía, conservan el valor que ya tenían en D1.
+// ============================================================
+async function sincronizarCatalogo(env) {
+  const { storeId } = await obtenerStoreId(env);
+
+  const [items, categorias, inventario] = await Promise.all([
+    loyverseGetAll(env, "/items", "items"),
+    loyverseGetAll(env, "/categories", "categories"),
+    loyverseGetAll(env, "/inventory", "inventory_levels", { store_id: storeId })
+  ]);
+
+  const mapaCategorias = {};
+  categorias.forEach(c => { mapaCategorias[c.id] = c.name; });
+
+  const mapaStock = {};
+  inventario.forEach(x => { mapaStock[x.variant_id] = x.in_stock; });
+
+  const stmts = [];
+  const saltados = [];
+  items.forEach(it => {
+    const v = (it.variants && it.variants[0]) ? it.variants[0] : null;
+    if (!v || !v.sku) {
+      saltados.push(it.item_name || "(sin nombre)");
+      return;
+    }
+    let precio = v.default_price;
+    if (v.stores && v.stores[0] && v.stores[0].price != null) precio = v.stores[0].price;
+    const stock = mapaStock[v.variant_id] != null ? mapaStock[v.variant_id] : null;
+    const peso = !!(it.sold_by_weight || it.soldByWeight);
+
+    // ON CONFLICT: si el sku ya existe en D1, NO se toca `proveedor` ni `sector`
+    // (columnas que esta sentencia ni siquiera incluye) — solo se refrescan los
+    // datos que sí vienen de Loyverse.
+    stmts.push(env.DB.prepare(
+      `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, stock, sold_by_weight, track_stock)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(sku) DO UPDATE SET
+         id_loyverse=excluded.id_loyverse, variant_id=excluded.variant_id, nombre=excluded.nombre,
+         categoria=excluded.categoria, barcode=excluded.barcode, precio=excluded.precio,
+         costo=excluded.costo, stock=excluded.stock, sold_by_weight=excluded.sold_by_weight,
+         track_stock=excluded.track_stock`
+    ).bind(v.sku, it.id, v.variant_id, it.item_name, mapaCategorias[it.category_id] || "SIN CATEGORÍA",
+      v.barcode || "", precio || 0, v.cost || 0, stock, peso ? 1 : 0, it.track_stock ? 1 : 0));
+  });
+
+  await batchRun(env, stmts, 500);
+
+  return { totalLoyverse: items.length, guardados: stmts.length, saltados: saltados.length, ejemplosSaltados: saltados.slice(0, 10) };
+}
+
+// ============================================================
+//  CATÁLOGO COMPACTO (D1 → frontend)
+//  Se usa para cargar TODOS los productos una sola vez al abrir
+//  la app (igual que Marín) y buscar después en el teléfono sin
+//  gastar datos ni esperar al servidor en cada letra escrita.
+//  Los nombres de campo van abreviados a propósito (ref, prov,
+//  coste...) para que el JSON pese menos en 3G/4G.
+// ============================================================
+async function catalogoCompacto(env) {
+  const { results } = await env.DB.prepare(
+    `SELECT sku, nombre, categoria, proveedor, barcode, precio, costo, stock, sold_by_weight, track_stock
+     FROM productos ORDER BY nombre`
+  ).all();
+
+  return results.map(p => ({
+    ref: p.sku,
+    nombre: p.nombre,
+    cat: p.categoria || "",
+    prov: p.proveedor || "SIN PROVEEDOR",
+    barcode: p.barcode || "",
+    precio: p.precio || 0,
+    coste: p.costo || 0,
+    stock: p.stock,
+    peso: !!p.sold_by_weight,
+    track: !!p.track_stock
+  }));
+}
+
+
+// ============================================================
+//  RECIBIR MERCADERÍA — registra el lote (con o sin fecha de
+//  vencimiento), suma el stock en Loyverse, y opcionalmente
+//  actualiza costo/precio. Todo en un solo paso desde la app.
+// ============================================================
+async function accionLoteNuevo(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  if (!sku) throw new Error("Falta el SKU del producto");
+
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("Producto no encontrado en el catálogo local (sincroniza el catálogo si es reciente): " + sku);
+
+  const cantidad = Number(payload.cantidad) || 0;
+  const precioNuevo = payload.precio != null && payload.precio !== "" ? Number(payload.precio) : null;
+  const costoNuevo = payload.costo != null && payload.costo !== "" ? Number(payload.costo) : null;
+
+  // Cantidad 0 es válida SOLO si viene acompañada de un cambio de precio/costo — permite
+  // editar precio/costo de un producto ya creado sin recibir stock nuevo.
+  if (cantidad <= 0 && precioNuevo == null && costoNuevo == null) {
+    throw new Error("Indica una cantidad recibida, o un cambio de precio/costo");
+  }
+
+  const fechaTxt = String(payload.fechaVencimiento || "").trim();
+  const tieneFecha = fechaTxt !== "";
+  if (tieneFecha && !parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha de vencimiento inválida (usa DD/MM/AAAA)");
+
+  const unidad = it.sold_by_weight ? "kg" : "un";
+  const fechaIngreso = fechaDDMMAAAA();
+
+  const out = {
+    fecha: fechaIngreso, sku, nombre: it.nombre,
+    categoria: it.categoria, unidad, cantidad, fechaVencimiento: fechaTxt, nuevoStock: null
+  };
+
+  if (cantidad > 0) {
+    // 1) Registrar el lote de vencimiento (si trae fecha) — se guarda igual aunque no
+    //    tenga fecha, para dejar rastro de la recepción, con estado "Sin fecha". Se
+    //    omite por completo si no hubo recepción de stock (cantidad 0, solo edición
+    //    de precio/costo), para no dejar lotes fantasma en la tabla de vencimientos.
+    const insertRes = await run(env,
+      `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, fecha_revision, revisado_por)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      fechaIngreso, sku, it.nombre, it.categoria, unidad, payload.lote || "", cantidad,
+      fechaTxt, tieneFecha ? "Pendiente" : "Sin fecha", "", "");
+    out.filaIndex = insertRes.meta.last_row_id;
+
+    // 2) Sumar stock en Loyverse (el paso más importante — si falla, se avisa pero no
+    //    se corta el resto: el lote de vencimiento ya quedó guardado igual).
+    try {
+      const res = await sumarStockLoyverse(env, it, cantidad);
+      if (res.ok) {
+        out.nuevoStock = res.despues;
+        await run(env,
+          `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
+          fechaHoraDDMMAAAA(), "recepcion_stock", sku, it.nombre, it.categoria, it.id_loyverse, res.despues,
+          "Recepción de mercadería: +" + cantidad + " " + unidad + " (" + res.antes + " → " + res.despues + ")" +
+          (tieneFecha ? " · vence " + fechaTxt : ""), payload.responsable || "");
+      } else {
+        out.avisoStock = "⚠️ No se pudo sumar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+      }
+    } catch (e) {
+      out.avisoStock = "⚠️ No se pudo sumar el stock en Loyverse: " + e.message;
+    }
+  }
+
+  // 3) Costo y/o precio (opcional): mismo patrón seguro (leer completo → modificar →
+  //    reenviar) para no crear un producto nuevo ni perder otros campos de la variante.
+  if (precioNuevo != null || costoNuevo != null) {
+    if (!it.id_loyverse || !it.variant_id) {
+      out.avisoStock = (out.avisoStock ? out.avisoStock + " " : "") + "⚠️ No se pudo actualizar costo/precio: falta id de Loyverse.";
+    } else {
+      try {
+        await actualizarPrecioCostoLoyverse(env, it.id_loyverse, it.variant_id, precioNuevo, costoNuevo);
+        const sets = [], vals = [];
+        if (precioNuevo != null) { sets.push("precio = ?"); vals.push(precioNuevo); }
+        if (costoNuevo != null) { sets.push("costo = ?"); vals.push(costoNuevo); }
+        vals.push(sku);
+        await run(env, "UPDATE productos SET " + sets.join(", ") + " WHERE sku = ?", ...vals);
+        out.precioAplicado = precioNuevo != null ? precioNuevo : it.precio;
+        out.costoAplicado = costoNuevo != null ? costoNuevo : it.costo;
+        // Deja rastro en auditoría solo cuando es una edición SIN recepción de stock —
+        // el caso con stock ya queda registrado en el "recepcion_stock" del paso 2.
+        if (cantidad <= 0) {
+          const detalle = [];
+          if (precioNuevo != null) detalle.push("precio → $" + precioNuevo);
+          if (costoNuevo != null) detalle.push("costo → $" + costoNuevo);
+          await run(env,
+            `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+             VALUES (?,?,?,?,?,?,?,?,?)`,
+            fechaHoraDDMMAAAA(), "editar_precio_costo", sku, it.nombre, it.categoria, it.id_loyverse, null,
+            "Edición de " + detalle.join(" y "), payload.responsable || "");
+        }
+      } catch (e) {
+        out.avisoStock = (out.avisoStock ? out.avisoStock + " " : "") + "⚠️ Costo/precio no se pudo actualizar en Loyverse (" + e.message + ").";
+      }
+    }
+  }
+
+  return out;
+}
+
+// ============================================================
+//  ACTIVAR SEGUIMIENTO DE INVENTARIO
+//  Algunos productos en Loyverse se crearon sin "track_stock" —
+//  sin esto activado, Loyverse no permite sumar/restar stock.
+//  Se activa reenviando el ítem completo con track_stock=true.
+// ============================================================
+async function accionHabilitarTrackStock(env, payload) {
+  const sku = String((payload && payload.sku) || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("Producto no encontrado: " + sku);
+  if (it.track_stock) return { ok: true, yaEstaba: true };
+  if (!it.id_loyverse) throw new Error("Falta el id de Loyverse (vuelve a sincronizar el catálogo)");
+
+  const item = await loyverseGet(env, "/items/" + it.id_loyverse, {});
+  await loyversePost(env, "/items", Object.assign({}, item, { track_stock: true }));
+  await run(env, "UPDATE productos SET track_stock = 1, stock = COALESCE(stock, 0) WHERE sku = ?", sku);
+  return { ok: true, yaEstaba: false };
+}
+
+
+//  Confirmado contra la documentación/comportamiento real de la
+//  API de Loyverse: POST /items sin "id" crea un ítem nuevo (no
+//  existe un endpoint separado "crear producto" — es el mismo
+//  POST que se usa para actualizar, la diferencia es no mandar id).
+//  El SKU se asigna automáticamente (numérico correlativo de 5
+//  dígitos) para que el usuario no tenga que inventar uno.
+// ============================================================
+async function accionCrearProducto(env, payload) {
+  payload = payload || {};
+  const nombre = String(payload.nombre || "").trim();
+  if (!nombre) throw new Error("Falta el nombre del producto");
+
+  const barcode = String(payload.barcode || "").trim();
+  if (barcode) {
+    const dup = await get(env, "SELECT sku, nombre FROM productos WHERE barcode = ?", barcode);
+    if (dup) throw new Error("Ese código de barras ya está en uso por '" + dup.nombre + "' (SKU " + dup.sku + ")");
+  }
+
+  // Siguiente SKU numérico de 5 dígitos disponible, siguiendo la secuencia ya usada
+  // en el catálogo — solo mira SKUs que YA son de exactamente 5 dígitos, para no
+  // dispararse a un número absurdo si algún producto viejo usa el barcode como SKU.
+  const maxRow = await get(env,
+    "SELECT MAX(CAST(sku AS INTEGER)) as maxsku FROM productos WHERE LENGTH(sku) = 5 AND sku GLOB '[0-9][0-9][0-9][0-9][0-9]'");
+  let candidato = (maxRow && maxRow.maxsku ? maxRow.maxsku : 9999) + 1;
+  while (await get(env, "SELECT 1 FROM productos WHERE sku = ?", String(candidato))) candidato++;
+  let sku = String(candidato);
+
+  const precio = payload.precio != null && payload.precio !== "" ? Number(payload.precio) : 0;
+  const costo = payload.costo != null && payload.costo !== "" ? Number(payload.costo) : 0;
+  const trackStock = payload.trackStock !== false; // por defecto SÍ sigue inventario
+  const soldByWeight = !!payload.soldByWeight;
+
+  const { storeId } = await obtenerStoreId(env);
+  const nuevoItem = {
+    item_name: nombre,
+    track_stock: trackStock,
+    sold_by_weight: soldByWeight,
+    is_composite: false,
+    variants: [{
+      sku: sku, barcode: barcode, cost: costo, default_price: precio, default_pricing_type: "FIXED",
+      stores: [{ store_id: storeId, price: precio, pricing_type: "FIXED", available_for_sale: true }]
+    }]
+  };
+
+  // Reintenta con el siguiente SKU si Loyverse dice que ya existe (choque poco probable,
+  // pero posible si D1 quedó desactualizada respecto al catálogo real).
+  let creado = null, intentos = 0;
+  while (!creado) {
+    nuevoItem.variants[0].sku = sku;
+    nuevoItem.variants[0].stores[0].price = precio;
+    try {
+      creado = await loyversePost(env, "/items", nuevoItem);
+    } catch (e) {
+      const esDuplicado = /duplicate variant sku/i.test(e.message || "");
+      if (!esDuplicado || intentos >= 20) throw e;
+      intentos++; candidato++; sku = String(candidato);
+    }
+  }
+  const v = creado && creado.variants && creado.variants[0];
+  if (!v || !v.variant_id) throw new Error("Loyverse no devolvió la variante creada — no se pudo confirmar");
+
+  // Guarda en D1 (proveedor/sector quedan vacíos — se clasifican después desde la app).
+  await run(env,
+    `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, stock, sold_by_weight, track_stock)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    sku, creado.id, v.variant_id, nombre, "SIN CATEGORÍA", barcode, precio, costo, trackStock ? 0 : null, soldByWeight ? 1 : 0, trackStock ? 1 : 0);
+
+  await run(env,
+    `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    fechaHoraDDMMAAAA(), "crear_producto", sku, nombre, "", creado.id, trackStock ? 0 : null, "Producto creado desde la app", payload.responsable || "");
+
+  // Stock inicial opcional: usa el mismo camino de "recibir mercadería" si trae fecha de
+  // vencimiento (para que el lote quede registrado desde el arranque), o lo fija directo.
+  let stockFinal = trackStock ? 0 : null;
+  const stockInicial = Number(payload.stockInicial) || 0;
+  if (trackStock && stockInicial > 0) {
+    if (payload.fechaVencimiento) {
+      const r = await accionLoteNuevo(env, { sku, cantidad: stockInicial, fechaVencimiento: payload.fechaVencimiento });
+      stockFinal = r.nuevoStock != null ? r.nuevoStock : stockInicial;
+    } else {
+      await loyversePost(env, "/inventory", { inventory_levels: [{ variant_id: v.variant_id, store_id: storeId, stock_after: stockInicial }] });
+      await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", stockInicial, sku);
+      stockFinal = stockInicial;
+    }
+  }
+
+  return { sku, nombre, idLoyverse: creado.id, variantId: v.variant_id, precio, costo, stock: stockFinal, barcode, track: trackStock, peso: soldByWeight };
+}
+
+
+export default {
+  async fetch(request, env) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: CORS_HEADERS });
+    }
+
+    const url = new URL(request.url);
+    let action = url.searchParams.get("action");
+    let payload = null;
+
+    // Las acciones que ESCRIBEN datos (recibir mercadería, etc.) llegan por POST con
+    // un body JSON { action, payload } — las de solo lectura siguen usando GET.
+    if (request.method === "POST") {
+      try {
+        const body = await request.json();
+        action = body.action || action;
+        payload = body.payload || null;
+      } catch (e) {
+        return json({ ok: false, error: "Body inválido: se esperaba JSON" }, 400);
+      }
+    }
+
+    try {
+      // GET /?action=setup  →  crea las tablas D1 si no existen
+      if (action === "setup") {
+        await asegurarTablas(env);
+        return json({ ok: true, mensaje: "Tablas D1 verificadas/creadas correctamente." });
+      }
+
+      // GET /?action=test_loyverse  →  prueba que el token funcione
+      if (action === "test_loyverse") {
+        const data = await probarLoyverse(env);
+        return json({ ok: true, tiendas: data.stores || data });
+      }
+
+      // GET /?action=store_id  →  detecta (o confirma) el store_id guardado
+      if (action === "store_id") {
+        const info = await obtenerStoreId(env);
+        return json({ ok: true, ...info });
+      }
+
+      // GET /?action=reset_store_id  →  borra el store_id guardado (por si quedó mal
+      // detectado, ej. token equivocado apuntando a otra tienda). La próxima llamada a
+      // store_id o sync lo vuelve a detectar desde cero con el token que esté vigente.
+      if (action === "reset_store_id") {
+        await run(env, "DELETE FROM config WHERE clave = 'store_id'");
+        return json({ ok: true, mensaje: "store_id borrado. Se detectará de nuevo en la próxima sincronización." });
+      }
+
+      // GET /?action=sync  →  trae el catálogo completo de Loyverse y lo guarda en D1
+      if (action === "sync") {
+        const resultado = await sincronizarCatalogo(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=catalogo  →  devuelve TODO el catálogo compacto desde D1 (sin tocar
+      // Loyverse) — esto es lo que el frontend carga una vez al abrir la app.
+      if (action === "catalogo") {
+        const items = await catalogoCompacto(env);
+        return json({ ok: true, items, total: items.length });
+      }
+
+      // POST { action:'lote_nuevo', payload:{...} }  →  recibe mercadería: suma stock
+      // en Loyverse, registra el lote de vencimiento, y opcionalmente actualiza costo/precio.
+      if (action === "lote_nuevo") {
+        const resultado = await accionLoteNuevo(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'crear_producto', payload:{...} }  →  crea un producto nuevo en
+      // Loyverse (SKU asignado automáticamente) y lo guarda en D1.
+      if (action === "crear_producto") {
+        const resultado = await accionCrearProducto(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'habilitar_track_stock', payload:{sku} }  →  activa el seguimiento
+      // de inventario de un producto que se creó sin esa opción en Loyverse.
+      if (action === "habilitar_track_stock") {
+        const resultado = await accionHabilitarTrackStock(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // Sin acción reconocida: mensaje de bienvenida simple.
+      return json({
+        ok: true,
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo. POST: lote_nuevo, crear_producto, habilitar_track_stock",
+      });
+    } catch (e) {
+      return json({ ok: false, error: e.message }, 500);
+    }
+  }
+};
