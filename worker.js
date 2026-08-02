@@ -662,6 +662,9 @@ async function accionCrearProducto(env, payload) {
   const costo = payload.costo != null && payload.costo !== "" ? Number(payload.costo) : 0;
   const trackStock = payload.trackStock !== false; // por defecto SÍ sigue inventario
   const soldByWeight = !!payload.soldByWeight;
+  const activo = payload.activo !== false; // por defecto SÍ está a la venta (disponible en POS)
+  const quiereIva = payload.activarIva !== false; // por defecto SÍ intenta activar IVA (desmarcable para productos exentos)
+  const stockMinimo = (payload.stockMinimo != null && payload.stockMinimo !== "") ? Number(payload.stockMinimo) : null;
 
   const { storeId } = await obtenerStoreId(env);
 
@@ -669,15 +672,18 @@ async function accionCrearProducto(env, payload) {
   // se crea "sin impuesto" y hay que activarlo a mano en Loyverse cada vez. Si por algún
   // motivo no se puede identificar el impuesto (ej. no está configurado en Loyverse
   // Back Office todavía), NO se bloquea la creación del producto — se avisa aparte para
-  // que se active manualmente esta vez.
+  // que se active manualmente esta vez. Si el usuario desmarcó "IVA" a propósito (ej.
+  // producto exento), no se intenta activar ni se avisa nada.
   let ivaTaxId = null;
   let taxes = [];
   let avisoImpuesto = null;
-  try {
-    ivaTaxId = await obtenerIvaTaxId(env);
-    taxes = [{ id: ivaTaxId }];
-  } catch (e) {
-    avisoImpuesto = "⚠️ El producto se creó SIN impuesto activado (" + e.message + "). Actívalo a mano en Loyverse.";
+  if (quiereIva) {
+    try {
+      ivaTaxId = await obtenerIvaTaxId(env);
+      taxes = [{ id: ivaTaxId }];
+    } catch (e) {
+      avisoImpuesto = "⚠️ El producto se creó SIN impuesto activado (" + e.message + "). Actívalo a mano en Loyverse.";
+    }
   }
 
   const nuevoItem = {
@@ -688,7 +694,7 @@ async function accionCrearProducto(env, payload) {
     taxes: taxes,
     variants: [{
       sku: sku, barcode: barcode, cost: costo, default_price: precio, default_pricing_type: "FIXED",
-      stores: [{ store_id: storeId, price: precio, pricing_type: "FIXED", available_for_sale: true }]
+      stores: [{ store_id: storeId, price: precio, pricing_type: "FIXED", available_for_sale: activo }]
     }]
   };
 
@@ -742,20 +748,41 @@ async function accionCrearProducto(env, payload) {
 
   // Stock inicial opcional: usa el mismo camino de "recibir mercadería" si trae fecha de
   // vencimiento (para que el lote quede registrado desde el arranque), o lo fija directo.
+  // Stock mínimo (aviso de inventario bajo): campo aparte de Loyverse (`low_stock` a nivel
+  // de tienda/variante) — se manda best-effort, sin bloquear la creación si Loyverse lo
+  // rechaza por algún motivo (ej. cuenta sin ese plan/feature habilitado).
   let stockFinal = trackStock ? 0 : null;
   const stockInicial = Number(payload.stockInicial) || 0;
-  if (trackStock && stockInicial > 0) {
-    if (payload.fechaVencimiento) {
+  let avisoStockMinimo = null;
+  if (trackStock) {
+    if (stockInicial > 0 && payload.fechaVencimiento) {
       const r = await accionLoteNuevo(env, { sku, cantidad: stockInicial, fechaVencimiento: payload.fechaVencimiento });
       stockFinal = r.nuevoStock != null ? r.nuevoStock : stockInicial;
-    } else {
-      await loyversePost(env, "/inventory", { inventory_levels: [{ variant_id: v.variant_id, store_id: storeId, stock_after: stockInicial }] });
-      await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", stockInicial, sku);
-      stockFinal = stockInicial;
+      if (stockMinimo != null) {
+        try {
+          await loyversePost(env, "/inventory", { inventory_levels: [{ variant_id: v.variant_id, store_id: storeId, low_stock: stockMinimo }] });
+        } catch (e) {
+          avisoStockMinimo = "⚠️ No se pudo guardar el stock mínimo en Loyverse (" + e.message + ").";
+        }
+      }
+    } else if (stockInicial > 0 || stockMinimo != null) {
+      const nivel = { variant_id: v.variant_id, store_id: storeId, stock_after: stockInicial };
+      if (stockMinimo != null) nivel.low_stock = stockMinimo;
+      try {
+        await loyversePost(env, "/inventory", { inventory_levels: [nivel] });
+        await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", stockInicial, sku);
+        stockFinal = stockInicial;
+      } catch (e) {
+        if (stockMinimo != null && stockInicial === 0) {
+          avisoStockMinimo = "⚠️ No se pudo guardar el stock mínimo en Loyverse (" + e.message + ").";
+        } else {
+          throw e;
+        }
+      }
     }
   }
 
-  return { sku, nombre, idLoyverse: creado.id, variantId: v.variant_id, precio, costo, stock: stockFinal, barcode, track: trackStock, peso: soldByWeight, iva: ivaConfirmado, avisoImpuesto };
+  return { sku, nombre, idLoyverse: creado.id, variantId: v.variant_id, precio, costo, stock: stockFinal, barcode, track: trackStock, peso: soldByWeight, iva: ivaConfirmado, avisoImpuesto, avisoStockMinimo };
 }
 
 

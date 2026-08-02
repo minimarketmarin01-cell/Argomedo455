@@ -421,6 +421,34 @@ button{font-family:inherit}
       </div>
       <div id="cp-stock-total-hint" style="margin-top:6px;font-size:11.5px;color:var(--muted)"></div>
     </div>
+
+    <div class="field">
+      <label>Inventario bajo / stock mínimo <span style="text-transform:none;font-weight:400">(opcional)</span></label>
+      <input id="cp-stock-minimo" inputmode="numeric" placeholder="Ej: 5">
+      <div class="iva-info">Cuando el stock llegue a este número o menos, Loyverse genera la alerta de inventario bajo.</div>
+    </div>
+
+    <div class="field">
+      <label>Fecha de vencimiento <span style="text-transform:none;font-weight:400">(opcional)</span></label>
+      <div class="fecha-row" style="display:flex;gap:8px;align-items:center">
+        <input id="cp-fecha-dd" inputmode="numeric" placeholder="DD" maxlength="2" style="width:56px;text-align:center;height:44px;border:1.5px solid var(--line);border-radius:10px">
+        <span>/</span>
+        <input id="cp-fecha-mm" inputmode="numeric" placeholder="MM" maxlength="2" style="width:56px;text-align:center;height:44px;border:1.5px solid var(--line);border-radius:10px">
+        <span>/</span>
+        <input id="cp-fecha-aaaa" inputmode="numeric" placeholder="AAAA" maxlength="4" style="width:76px;text-align:center;height:44px;border:1.5px solid var(--line);border-radius:10px">
+      </div>
+      <div class="iva-info">Si la pones, el stock inicial queda registrado como lote y aparece en Vencimientos.</div>
+    </div>
+
+    <div class="field" style="display:flex;align-items:center;justify-content:space-between">
+      <label style="margin:0">IVA 19%</label>
+      <input type="checkbox" id="cp-activar-iva" checked style="width:22px;height:22px;accent-color:var(--verde)">
+    </div>
+
+    <div class="field" style="display:flex;align-items:center;justify-content:space-between">
+      <label style="margin:0">Producto activo (a la venta)</label>
+      <input type="checkbox" id="cp-activo" checked style="width:22px;height:22px;accent-color:var(--verde)">
+    </div>
   </div>
   <div class="ov-foot">
     <button class="btn-primary" id="cp-guardar">Crear producto en Loyverse</button>
@@ -1082,6 +1110,12 @@ function openCrearProducto(nombreSugerido, barcodeSugerido){
   document.getElementById('cp-stock').value='';
   document.getElementById('cp-unidades-caja').value='';
   document.getElementById('cp-stock-total-hint').textContent='';
+  document.getElementById('cp-stock-minimo').value='';
+  document.getElementById('cp-fecha-dd').value='';
+  document.getElementById('cp-fecha-mm').value='';
+  document.getElementById('cp-fecha-aaaa').value='';
+  document.getElementById('cp-activar-iva').checked=true;
+  document.getElementById('cp-activo').checked=true;
   cpSetPeso(false);
   cpSetIva('con');
   cpSetModo('unidad');
@@ -1239,6 +1273,11 @@ document.getElementById('cp-guardar').onclick=async()=>{
   const precio=Number(document.getElementById('cp-precio').value)||0;
   btn.disabled=true; btn.textContent='Creando…';
   try{
+    const dd=document.getElementById('cp-fecha-dd').value.trim();
+    const mm=document.getElementById('cp-fecha-mm').value.trim();
+    const aaaa=document.getElementById('cp-fecha-aaaa').value.trim();
+    const fechaVencimiento=(dd&&mm&&aaaa)?(dd.padStart(2,'0')+'/'+mm.padStart(2,'0')+'/'+aaaa):null;
+    const stockMinimoVal=document.getElementById('cp-stock-minimo').value.trim();
     const payload={
       nombre,
       barcode:document.getElementById('cp-barcode').value.trim(),
@@ -1246,7 +1285,11 @@ document.getElementById('cp-guardar').onclick=async()=>{
       precio:precio||'',
       stockInicial,
       soldByWeight:cpState.peso,
-      trackStock:true
+      trackStock:true,
+      activarIva:document.getElementById('cp-activar-iva').checked,
+      activo:document.getElementById('cp-activo').checked,
+      stockMinimo:stockMinimoVal||'',
+      fechaVencimiento
     };
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'crear_producto',payload})});
     const j=await res.json();
@@ -1258,6 +1301,7 @@ document.getElementById('cp-guardar').onclick=async()=>{
       });
       persist();
       showToast('✅ Producto creado: '+j.nombre+' (SKU '+j.sku+')');
+      if(j.avisoStockMinimo) setTimeout(()=>showToast(j.avisoStockMinimo),2600);
       cerrarModal('cp-ov');
       if(cpState.origen==='rc'){ openRecibir(); rcPick(j.sku); }
       // Si el IVA no quedó activado (ni siquiera tras el reintento automático del
