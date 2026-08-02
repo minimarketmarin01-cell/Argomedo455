@@ -73,6 +73,13 @@ button{font-family:inherit}
 
 /* ===== Resumen del catálogo cargado ===== */
 .stats-row{display:flex;gap:8px;padding:0 16px;max-width:520px;margin:0 auto 4px}
+
+/* Botón "Sincronizar con Loyverse" */
+.sync-row{padding:0 16px;max-width:520px;margin:0 auto 10px;display:flex;flex-direction:column;gap:4px}
+.sync-btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;border-radius:12px;border:1.5px solid var(--line);background:#fff;color:var(--text);font-weight:700;font-size:13px;cursor:pointer;width:100%}
+.sync-btn:disabled{opacity:.65;cursor:default}
+.sync-btn .spin{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--cielo);border-radius:50%;flex:none;animation:spin .8s linear infinite}
+.sync-last{font-size:10.5px;color:var(--muted);text-align:center}
 .stat{flex:1;background:var(--card2);border:1px solid var(--line2);border-radius:12px;padding:10px 12px}
 .stat .n{font-family:'JetBrains Mono';font-weight:700;font-size:18px;color:var(--cielo-d)}
 .stat .l{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.02em;margin-top:2px}
@@ -208,6 +215,14 @@ button{font-family:inherit}
 <div class="stats-row hidden" id="stats-row">
   <div class="stat"><div class="n mono" id="stat-total">—</div><div class="l">Productos</div></div>
   <div class="stat"><div class="n mono" id="stat-sinprov">—</div><div class="l">Sin proveedor</div></div>
+</div>
+
+<!-- Sincroniza manualmente el catálogo D1 con Loyverse (trae altas/bajas/cambios de precio) -->
+<div class="sync-row hidden" id="sync-row">
+  <button class="sync-btn" id="btn-sync-loyverse" type="button">
+    <span id="sync-ico">🔄</span><span id="sync-txt">Sincronizar con Loyverse</span>
+  </button>
+  <div class="sync-last" id="sync-last"></div>
 </div>
 
 <div class="menu">
@@ -500,7 +515,59 @@ function actualizarStats(){
   document.getElementById('stat-total').textContent=total;
   document.getElementById('stat-sinprov').textContent=sinProv;
   document.getElementById('stats-row').classList.remove('hidden');
+  document.getElementById('sync-row').classList.remove('hidden');
+  actualizarUltimoSync();
 }
+
+// ============================================================
+//  SINCRONIZAR CON LOYVERSE (manual, a demanda)
+//  Trae altas/bajas/cambios de precio desde Loyverse hacia D1, y
+//  luego recarga el catálogo local con lo que quedó guardado.
+// ============================================================
+function actualizarUltimoSync(){
+  const el=document.getElementById('sync-last');
+  const raw=localStorage.getItem('cumpas_last_sync');
+  if(!raw){ el.textContent='Nunca sincronizado manualmente'; return; }
+  const d=new Date(raw);
+  const ahora=new Date();
+  const minutos=Math.round((ahora-d)/60000);
+  let cuando;
+  if(minutos<1) cuando='hace un momento';
+  else if(minutos<60) cuando='hace '+minutos+' min';
+  else if(minutos<1440) cuando='hace '+Math.round(minutos/60)+' h';
+  else cuando='hace '+Math.round(minutos/1440)+' días';
+  el.textContent='Última sincronización: '+cuando;
+}
+
+async function sincronizarConLoyverse(){
+  const btn=document.getElementById('btn-sync-loyverse');
+  const ico=document.getElementById('sync-ico');
+  const txt=document.getElementById('sync-txt');
+  btn.disabled=true;
+  ico.outerHTML='<span class="spin" id="sync-ico"></span>';
+  txt.textContent='Sincronizando…';
+  try{
+    const res=await fetch(SYNC_URL+'?action=sync');
+    const j=await res.json();
+    if(!j||!j.ok) throw new Error((j&&j.error)||'Respuesta inválida del servidor');
+    localStorage.setItem('cumpas_last_sync', new Date().toISOString());
+    await cargarCatalogo(true);
+    let msg='✓ Sincronizado · '+(j.guardados||0)+' productos';
+    if(j.eliminados&&j.eliminados.total>0) msg+=' · '+j.eliminados.total+' eliminado(s)';
+    showToast(msg);
+    if(j.eliminados&&j.eliminados.abortado){
+      showToast('⚠️ '+j.eliminados.motivoAborto);
+    }
+  }catch(e){
+    showToast('❌ No se pudo sincronizar: '+e.message);
+  }finally{
+    document.getElementById('sync-ico').outerHTML='<span id="sync-ico">🔄</span>';
+    document.getElementById('sync-txt').textContent='Sincronizar con Loyverse';
+    btn.disabled=false;
+    actualizarUltimoSync();
+  }
+}
+document.getElementById('btn-sync-loyverse').onclick=sincronizarConLoyverse;
 
 async function cargarCatalogo(silencioso){
   const banner=document.getElementById('load-banner');
