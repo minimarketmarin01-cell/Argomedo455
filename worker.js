@@ -335,6 +335,7 @@ async function obtenerIvaTaxId(env) {
 //  producto ya existía, conservan el valor que ya tenían en D1.
 // ============================================================
 async function sincronizarCatalogo(env) {
+  await asegurarTablas(env); // por si la columna con_iva u otra migración aún no se aplicó
   const { storeId } = await obtenerStoreId(env);
 
   const [items, categorias, inventario] = await Promise.all([
@@ -454,6 +455,7 @@ async function sincronizarCatalogo(env) {
 //  coste...) para que el JSON pese menos en 3G/4G.
 // ============================================================
 async function catalogoCompacto(env) {
+  await asegurarTablas(env); // por si la columna con_iva u otra migración aún no se aplicó
   const { results } = await env.DB.prepare(
     `SELECT sku, nombre, categoria, proveedor, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva
      FROM productos ORDER BY nombre`
