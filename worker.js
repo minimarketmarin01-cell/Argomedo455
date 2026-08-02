@@ -136,6 +136,25 @@ async function asegurarTablas(env) {
   } catch (e) {
     // ya existía la columna — normal en ejecuciones posteriores a la primera.
   }
+
+  // Migración: columna sector (ubicación física — góndola/bodega/refrigerador).
+  try {
+    await run(env, `ALTER TABLE productos ADD COLUMN sector TEXT`);
+  } catch (e) {
+    // ya existía.
+  }
+
+  // Catálogos reutilizables de proveedores y sectores — permiten buscar y crear
+  // nuevos registros desde el formulario sin salir de él, y que queden disponibles
+  // para elegir la próxima vez (Módulo 3: Proveedores y sectores).
+  await run(env, `CREATE TABLE IF NOT EXISTS proveedores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT UNIQUE
+  )`);
+  await run(env, `CREATE TABLE IF NOT EXISTS sectores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT UNIQUE
+  )`);
 }
 
 // ============================================================
@@ -459,7 +478,7 @@ async function sincronizarCatalogo(env) {
 async function catalogoCompacto(env) {
   await asegurarTablas(env); // por si la columna con_iva u otra migración aún no se aplicó
   const { results } = await env.DB.prepare(
-    `SELECT sku, nombre, categoria, proveedor, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva
+    `SELECT sku, nombre, categoria, proveedor, sector, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva
      FROM productos ORDER BY nombre`
   ).all();
 
@@ -468,6 +487,7 @@ async function catalogoCompacto(env) {
     nombre: p.nombre,
     cat: p.categoria || "",
     prov: p.proveedor || "SIN PROVEEDOR",
+    sector: p.sector || "",
     barcode: p.barcode || "",
     precio: p.precio || 0,
     coste: p.costo || 0,
@@ -495,11 +515,13 @@ async function accionLoteNuevo(env, payload) {
   const cantidad = Number(payload.cantidad) || 0;
   const precioNuevo = payload.precio != null && payload.precio !== "" ? Number(payload.precio) : null;
   const costoNuevo = payload.costo != null && payload.costo !== "" ? Number(payload.costo) : null;
+  const proveedorNuevo = payload.proveedor != null ? String(payload.proveedor).trim() : null;
+  const sectorNuevo = payload.sector != null ? String(payload.sector).trim() : null;
 
-  // Cantidad 0 es válida SOLO si viene acompañada de un cambio de precio/costo — permite
-  // editar precio/costo de un producto ya creado sin recibir stock nuevo.
-  if (cantidad <= 0 && precioNuevo == null && costoNuevo == null) {
-    throw new Error("Indica una cantidad recibida, o un cambio de precio/costo");
+  // Cantidad 0 es válida SOLO si viene acompañada de un cambio de precio/costo/proveedor/
+  // sector — permite editar esos campos de un producto ya creado sin recibir stock nuevo.
+  if (cantidad <= 0 && precioNuevo == null && costoNuevo == null && proveedorNuevo == null && sectorNuevo == null) {
+    throw new Error("Indica una cantidad recibida, o un cambio de precio/costo/proveedor/sector");
   }
 
   const fechaTxt = String(payload.fechaVencimiento || "").trim();
@@ -579,7 +601,103 @@ async function accionLoteNuevo(env, payload) {
     }
   }
 
+  // 4) Proveedor y/o sector (opcional): son campos solo locales (no existen en Loyverse),
+  //    así que se actualizan directo en D1 sin tocar nada más del producto. Si el valor
+  //    es nuevo, queda guardado también en el catálogo reutilizable para la próxima vez.
+  if (proveedorNuevo != null || sectorNuevo != null) {
+    const sets = [], vals = [];
+    if (proveedorNuevo != null) { sets.push("proveedor = ?"); vals.push(proveedorNuevo || null); }
+    if (sectorNuevo != null) { sets.push("sector = ?"); vals.push(sectorNuevo || null); }
+    vals.push(sku);
+    await run(env, "UPDATE productos SET " + sets.join(", ") + " WHERE sku = ?", ...vals);
+    if (proveedorNuevo) await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedorNuevo);
+    if (sectorNuevo) await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sectorNuevo);
+    out.proveedorAplicado = proveedorNuevo != null ? proveedorNuevo : it.proveedor;
+    out.sectorAplicado = sectorNuevo != null ? sectorNuevo : it.sector;
+  }
+
   return out;
+}
+
+// ============================================================
+//  AJUSTE MANUAL DE STOCK — para corregir errores (conteo,
+//  ingreso duplicado, merma, etc.) sin pasar por "recepción".
+//  Queda registrado en `auditoria` con todos los datos exigidos:
+//  fecha, responsable, motivo, stock anterior, ajuste y stock final.
+// ============================================================
+async function accionAjustarStock(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  if (!sku) throw new Error("Falta el SKU del producto");
+
+  const cantidad = Number(payload.cantidad);
+  if (!cantidad) throw new Error("Indica una cantidad de ajuste distinta de 0 (positiva para sumar, negativa para restar)");
+
+  const motivo = String(payload.motivo || "").trim();
+  if (!motivo) throw new Error("Indica el motivo del ajuste");
+
+  const responsable = String(payload.responsable || "").trim();
+  if (!responsable) throw new Error("Indica el usuario responsable del ajuste");
+
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("Producto no encontrado en el catálogo local: " + sku);
+
+  const res = await sumarStockLoyverse(env, it, cantidad);
+  if (!res.ok) throw new Error("No se pudo ajustar el stock en Loyverse (" + res.motivo + ")");
+
+  const fecha = fechaHoraDDMMAAAA();
+  await run(env,
+    `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    fecha, "ajuste_stock", sku, it.nombre, it.categoria, it.id_loyverse, res.despues,
+    motivo + " · Stock anterior: " + res.antes + " · Ajuste: " + (cantidad > 0 ? "+" : "") + cantidad + " · Stock final: " + res.despues,
+    responsable);
+
+  return { sku, nombre: it.nombre, fecha, stockAnterior: res.antes, cantidadAjustada: cantidad, stockFinal: res.despues, motivo, responsable };
+}
+
+// ============================================================
+//  HISTORIAL DE UN PRODUCTO — últimos movimientos de auditoría
+//  (recepciones, ajustes, ediciones de precio/costo) para mostrar
+//  en "Recibir productos" y permitir revisar qué pasó y quién lo hizo.
+// ============================================================
+async function historialProducto(env, sku) {
+  const { results } = await env.DB.prepare(
+    "SELECT fecha, accion, stock, motivo, responsable FROM auditoria WHERE sku = ? ORDER BY id DESC LIMIT 30"
+  ).bind(sku).all();
+  return results;
+}
+
+// ============================================================
+//  PROVEEDORES Y SECTORES — catálogos reutilizables para el
+//  buscador con creación rápida (Módulo 3). Se combinan con los
+//  valores ya usados en `productos` por si algún producto viejo
+//  trae un proveedor/sector que todavía no está en el catálogo.
+// ============================================================
+async function catalogoProveedoresSectores(env) {
+  const [provLookup, provProductos, secLookup, secProductos] = await Promise.all([
+    env.DB.prepare("SELECT nombre FROM proveedores").all(),
+    env.DB.prepare("SELECT DISTINCT proveedor as nombre FROM productos WHERE proveedor IS NOT NULL AND proveedor != ''").all(),
+    env.DB.prepare("SELECT nombre FROM sectores").all(),
+    env.DB.prepare("SELECT DISTINCT sector as nombre FROM productos WHERE sector IS NOT NULL AND sector != ''").all(),
+  ]);
+  const proveedores = [...new Set([...provLookup.results.map(r => r.nombre), ...provProductos.results.map(r => r.nombre)])].sort((a, b) => a.localeCompare(b, "es"));
+  const sectores = [...new Set([...secLookup.results.map(r => r.nombre), ...secProductos.results.map(r => r.nombre)])].sort((a, b) => a.localeCompare(b, "es"));
+  return { proveedores, sectores };
+}
+
+async function accionCrearProveedor(env, payload) {
+  const nombre = String((payload || {}).nombre || "").trim();
+  if (!nombre) throw new Error("Falta el nombre del proveedor");
+  await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", nombre);
+  return { nombre };
+}
+
+async function accionCrearSector(env, payload) {
+  const nombre = String((payload || {}).nombre || "").trim();
+  if (!nombre) throw new Error("Falta el nombre del sector");
+  await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", nombre);
+  return { nombre };
 }
 
 // ============================================================
@@ -673,6 +791,8 @@ async function accionCrearProducto(env, payload) {
   const activo = payload.activo !== false; // por defecto SÍ está a la venta (disponible en POS)
   const quiereIva = payload.activarIva !== false; // por defecto SÍ intenta activar IVA (desmarcable para productos exentos)
   const stockMinimo = (payload.stockMinimo != null && payload.stockMinimo !== "") ? Number(payload.stockMinimo) : null;
+  const proveedor = String(payload.proveedor || "").trim();
+  const sector = String(payload.sector || "").trim();
 
   const { storeId } = await obtenerStoreId(env);
 
@@ -743,11 +863,14 @@ async function accionCrearProducto(env, payload) {
     }
   }
 
-  // Guarda en D1 (proveedor/sector quedan vacíos — se clasifican después desde la app).
+  // Guarda en D1 (categoría queda vacía — se clasifica después desde la app; proveedor
+  // y sector se guardan si vinieron del formulario de Crear producto).
   await run(env,
-    `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    sku, creado.id, v.variant_id, nombre, "SIN CATEGORÍA", barcode, precio, costo, trackStock ? 0 : null, soldByWeight ? 1 : 0, trackStock ? 1 : 0, ivaConfirmado ? 1 : 0);
+    `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, proveedor, sector, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sku, creado.id, v.variant_id, nombre, "SIN CATEGORÍA", proveedor || null, sector || null, barcode, precio, costo, trackStock ? 0 : null, soldByWeight ? 1 : 0, trackStock ? 1 : 0, ivaConfirmado ? 1 : 0);
+  if (proveedor) await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedor);
+  if (sector) await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sector);
 
   await run(env,
     `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
@@ -892,10 +1015,44 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'ajustar_stock', payload:{sku,cantidad,motivo,responsable} }  →
+      // corrige el stock a mano (conteo, merma, duplicado) y deja registro en auditoría.
+      if (action === "ajustar_stock") {
+        const resultado = await accionAjustarStock(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=historial_producto&sku=XXXXX  →  últimos movimientos (recepciones,
+      // ajustes, ediciones) de un producto, para mostrar el historial en la app.
+      if (action === "historial_producto") {
+        const sku = String(url.searchParams.get("sku") || "").trim();
+        if (!sku) return json({ ok: false, error: "Falta el parámetro sku" }, 400);
+        const historial = await historialProducto(env, sku);
+        return json({ ok: true, historial });
+      }
+
+      // GET /?action=proveedores_sectores  →  catálogos para el buscador de Proveedor/Sector.
+      if (action === "proveedores_sectores") {
+        const r = await catalogoProveedoresSectores(env);
+        return json({ ok: true, ...r });
+      }
+
+      // POST { action:'crear_proveedor', payload:{nombre} }
+      if (action === "crear_proveedor") {
+        const resultado = await accionCrearProveedor(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'crear_sector', payload:{nombre} }
+      if (action === "crear_sector") {
+        const resultado = await accionCrearSector(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, historial_producto, proveedores_sectores. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);

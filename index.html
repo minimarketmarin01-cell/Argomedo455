@@ -256,6 +256,14 @@ button{font-family:inherit}
   <div class="ov-body">
 
     <div class="field">
+      <label>¿Qué quieres hacer?</label>
+      <div class="toggle-row">
+        <button type="button" class="toggle-btn active" id="rc-accion-recibir" data-accion="recibir">📦 Recibir mercadería</button>
+        <button type="button" class="toggle-btn" id="rc-accion-ajustar" data-accion="ajustar">🛠️ Ajustar stock</button>
+      </div>
+    </div>
+
+    <div class="field">
       <label>Producto</label>
       <div class="search-row">
         <input id="rc-search" placeholder="Nombre, SKU o código…" autocomplete="off">
@@ -268,7 +276,40 @@ button{font-family:inherit}
         <div class="stock" id="rc-stock">Stock actual: —</div>
         <button class="btn-secondary hidden" id="rc-activar-inv" style="margin-top:10px;color:var(--cielo-d);border-color:var(--cielo)" type="button">🔓 Activar inventario para este producto</button>
         <button class="btn-secondary hidden" id="rc-activar-iva" style="margin-top:10px;color:#b45309;border-color:#f0c987" type="button">🧾 Activar IVA para este producto</button>
+        <button class="btn-secondary" id="rc-ver-historial" style="margin-top:10px" type="button">🕘 Ver historial de este producto</button>
+        <div id="rc-historial-box" class="hidden" style="margin-top:10px;max-height:180px;overflow-y:auto"></div>
       </div>
+    </div>
+
+    <div class="field" id="rc-provsector-field" style="display:none">
+      <label>Proveedor</label>
+      <input id="rc-proveedor" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
+      <div class="results" id="rc-proveedor-results"></div>
+      <label style="margin-top:10px">Sector <span style="text-transform:none;font-weight:400">(góndola, bodega, refrigerador…)</span></label>
+      <input id="rc-sector" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
+      <div class="results" id="rc-sector-results"></div>
+    </div>
+
+    <div class="field" id="rc-ajuste-field" style="display:none">
+      <label>Ajuste de stock <span style="text-transform:none;font-weight:400">(+ para sumar, − para restar)</span></label>
+      <div class="qty-row">
+        <button class="qty-btn" id="rc-ajuste-menos" type="button">−</button>
+        <input id="rc-ajuste-cantidad" inputmode="decimal" placeholder="0">
+        <span id="rc-ajuste-unidad-lbl" style="min-width:34px;text-align:center;color:var(--muted);font-weight:700;font-size:12px">u</span>
+        <button class="qty-btn" id="rc-ajuste-mas" type="button">+</button>
+      </div>
+      <label style="margin-top:10px">Motivo del ajuste</label>
+      <select id="rc-ajuste-motivo" style="height:44px;border:1.5px solid var(--line);border-radius:10px;padding:0 10px;width:100%;background:#fff;color:var(--text)">
+        <option value="">Elige un motivo…</option>
+        <option>Conteo de inventario</option>
+        <option>Merma / producto dañado</option>
+        <option>Ingreso duplicado</option>
+        <option>Error de digitación</option>
+        <option>Otro</option>
+      </select>
+      <input id="rc-ajuste-motivo-otro" class="hidden" placeholder="Detalla el motivo…" style="margin-top:8px" autocomplete="off">
+      <label style="margin-top:10px">Usuario responsable</label>
+      <input id="rc-ajuste-responsable" placeholder="Tu nombre" autocomplete="off">
     </div>
 
     <div class="field" id="rc-cantidad-field" style="display:none">
@@ -358,6 +399,16 @@ button{font-family:inherit}
     <div class="field">
       <label>Nombre del producto</label>
       <input id="cp-nombre" placeholder="Ej: Coca Cola 1.5L" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Proveedor</label>
+      <input id="cp-proveedor" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
+      <div class="results" id="cp-proveedor-results"></div>
+    </div>
+    <div class="field">
+      <label>Sector <span style="text-transform:none;font-weight:400">(góndola, bodega, refrigerador…)</span></label>
+      <input id="cp-sector" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
+      <div class="results" id="cp-sector-results"></div>
     </div>
     <div class="field">
       <label>Código de barras <span style="text-transform:none;font-weight:400">(opcional)</span></label>
@@ -620,6 +671,55 @@ async function cargarCatalogo(silencioso){
   }
 }
 
+// ============================================================
+//  PROVEEDORES Y SECTORES — catálogo reutilizable para los
+//  combobox de "buscar + elegir + crear nuevo" (Módulo 3).
+// ============================================================
+const PROV_SEC={ proveedores:[], sectores:[] };
+async function cargarProveedoresSectores(){
+  try{
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=proveedores_sectores');
+    const j=await res.json();
+    if(j&&j.ok){ PROV_SEC.proveedores=j.proveedores||[]; PROV_SEC.sectores=j.sectores||[]; }
+  }catch(e){ /* silencioso: el combobox igual funciona, solo sin sugerencias todavía */ }
+}
+
+// Combobox genérico reutilizado por Crear producto y Recibir productos: escribe para
+// buscar, toca un resultado para elegirlo, o toca "➕ Crear …" para agregarlo al
+// catálogo reutilizable (proveedores/sectores) sin salir del formulario.
+function comboboxInit(inputId, resultsId, listaFn, crearAction, onElegir){
+  const inp=document.getElementById(inputId), box=document.getElementById(resultsId);
+  function cerrar(){ box.innerHTML=''; }
+  function render(){
+    const q=(inp.value||'').trim();
+    const qn=q.toLowerCase();
+    const lista=listaFn();
+    const filtrados=qn?lista.filter(v=>v.toLowerCase().includes(qn)):lista;
+    let html=filtrados.slice(0,30).map(v=>`<div class="result-item" data-v="${v.replace(/"/g,'&quot;')}"><div class="n">${v}</div></div>`).join('');
+    if(q && !lista.some(v=>v.toLowerCase()===qn)){
+      html+=`<div class="result-item" data-crear="${q.replace(/"/g,'&quot;')}"><div class="n crear">➕ Crear "${q}"</div></div>`;
+    }
+    box.innerHTML=html;
+    box.querySelectorAll('.result-item').forEach(el=>{
+      el.onclick=async()=>{
+        const crear=el.getAttribute('data-crear');
+        const valor=crear!=null?crear:el.getAttribute('data-v');
+        inp.value=valor; cerrar();
+        if(crear!=null){
+          try{
+            await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:crearAction,payload:{nombre:valor}})});
+            listaFn().push(valor);
+          }catch(e){ showToast('⚠️ No se pudo guardar "'+valor+'" en el catálogo — quedó elegido igual para este producto.'); }
+        }
+        onElegir(valor);
+      };
+    });
+  }
+  inp.oninput=render;
+  inp.onfocus=render;
+  document.addEventListener('click',(e)=>{ if(e.target!==inp && !box.contains(e.target)) cerrar(); });
+}
+
 (function init(){
   restoreCart();
   const habiaLocal=restoreLocal();
@@ -630,6 +730,7 @@ async function cargarCatalogo(silencioso){
   }else{
     cargarCatalogo(false);
   }
+  cargarProveedoresSectores();
 })();
 
 // ============================================================
@@ -655,15 +756,86 @@ function cerrarModal(id){ document.getElementById(id).classList.add('hidden'); }
 //  Con IVA/Sin IVA, margen % objetivo, cálculo automático de
 //  precio, resumen explicativo, por unidad/por caja).
 // ============================================================
-const rcState={ item:null, modo:'unidad', ivaModo:'con', precioTocado:false, margenTocado:false };
+const rcState={ item:null, modo:'unidad', ivaModo:'con', precioTocado:false, margenTocado:false, accion:'recibir', provNuevo:null, sectorNuevo:null };
+
+function rcSetAccion(accion){
+  rcState.accion=accion;
+  document.getElementById('rc-accion-recibir').classList.toggle('active',accion==='recibir');
+  document.getElementById('rc-accion-ajustar').classList.toggle('active',accion==='ajustar');
+  const it=rcState.item;
+  if(accion==='ajustar'){
+    document.getElementById('rc-costo-field').style.display='none';
+    document.getElementById('rc-fecha-field').style.display='none';
+    document.getElementById('rc-cantidad-field').style.display='none';
+    document.getElementById('rc-ajuste-field').style.display=it?'block':'none';
+    document.getElementById('rc-ajuste-unidad-lbl').textContent=(it&&it.peso)?'kg':'u';
+    const savedResp=localStorage.getItem('cumpas_responsable')||'';
+    if(savedResp) document.getElementById('rc-ajuste-responsable').value=savedResp;
+  }else{
+    document.getElementById('rc-ajuste-field').style.display='none';
+    if(it){
+      document.getElementById('rc-costo-field').style.display='block';
+      if(it.track){ document.getElementById('rc-cantidad-field').style.display='block'; document.getElementById('rc-fecha-field').style.display='block'; }
+    }
+  }
+  rcValidar();
+}
+document.getElementById('rc-accion-recibir').onclick=()=>rcSetAccion('recibir');
+document.getElementById('rc-accion-ajustar').onclick=()=>rcSetAccion('ajustar');
+document.getElementById('rc-ajuste-menos').onclick=()=>{ const i=document.getElementById('rc-ajuste-cantidad'); i.value=(Number(i.value)||0)-1; };
+document.getElementById('rc-ajuste-mas').onclick=()=>{ const i=document.getElementById('rc-ajuste-cantidad'); i.value=(Number(i.value)||0)+1; };
+document.getElementById('rc-ajuste-motivo').onchange=(e)=>{
+  document.getElementById('rc-ajuste-motivo-otro').classList.toggle('hidden', e.target.value!=='Otro');
+  rcValidar();
+};
+document.getElementById('rc-ajuste-cantidad').oninput=rcValidar;
+document.getElementById('rc-ajuste-motivo-otro').oninput=rcValidar;
+document.getElementById('rc-ajuste-responsable').oninput=rcValidar;
+
+// Proveedor/Sector: combobox compartido, disponible apenas carga la página.
+comboboxInit('rc-proveedor','rc-proveedor-results',()=>PROV_SEC.proveedores,'crear_proveedor',(v)=>{ rcState.provNuevo=v; rcValidar(); });
+comboboxInit('rc-sector','rc-sector-results',()=>PROV_SEC.sectores,'crear_sector',(v)=>{ rcState.sectorNuevo=v; rcValidar(); });
+comboboxInit('cp-proveedor','cp-proveedor-results',()=>PROV_SEC.proveedores,'crear_proveedor',()=>{});
+comboboxInit('cp-sector','cp-sector-results',()=>PROV_SEC.sectores,'crear_sector',()=>{});
+
+document.getElementById('rc-ver-historial').onclick=async()=>{
+  const it=rcState.item; if(!it)return;
+  const box=document.getElementById('rc-historial-box');
+  const btn=document.getElementById('rc-ver-historial');
+  if(!box.classList.contains('hidden')){ box.classList.add('hidden'); return; }
+  btn.textContent='Cargando…';
+  try{
+    const res=await fetch(SYNC_URL+'?action=historial_producto&sku='+encodeURIComponent(it.ref));
+    const j=await res.json();
+    if(j&&j.ok){
+      const hist=j.historial||[];
+      box.innerHTML=hist.length?hist.map(h=>
+        `<div class="result-item" style="cursor:default"><div class="n" style="font-size:12px">${h.fecha} · ${h.responsable||'—'}</div><div class="s">${h.motivo||h.accion}</div></div>`
+      ).join(''):'<div class="s" style="padding:6px 2px">Sin movimientos registrados todavía.</div>';
+      box.classList.remove('hidden');
+    }else{ showToast('❌ No se pudo cargar el historial'); }
+  }catch(e){ showToast('❌ Error de conexión al cargar historial'); }
+  finally{ btn.textContent='🕘 Ver historial de este producto'; }
+};
 
 function rcReset(){
   rcState.item=null; rcState.modo='unidad'; rcState.precioTocado=false; rcState.margenTocado=false;
+  rcState.provNuevo=null; rcState.sectorNuevo=null;
   document.getElementById('rc-search').value='';
   document.getElementById('rc-results').innerHTML='';
   document.getElementById('rc-picked').classList.remove('on');
   document.getElementById('rc-activar-inv').classList.add('hidden');
   document.getElementById('rc-activar-iva').classList.add('hidden');
+  document.getElementById('rc-historial-box').classList.add('hidden');
+  document.getElementById('rc-historial-box').innerHTML='';
+  document.getElementById('rc-provsector-field').style.display='none';
+  document.getElementById('rc-proveedor').value='';
+  document.getElementById('rc-sector').value='';
+  document.getElementById('rc-ajuste-field').style.display='none';
+  document.getElementById('rc-ajuste-cantidad').value='';
+  document.getElementById('rc-ajuste-motivo').value='';
+  document.getElementById('rc-ajuste-motivo-otro').value='';
+  document.getElementById('rc-ajuste-motivo-otro').classList.add('hidden');
   document.getElementById('rc-cantidad-field').style.display='none';
   document.getElementById('rc-costo-field').style.display='none';
   document.getElementById('rc-fecha-field').style.display='none';
@@ -681,6 +853,7 @@ function rcReset(){
   document.getElementById('rc-fecha-aaaa').value='';
   rcSetIva('con');
   rcSetModo('unidad');
+  rcSetAccion('recibir');
   const btnG=document.getElementById('rc-guardar'); btnG.disabled=true; btnG.textContent='Guardar y sumar stock';
 }
 
@@ -728,6 +901,15 @@ function rcPick(ref){
   const stockTxt=(it.stock==null)?'sin control':(it.stock+(it.peso?' kg':' u'));
   document.getElementById('rc-stock').textContent='Stock actual: '+stockTxt;
 
+  // Proveedor y sector: se muestran siempre (son campos solo locales, no requieren
+  // seguimiento de inventario) y se prellenan con lo que ya tiene el producto.
+  document.getElementById('rc-provsector-field').style.display='block';
+  document.getElementById('rc-proveedor').value=(it.prov&&it.prov!=='SIN PROVEEDOR')?it.prov:'';
+  document.getElementById('rc-sector').value=it.sector||'';
+  rcState.provNuevo=null; rcState.sectorNuevo=null;
+  document.getElementById('rc-historial-box').classList.add('hidden');
+  document.getElementById('rc-historial-box').innerHTML='';
+
   // El costo/precio se puede editar SIEMPRE, tenga o no seguimiento de inventario
   // activado — solo la cantidad recibida (que mueve stock en Loyverse) lo requiere.
   document.getElementById('rc-costo-field').style.display='block';
@@ -753,6 +935,7 @@ function rcPick(ref){
   if(!it.track){
     document.getElementById('rc-cantidad-field').style.display='none';
     document.getElementById('rc-fecha-field').style.display='none';
+    document.getElementById('rc-ajuste-field').style.display='none';
     const btnActivar=document.getElementById('rc-activar-inv');
     btnActivar.classList.remove('hidden');
     btnActivar.disabled=false;
@@ -766,6 +949,7 @@ function rcPick(ref){
   document.getElementById('rc-fecha-field').style.display='block';
   const cIn=document.getElementById('rc-cantidad');
   cIn.disabled=false; cIn.value=''; cIn.placeholder=it.peso?'0.000':'0';
+  rcSetAccion(rcState.accion);
   rcValidar();
 }
 
@@ -817,15 +1001,26 @@ function rcValidar(){
   const it=rcState.item;
   const btn=document.getElementById('rc-guardar');
   if(!it){ btn.disabled=true; return; }
+  if(rcState.accion==='ajustar'){
+    const cant=Number(document.getElementById('rc-ajuste-cantidad').value)||0;
+    const motivoSel=document.getElementById('rc-ajuste-motivo').value;
+    const motivo=motivoSel==='Otro'?document.getElementById('rc-ajuste-motivo-otro').value.trim():motivoSel;
+    const resp=document.getElementById('rc-ajuste-responsable').value.trim();
+    btn.disabled=!(it.track&&cant!==0&&motivo&&resp);
+    btn.textContent='Guardar ajuste de stock';
+    return;
+  }
   const cant=Number(document.getElementById('rc-cantidad').value)||0;
   const hayRecepcion=it.track&&cant>0;
   const nuevoCosto=Math.round(rcCostoBruto());
   const nuevoPrecio=Number(document.getElementById('rc-precio').value)||0;
   const costoCambio=nuevoCosto>0&&nuevoCosto!==it.coste;
   const precioCambio=nuevoPrecio>0&&nuevoPrecio!==it.precio;
-  const soloEdicion=(costoCambio||precioCambio);
+  const provCambio=rcState.provNuevo!=null&&rcState.provNuevo!==(it.prov==='SIN PROVEEDOR'?'':it.prov);
+  const sectorCambio=rcState.sectorNuevo!=null&&rcState.sectorNuevo!==(it.sector||'');
+  const soloEdicion=(costoCambio||precioCambio||provCambio||sectorCambio);
   btn.disabled=!(hayRecepcion||soloEdicion);
-  btn.textContent=hayRecepcion?'Guardar y sumar stock':(soloEdicion?'Guardar cambios de precio/costo':'Guardar y sumar stock');
+  btn.textContent=hayRecepcion?'Guardar y sumar stock':(soloEdicion?'Guardar cambios':'Guardar y sumar stock');
 }
 
 document.getElementById('rc-search').oninput=e=>{
@@ -954,6 +1149,35 @@ function fechaSegmentadaTexto(ddId,mmId,aaaaId){
 document.getElementById('rc-guardar').onclick=async()=>{
   const btn=document.getElementById('rc-guardar');
   const it=rcState.item; if(!it)return;
+
+  if(rcState.accion==='ajustar'){
+    const cantidad=Number(document.getElementById('rc-ajuste-cantidad').value)||0;
+    const motivoSel=document.getElementById('rc-ajuste-motivo').value;
+    const motivo=motivoSel==='Otro'?document.getElementById('rc-ajuste-motivo-otro').value.trim():motivoSel;
+    const responsable=document.getElementById('rc-ajuste-responsable').value.trim();
+    if(!cantidad||!motivo||!responsable){ showToast('Completa cantidad, motivo y responsable'); return; }
+    btn.disabled=true; btn.textContent='Guardando…';
+    try{
+      localStorage.setItem('cumpas_responsable', responsable);
+      const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'ajustar_stock',payload:{sku:it.ref,cantidad,motivo,responsable}})});
+      const j=await res.json();
+      if(j&&j.ok){
+        const itLocal=(DB.items||[]).find(x=>x.ref===it.ref);
+        if(itLocal){ itLocal.stock=j.stockFinal; persist(); }
+        showToast('✓ Ajuste guardado: '+it.nombre+' · '+j.stockAnterior+' → '+j.stockFinal);
+        rcReset();
+        document.getElementById('rc-search').focus();
+      }else{
+        showToast('❌ Error: '+((j&&j.error)||'no se pudo guardar el ajuste'));
+      }
+    }catch(e){
+      showToast('❌ Error de conexión al guardar el ajuste');
+    }finally{
+      rcValidar();
+    }
+    return;
+  }
+
   const cantIngresada=Number(document.getElementById('rc-cantidad').value)||0;
   const uCaja=Number(document.getElementById('rc-unidades-caja').value)||0;
   const cantidad=(rcState.modo==='caja'&&uCaja>0)?(cantIngresada*uCaja):cantIngresada;
@@ -963,8 +1187,10 @@ document.getElementById('rc-guardar').onclick=async()=>{
   const nuevoPrecio=Number(document.getElementById('rc-precio').value)||0;
   const costoCambio=nuevoCosto>0&&nuevoCosto!==it.coste;
   const precioCambio=nuevoPrecio>0&&nuevoPrecio!==it.precio;
+  const provCambio=rcState.provNuevo!=null&&rcState.provNuevo!==(it.prov==='SIN PROVEEDOR'?'':it.prov);
+  const sectorCambio=rcState.sectorNuevo!=null&&rcState.sectorNuevo!==(it.sector||'');
 
-  if(cantidad<=0&&!costoCambio&&!precioCambio){ showToast('Indica una cantidad recibida o un cambio de precio/costo'); return; }
+  if(cantidad<=0&&!costoCambio&&!precioCambio&&!provCambio&&!sectorCambio){ showToast('Indica una cantidad recibida o un cambio de precio/costo/proveedor/sector'); return; }
 
   const soloEdicion=cantidad<=0;
   btn.disabled=true; btn.textContent='Guardando…';
@@ -974,6 +1200,8 @@ document.getElementById('rc-guardar').onclick=async()=>{
     const payload={ sku:it.ref, cantidad, fechaVencimiento:soloEdicion?'':fecha };
     if(costoCambio)payload.costo=nuevoCosto;
     if(precioCambio)payload.precio=nuevoPrecio;
+    if(provCambio)payload.proveedor=rcState.provNuevo;
+    if(sectorCambio)payload.sector=rcState.sectorNuevo;
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'lote_nuevo',payload}),signal:ctrl.signal});
     const j=await res.json();
     if(j&&j.ok){
@@ -982,6 +1210,8 @@ document.getElementById('rc-guardar').onclick=async()=>{
         if(j.nuevoStock!=null)itLocal.stock=j.nuevoStock;
         if(j.costoAplicado!=null)itLocal.coste=j.costoAplicado;
         if(j.precioAplicado!=null)itLocal.precio=j.precioAplicado;
+        if(j.proveedorAplicado!=null)itLocal.prov=j.proveedorAplicado||'SIN PROVEEDOR';
+        if(j.sectorAplicado!=null)itLocal.sector=j.sectorAplicado;
         persist();
       }
       let msg;
@@ -989,6 +1219,8 @@ document.getElementById('rc-guardar').onclick=async()=>{
         const partes=[];
         if(precioCambio)partes.push('precio → '+fmtPeso(nuevoPrecio));
         if(costoCambio)partes.push('costo → '+fmtPeso(nuevoCosto));
+        if(provCambio)partes.push('proveedor → '+rcState.provNuevo);
+        if(sectorCambio)partes.push('sector → '+rcState.sectorNuevo);
         msg='✓ '+it.nombre+' · '+partes.join(' · ');
       }else{
         msg='✓ Recibido: '+it.nombre+' · +'+cantidad+' '+(it.peso?'kg':'u')+(fecha?(' · vence '+fecha):'');
