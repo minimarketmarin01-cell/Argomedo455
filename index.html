@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#0A0F1A">
+<meta name="theme-color" content="#F4FAFE">
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Los Cumpas">
 <title>Los Cumpas · Pedidos</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,28 +14,27 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  /* ===== PALETA "LOS CUMPAS" — celeste/azul marino, derivada del logo =====
-     Fondo azul casi negro, tarjetas un tono más claro, acento celeste vivo
-     (el círculo del logo) y azul marino profundo (el texto del logo). */
-  --ink:#0A0F1A;--paper:#0A0F1A;--card:#121B2E;--card2:#182541;
-  --line:#22304A;--line2:#1A2743;
-  --text:#EAF1FB;--muted:#8CA0C2;
+  /* ===== PALETA "LOS CUMPAS" — modo claro, acento celeste =====
+     Fondo blanco/celeste muy pálido (como el círculo del logo), tarjetas blancas,
+     texto azul marino oscuro (como el texto "Los Cumpas" del logo). Sin negros ni
+     fondos oscuros — el celeste vivo es el único acento fuerte. */
+  --ink:#0B1A33;--paper:#F4FAFE;--card:#FFFFFF;--card2:#EAF6FD;
+  --line:#D8E9F5;--line2:#E4F1FA;
+  --text:#0B1A33;--muted:#5C7593;
 
-  /* Marca: celeste vivo + marino profundo. El celeste es la acción principal
-     (botones, foco, selección) — el marino da peso a headers y marca. */
-  --cielo:#4FB6E8;--cielo-d:#2E8FC2;--cielo-tint:#12293A;
-  --marino:#16294D;--marino-hi:#1F3A6B;--marino-tint:#101B33;
-  --brand-grad:linear-gradient(120deg,#4FB6E8,#2E8FC2);
+  /* Marca: celeste vivo (círculo del logo) + marino profundo (texto del logo). */
+  --cielo:#2FA9E8;--cielo-d:#1C86BE;--cielo-tint:#E4F4FC;
+  --marino:#0B1A33;--marino-hi:#16294D;--marino-tint:#EAF1FA;
+  --brand-grad:linear-gradient(120deg,#4FC3F7,#2FA9E8);
 
-  /* Estados — mismos códigos semánticos que ya usa el equipo en Marín, para
-     no reaprender colores: rojo urgente, ámbar a pedir, verde saludable. */
-  --rojo:#E8746A;--rojo-bg:#3A1E1E;
-  --ambar:#E8B84F;--ambar-bg:#3A2E12;
-  --verde:#5FD08A;--verde-bg:#123A22;
+  /* Estados semánticos — versión clara con buen contraste sobre fondo blanco. */
+  --rojo:#C6483D;--rojo-bg:#FBEAE8;
+  --ambar:#B8791A;--ambar-bg:#FBF1DF;
+  --verde:#2E9E5B;--verde-bg:#E7F7EE;
 
-  --sh-card:0 2px 10px rgba(0,0,0,.35);
-  --sh-float:0 6px 20px rgba(0,0,0,.45);
-  --focus-ring:0 0 0 3px rgba(79,182,232,.35);
+  --sh-card:0 1px 3px rgba(11,26,51,.06),0 3px 10px rgba(11,26,51,.05);
+  --sh-float:0 8px 24px rgba(11,26,51,.14);
+  --focus-ring:0 0 0 3px rgba(47,169,232,.28);
   --radius-card:18px;--radius-btn:14px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -48,13 +47,13 @@ button{font-family:inherit}
 :focus-visible{outline:none;box-shadow:var(--focus-ring)}
 
 /* ===== Encabezado ===== */
-.top{background:linear-gradient(160deg,var(--marino-tint) 0%,#0D1730 100%);border-bottom:1px solid var(--line);padding:14px 18px;padding-top:max(14px,env(safe-area-inset-top));display:flex;align-items:center;gap:12px}
-.brand-mark{width:38px;height:38px;border-radius:12px;flex:none;background:var(--brand-grad);display:flex;align-items:center;justify-content:center;font-size:19px;box-shadow:var(--sh-card)}
-.brand-txt .mk{font-family:'Manrope';font-weight:800;font-size:17px;letter-spacing:-.01em;color:var(--text)}
+.top{background:linear-gradient(160deg,#FFFFFF 0%,var(--marino-tint) 100%);border-bottom:1px solid var(--line);padding:14px 18px;padding-top:max(14px,env(safe-area-inset-top));display:flex;align-items:center;gap:12px}
+.brand-mark{width:40px;height:40px;border-radius:12px;flex:none;box-shadow:var(--sh-card);object-fit:cover}
+.brand-txt .mk{font-family:'Manrope';font-weight:800;font-size:17px;letter-spacing:-.01em;color:var(--ink)}
 .brand-txt .loc{color:var(--muted);font-size:11.5px;font-weight:600;margin-top:1px}
 
 /* ===== Estado de carga del catálogo ===== */
-.load-banner{margin:14px 16px;padding:12px 14px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-card);display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)}
+.load-banner{margin:14px 16px;padding:12px 14px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-card);display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted);box-shadow:var(--sh-card)}
 .load-banner.err{border-color:var(--rojo);color:var(--rojo);background:var(--rojo-bg)}
 .load-banner .spin{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--cielo);border-radius:50%;flex:none;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -65,85 +64,86 @@ button{font-family:inherit}
 .menu-card{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-card);padding:18px;text-align:left;cursor:pointer;box-shadow:var(--sh-card);transition:transform .12s ease,border-color .12s ease}
 .menu-card:active{transform:scale(.98);border-color:var(--cielo)}
 .menu-card .ico{width:52px;height:52px;border-radius:14px;flex:none;display:flex;align-items:center;justify-content:center;font-size:26px}
-.menu-card.pedido .ico{background:var(--marino-hi)}
+.menu-card.pedido .ico{background:var(--marino-tint)}
 .menu-card.recibir .ico{background:var(--cielo-tint)}
 .menu-card .txt{flex:1;min-width:0}
-.menu-card .txt .t{font-family:'Manrope';font-weight:800;font-size:16px;color:var(--text)}
+.menu-card .txt .t{font-family:'Manrope';font-weight:800;font-size:16px;color:var(--ink)}
 .menu-card .txt .s{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.35}
 .menu-card .arrow{color:var(--muted);font-size:20px;flex:none}
 
 /* ===== Resumen del catálogo cargado ===== */
 .stats-row{display:flex;gap:8px;padding:0 16px;max-width:520px;margin:0 auto 4px}
 .stat{flex:1;background:var(--card2);border:1px solid var(--line2);border-radius:12px;padding:10px 12px}
-.stat .n{font-family:'JetBrains Mono';font-weight:700;font-size:18px;color:var(--cielo)}
+.stat .n{font-family:'JetBrains Mono';font-weight:700;font-size:18px;color:var(--cielo-d)}
 .stat .l{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.02em;margin-top:2px}
 
 /* ===== Toast simple de confirmación ===== */
-#toast{position:fixed;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));background:var(--card2);border:1px solid var(--cielo-d);color:var(--text);padding:12px 16px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:var(--sh-float);z-index:500;transform:translateY(120%);opacity:0;transition:transform .25s ease,opacity .25s ease;max-width:520px;margin:0 auto}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));background:var(--ink);border:1px solid var(--marino-hi);color:#fff;padding:12px 16px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:var(--sh-float);z-index:500;transform:translateY(120%);opacity:0;transition:transform .25s ease,opacity .25s ease;max-width:520px;margin:0 auto}
 #toast.on{transform:translateY(0);opacity:1}
 
-/* ===== Overlay de módulo (pantalla completa) — mismo patrón para Recibir y,
-   más adelante, Armar pedido: header fijo, cuerpo con scroll, pie fijo. ===== */
+/* ===== Overlay de módulo (pantalla completa) ===== */
 .ov{position:fixed;inset:0;z-index:400;background:var(--paper);display:flex;flex-direction:column}
-.ov-head{flex:none;display:flex;align-items:center;gap:10px;padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));background:var(--marino-tint);border-bottom:1px solid var(--line)}
-.ov-head h3{font-size:16px;font-weight:800}
-.ov-close{margin-left:auto;width:34px;height:34px;border-radius:10px;background:var(--card);border:1px solid var(--line);color:var(--muted);font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ov-head{flex:none;display:flex;align-items:center;gap:10px;padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));background:#fff;border-bottom:1px solid var(--line)}
+.ov-head h3{font-size:16px;font-weight:800;color:var(--ink)}
+.ov-close{margin-left:auto;width:34px;height:34px;border-radius:10px;background:var(--card2);border:1px solid var(--line);color:var(--muted);font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .ov-body{flex:1;min-height:0;overflow-y:auto;padding:14px 16px;max-width:520px;margin:0 auto;width:100%}
-.ov-foot{flex:none;padding:10px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--paper);max-width:520px;margin:0 auto;width:100%}
+.ov-foot{flex:none;padding:10px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#fff;max-width:520px;margin:0 auto;width:100%}
 
-/* Campo genérico: label chico + input grande, siempre visible con una mano */
+/* Campo genérico */
 .field{margin-bottom:14px}
 .field label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:5px}
-.field input,.field select{width:100%;height:46px;padding:0 12px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);font-size:14px;font-family:inherit}
+.field input,.field select{width:100%;height:46px;padding:0 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;color:var(--text);font-size:14px;font-family:inherit}
 .field input:focus,.field select:focus{outline:none;border-color:var(--cielo);box-shadow:var(--focus-ring)}
 
-/* Buscador con botón de escanear pegado al lado */
 .search-row{display:flex;gap:8px}
 .search-row input{flex:1}
-.scan-btn{width:46px;height:46px;flex:none;border-radius:12px;background:var(--cielo-tint);border:1.5px solid var(--cielo-d);color:var(--cielo);font-size:19px;display:flex;align-items:center;justify-content:center;cursor:pointer}
-.scan-btn:active{background:var(--cielo-d);color:#fff}
+.scan-btn{width:46px;height:46px;flex:none;border-radius:12px;background:var(--cielo-tint);border:1.5px solid var(--cielo);color:var(--cielo-d);font-size:19px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.scan-btn:active{background:var(--cielo);color:#fff}
 
-/* Lista de resultados de búsqueda */
 .results{margin-top:8px}
-.result-item{padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:6px;cursor:pointer}
+.result-item{padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:6px;cursor:pointer}
 .result-item:active{border-color:var(--cielo)}
-.result-item .n{font-weight:700;font-size:13.5px}
+.result-item .n{font-weight:700;font-size:13.5px;color:var(--ink)}
 .result-item .s{color:var(--muted);font-size:11.5px;margin-top:2px}
+.result-item .crear{color:var(--cielo-d);font-weight:700;text-decoration:underline}
 
-/* Tarjeta del producto elegido */
-.picked{display:none;padding:12px;background:var(--card2);border:1.5px solid var(--cielo-d);border-radius:12px;margin-top:8px}
+.picked{display:none;padding:12px;background:var(--cielo-tint);border:1.5px solid var(--cielo);border-radius:12px;margin-top:8px}
 .picked.on{display:block}
-.picked .n{font-weight:800;font-size:14.5px}
+.picked .n{font-weight:800;font-size:14.5px;color:var(--ink)}
 .picked .s{color:var(--muted);font-size:12px;margin-top:2px}
-.picked .stock{font-weight:700;margin-top:6px;font-size:12.5px}
+.picked .stock{font-weight:700;margin-top:6px;font-size:12.5px;color:var(--ink)}
 
-/* Selector unidad/caja: dos botones tipo toggle */
 .toggle-row{display:flex;gap:6px;margin-bottom:8px}
-.toggle-btn{flex:1;padding:9px;border-radius:10px;border:1.5px solid var(--line);background:var(--card);color:var(--muted);font-weight:700;font-size:12px;cursor:pointer}
-.toggle-btn.active{border-color:var(--cielo);background:var(--cielo-tint);color:var(--cielo)}
+.toggle-btn{flex:1;padding:9px;border-radius:10px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12px;cursor:pointer}
+.toggle-btn.active{border-color:var(--cielo);background:var(--cielo-tint);color:var(--cielo-d)}
 
-/* Selector cantidad grande con +/- (una sola mano) */
 .qty-row{display:flex;align-items:center;gap:8px}
-.qty-btn{width:46px;height:46px;flex:none;border-radius:12px;background:var(--card);border:1.5px solid var(--line);color:var(--text);font-size:22px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.qty-btn{width:46px;height:46px;flex:none;border-radius:12px;background:var(--card2);border:1.5px solid var(--line);color:var(--ink);font-size:22px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .qty-btn:active{background:var(--cielo-tint);border-color:var(--cielo)}
 .qty-row input{text-align:center;font-family:'JetBrains Mono';font-size:17px;font-weight:700}
 
-/* Fecha segmentada DD/MM/AAAA */
 .fecha-row{display:flex;align-items:center;gap:6px}
 .fecha-seg{width:100%;text-align:center;font-family:'JetBrains Mono';font-size:15px}
 .fecha-sep{color:var(--muted);font-weight:700}
-.fecha-cal-btn{width:46px;height:46px;flex:none;border-radius:12px;background:var(--card);border:1.5px solid var(--line);font-size:17px;cursor:pointer}
+.fecha-cal-btn{width:46px;height:46px;flex:none;border-radius:12px;background:var(--card2);border:1.5px solid var(--line);font-size:17px;cursor:pointer}
 .fecha-date-hidden{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
 
-/* Precio destacado */
-.precio-box{padding:10px 12px;background:var(--cielo-tint);border:1.5px solid var(--cielo-d);border-radius:12px}
-.precio-box label{color:var(--cielo)}
-.precio-box input{background:transparent;border:none;font-size:22px;font-weight:800;height:38px;padding:0;color:var(--text)}
+.precio-box{margin-top:8px;padding:10px 12px;background:var(--verde-bg);border:1.5px solid var(--verde);border-radius:12px}
+.precio-box label{color:var(--verde);display:block;font-size:10px;font-weight:700;text-transform:uppercase;margin-bottom:2px}
+.precio-box input{background:transparent;border:none;font-size:22px;font-weight:800;height:34px;padding:0;color:var(--ink);width:100%}
+.precio-box input:focus{outline:none;box-shadow:none}
 
-.btn-primary{width:100%;height:50px;border-radius:14px;background:var(--brand-grad);border:none;color:#06212f;font-weight:800;font-size:15px;cursor:pointer;box-shadow:var(--sh-card)}
+/* Toggle Con IVA / Sin IVA — 2 posiciones pegadas */
+.iva-toggle{display:flex;align-items:center;gap:5px}
+.iva-btn{padding:5px 11px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:11px;cursor:pointer}
+.iva-btn.active{border-color:var(--verde);background:var(--verde-bg);color:var(--verde)}
+.iva-info{color:var(--muted);font-size:10.5px;margin-top:5px;line-height:1.4}
+.resumen-box{margin-top:8px;padding:9px 11px;background:var(--card2);border-radius:10px;font-size:11.5px;line-height:1.7;color:var(--ink)}
+
+.btn-primary{width:100%;height:50px;border-radius:14px;background:var(--brand-grad);border:none;color:#fff;font-weight:800;font-size:15px;cursor:pointer;box-shadow:var(--sh-card)}
 .btn-primary:disabled{opacity:.4;cursor:default}
 .btn-primary:active:not(:disabled){transform:scale(.98)}
-.btn-secondary{width:100%;height:44px;border-radius:14px;background:var(--card);border:1.5px solid var(--line);color:var(--muted);font-weight:700;font-size:13.5px;cursor:pointer;margin-top:8px}
+.btn-secondary{width:100%;height:44px;border-radius:14px;background:#fff;border:1.5px solid var(--line);color:var(--muted);font-weight:700;font-size:13.5px;cursor:pointer;margin-top:8px}
 
 /* ===== Escáner de cámara ===== */
 #scanner-ov{position:fixed;inset:0;z-index:600;background:#000;display:flex;flex-direction:column}
@@ -152,12 +152,46 @@ button{font-family:inherit}
 .scan-frame .box{width:78%;max-width:340px;aspect-ratio:1.6;border:3px solid var(--cielo);border-radius:16px;box-shadow:0 0 0 2000px rgba(0,0,0,.45)}
 .scan-close{position:absolute;top:max(16px,env(safe-area-inset-top));right:16px;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;z-index:2}
 .scan-hint{position:absolute;bottom:calc(30px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.6)}
+
+/* ===== ARMAR PEDIDO: selector de proveedor + tabla + carrito ===== */
+.prov-select{display:flex;gap:8px;overflow-x:auto;padding:0 16px 10px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.prov-select::-webkit-scrollbar{display:none}
+.prov-chip{flex:none;padding:8px 14px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.prov-chip.active{border-color:var(--cielo);background:var(--cielo);color:#fff}
+.ap-search{padding:0 16px 10px}
+.ap-list{padding:0 16px 90px}
+.ap-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card)}
+.ap-row .info{flex:1;min-width:0}
+.ap-row .n{font-weight:700;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ap-row .s{font-size:11px;color:var(--muted);margin-top:2px}
+.ap-row .s b{color:var(--ink)}
+.ap-qty{display:flex;align-items:center;gap:6px;flex:none}
+.ap-qty-btn{width:34px;height:34px;border-radius:9px;background:var(--card2);border:1.5px solid var(--line);font-size:17px;font-weight:700;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ap-qty-btn:active{background:var(--cielo-tint);border-color:var(--cielo)}
+.ap-qty input{width:42px;height:34px;text-align:center;border:1.5px solid var(--line);border-radius:9px;font-family:'JetBrains Mono';font-weight:700;font-size:14px}
+.ap-empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:13px}
+
+/* Botón flotante del carrito */
+.cart-fab{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));z-index:270;height:52px;padding:0 18px;border-radius:26px;background:var(--brand-grad);color:#fff;border:none;font-size:14px;font-weight:800;box-shadow:var(--sh-float);cursor:pointer;display:flex;align-items:center;gap:8px}
+.cart-fab:active{transform:scale(.96)}
+.cart-fab .badge{background:#fff;color:var(--cielo-d);border-radius:10px;padding:1px 7px;font-size:12px;font-family:'JetBrains Mono'}
+
+/* Panel del carrito */
+.cart-body{padding:0}
+.cart-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.cart-row .info{flex:1;min-width:0}
+.cart-row .n{font-weight:700;font-size:12.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cart-row .s{font-size:11px;color:var(--muted)}
+.cart-row .del{width:30px;height:30px;flex:none;border-radius:8px;background:var(--rojo-bg);color:var(--rojo);border:none;font-size:15px;cursor:pointer}
+.cart-summary{background:var(--card2);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;display:flex;justify-content:space-between;font-weight:700;color:var(--ink)}
+.btn-wa{width:100%;height:50px;border-radius:14px;background:#25D366;border:none;color:#fff;font-weight:800;font-size:15px;cursor:pointer;box-shadow:var(--sh-card);display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-wa:active{transform:scale(.98)}
+.btn-wa.copied{background:var(--verde)}
 </style>
 </head>
 <body>
-
 <div class="top">
-  <div class="brand-mark">🛒</div>
+  <img class="brand-mark" src="icon-192.png" alt="Los Cumpas">
   <div class="brand-txt">
     <div class="mk">Los Cumpas</div>
     <div class="loc">Mini Market · Pedidos y Recepción</div>
@@ -198,7 +232,7 @@ button{font-family:inherit}
 
 <div id="toast"></div>
 
-<!-- ===== MODAL: RECIBIR MERCADERÍA ===== -->
+<!-- ===== MODAL: RECIBIR MERCADERÍA (mismos campos que Marín) ===== -->
 <div class="ov hidden" id="rc-ov">
   <div class="ov-head">
     <h3>📦 Recibir mercadería</h3>
@@ -217,7 +251,7 @@ button{font-family:inherit}
         <div class="n" id="rc-nom">—</div>
         <div class="s" id="rc-cat">—</div>
         <div class="stock" id="rc-stock">Stock actual: —</div>
-        <button class="btn-secondary hidden" id="rc-activar-inv" style="margin-top:10px;color:var(--cielo);border-color:var(--cielo-d)" type="button">🔓 Activar inventario para este producto</button>
+        <button class="btn-secondary hidden" id="rc-activar-inv" style="margin-top:10px;color:var(--cielo-d);border-color:var(--cielo)" type="button">🔓 Activar inventario para este producto</button>
       </div>
     </div>
 
@@ -230,26 +264,42 @@ button{font-family:inherit}
       <div class="qty-row">
         <button class="qty-btn" id="rc-qty-menos" type="button">−</button>
         <input id="rc-cantidad" inputmode="decimal" placeholder="0" disabled>
+        <span id="rc-unidad-lbl" style="min-width:34px;text-align:center;color:var(--muted);font-weight:700;font-size:12px">u</span>
         <button class="qty-btn" id="rc-qty-mas" type="button">+</button>
       </div>
       <div id="rc-caja-campos" class="hidden field" style="margin-top:10px;margin-bottom:0">
         <label>Unidades por caja</label>
         <input id="rc-unidades-caja" inputmode="numeric" placeholder="Ej: 24">
       </div>
+      <div id="rc-stock-total-hint" style="margin-top:6px;font-size:11.5px;color:var(--muted)"></div>
     </div>
 
     <div class="field" id="rc-costo-field" style="display:none">
-      <label>Costo y precio <span style="text-transform:none;font-weight:400">(opcional)</span></label>
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <div style="flex:1">
-          <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">COSTO</div>
-          <input id="rc-costo" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font-family:'JetBrains Mono';width:100%">
-        </div>
-        <div style="flex:1">
-          <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">PRECIO VENTA</div>
-          <input id="rc-precio" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font-family:'JetBrains Mono';width:100%">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <label style="margin:0">Costo y precio <span style="text-transform:none;font-weight:400">(opcional)</span></label>
+        <div class="iva-toggle" role="group" aria-label="¿El costo incluye IVA?">
+          <button type="button" class="iva-btn active" id="rc-iva-con" data-iva="con">Con IVA</button>
+          <button type="button" class="iva-btn" id="rc-iva-sin" data-iva="sin">Sin IVA</button>
         </div>
       </div>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1">
+          <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px" id="rc-costo-label">COSTO</div>
+          <input id="rc-costo" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
+        </div>
+        <div style="flex:1">
+          <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">MARGEN % OBJETIVO</div>
+          <input id="rc-margen-obj" inputmode="numeric" placeholder="Ej: 30" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
+        </div>
+      </div>
+      <div class="iva-info" id="rc-costo-explica"></div>
+
+      <div class="precio-box">
+        <label>Precio de venta</label>
+        <input id="rc-precio" inputmode="numeric" placeholder="$">
+      </div>
+
+      <div class="resumen-box" id="rc-resumen"></div>
     </div>
 
     <div class="field" id="rc-fecha-field" style="display:none">
@@ -286,6 +336,9 @@ button{font-family:inherit}
     <button class="ov-close" id="cp-close" aria-label="Cerrar">✕</button>
   </div>
   <div class="ov-body">
+    <div class="field" id="cp-aviso-field" style="display:none">
+      <div style="padding:10px 12px;background:var(--ambar-bg);border:1.5px solid var(--ambar);border-radius:12px;color:var(--ambar);font-size:12.5px;font-weight:600;line-height:1.4" id="cp-aviso-txt"></div>
+    </div>
     <div class="field">
       <label>Nombre del producto</label>
       <input id="cp-nombre" placeholder="Ej: Coca Cola 1.5L" autocomplete="off">
@@ -302,11 +355,11 @@ button{font-family:inherit}
       <div style="display:flex;gap:8px">
         <div style="flex:1">
           <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">COSTO</div>
-          <input id="cp-costo" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font-family:'JetBrains Mono';width:100%">
+          <input id="cp-costo" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
         </div>
         <div style="flex:1">
           <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">PRECIO VENTA</div>
-          <input id="cp-precio" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font-family:'JetBrains Mono';width:100%">
+          <input id="cp-precio" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
         </div>
       </div>
     </div>
@@ -327,16 +380,53 @@ button{font-family:inherit}
   </div>
 </div>
 
+<!-- ===== MODAL: ARMAR PEDIDO ===== -->
+<div class="ov hidden" id="ap-ov">
+  <div class="ov-head">
+    <h3>📝 Armar pedido</h3>
+    <button class="ov-close" id="ap-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div style="padding:12px 0 0">
+    <div class="ap-search" style="padding:0 16px">
+      <input id="ap-search" placeholder="Buscar producto…" style="width:100%;height:44px;padding:0 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-size:14px">
+    </div>
+  </div>
+  <div class="prov-select" id="ap-prov-select"></div>
+  <div class="ov-body" style="padding-top:0" id="ap-body">
+    <div class="ap-list" id="ap-list"></div>
+  </div>
+  <button class="cart-fab hidden" id="ap-cart-fab">🛒 <span id="ap-cart-count">0</span> productos</button>
+</div>
+
+<!-- ===== PANEL: CARRITO DEL PEDIDO ===== -->
+<div class="ov hidden" id="cart-ov">
+  <div class="ov-head">
+    <h3>🛒 Carrito del pedido</h3>
+    <button class="ov-close" id="cart-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="cart-summary"><span id="cart-prov-txt">Proveedor: —</span><span id="cart-total-txt">0 productos</span></div>
+    <div class="cart-body" id="cart-body"></div>
+  </div>
+  <div class="ov-foot">
+    <button class="btn-wa" id="btn-copy-wa">📋 Copiar pedido para WhatsApp</button>
+    <button class="btn-secondary" id="btn-clear-cart" style="color:var(--rojo);border-color:var(--rojo)">Vaciar carrito</button>
+  </div>
+</div>
+
 <script>
 // ============================================================
 //  CONFIG
 // ============================================================
 const SYNC_URL = 'https://argomedo455.minimarketmarin01.workers.dev';
+const IVA = 0.19;
 
-// DB: catálogo completo cargado en memoria al abrir la app (igual que Marín).
-// Se guarda también en localStorage para que la app abra instantáneo la próxima
-// vez, mientras el catálogo fresco llega en segundo plano.
+// DB: catálogo completo cargado en memoria al abrir la app.
 let DB = { items: [] };
+// Carrito del pedido: { [ref]: cantidad }
+let CART = {};
+
+function fmtPeso(n){ return '$'+Math.round(n||0).toLocaleString('es-CL'); }
 
 function showToast(msg){
   const t=document.getElementById('toast');
@@ -347,7 +437,7 @@ function showToast(msg){
 }
 
 // ============================================================
-//  PERSISTENCIA LOCAL (arranque instantáneo)
+//  PERSISTENCIA LOCAL
 // ============================================================
 function persist(){
   try{ localStorage.setItem('cumpas_catalogo', JSON.stringify(DB.items)); }catch(e){}
@@ -359,9 +449,18 @@ function restoreLocal(){
   }catch(e){}
   return false;
 }
+function persistCart(){
+  try{ localStorage.setItem('cumpas_carrito', JSON.stringify(CART)); }catch(e){}
+}
+function restoreCart(){
+  try{
+    const raw=localStorage.getItem('cumpas_carrito');
+    if(raw) CART=JSON.parse(raw);
+  }catch(e){}
+}
 
 // ============================================================
-//  CARGA DEL CATÁLOGO DESDE EL WORKER
+//  CARGA DEL CATÁLOGO
 // ============================================================
 function actualizarStats(){
   const total=DB.items.length;
@@ -373,7 +472,6 @@ function actualizarStats(){
 
 async function cargarCatalogo(silencioso){
   const banner=document.getElementById('load-banner');
-  const msg=document.getElementById('load-msg');
   if(!silencioso){
     banner.classList.remove('hidden','err');
     banner.innerHTML='<div class="spin"></div><span id="load-msg">Cargando catálogo…</span>';
@@ -395,14 +493,10 @@ async function cargarCatalogo(silencioso){
   }
 }
 
-// ============================================================
-//  ARRANQUE
-// ============================================================
 (function init(){
+  restoreCart();
   const habiaLocal=restoreLocal();
   if(habiaLocal){
-    // Ya hay catálogo guardado: la app se ve y usa al instante, mientras se
-    // refresca en segundo plano (silencioso) por si algo cambió en Loyverse.
     actualizarStats();
     document.getElementById('load-banner').classList.add('hidden');
     cargarCatalogo(true);
@@ -412,9 +506,7 @@ async function cargarCatalogo(silencioso){
 })();
 
 // ============================================================
-//  BÚSQUEDA DE PRODUCTOS (en memoria, sobre DB.items) — igual
-//  que Marín: todas las palabras deben aparecer en nombre, SKU
-//  o código de barras, en cualquier orden. Máximo 25 resultados.
+//  BÚSQUEDA DE PRODUCTOS (en memoria) — igual que Marín.
 // ============================================================
 function buscarProductos(q){
   q=(q||'').toLowerCase().trim();
@@ -428,19 +520,22 @@ function buscarProductos(q){
   }).slice(0,25);
 }
 
-// ============================================================
-//  MÓDULO: RECIBIR MERCADERÍA
-// ============================================================
-const rcState={ item:null, modo:'unidad' };
-
 function abrirModal(id){ document.getElementById(id).classList.remove('hidden'); }
 function cerrarModal(id){ document.getElementById(id).classList.add('hidden'); }
 
+// ============================================================
+//  MÓDULO: RECIBIR MERCADERÍA (campos idénticos a Marín:
+//  Con IVA/Sin IVA, margen % objetivo, cálculo automático de
+//  precio, resumen explicativo, por unidad/por caja).
+// ============================================================
+const rcState={ item:null, modo:'unidad', ivaModo:'con', precioTocado:false, margenTocado:false };
+
 function rcReset(){
-  rcState.item=null; rcState.modo='unidad';
+  rcState.item=null; rcState.modo='unidad'; rcState.precioTocado=false; rcState.margenTocado=false;
   document.getElementById('rc-search').value='';
   document.getElementById('rc-results').innerHTML='';
   document.getElementById('rc-picked').classList.remove('on');
+  document.getElementById('rc-activar-inv').classList.add('hidden');
   document.getElementById('rc-cantidad-field').style.display='none';
   document.getElementById('rc-costo-field').style.display='none';
   document.getElementById('rc-fecha-field').style.display='none';
@@ -449,10 +544,14 @@ function rcReset(){
   document.getElementById('rc-caja-campos').classList.add('hidden');
   document.getElementById('rc-costo').value='';
   document.getElementById('rc-precio').value='';
+  document.getElementById('rc-margen-obj').value='30';
+  document.getElementById('rc-resumen').innerHTML='';
+  document.getElementById('rc-stock-total-hint').textContent='';
   document.getElementById('rc-fecha').value='';
   document.getElementById('rc-fecha-dd').value='';
   document.getElementById('rc-fecha-mm').value='';
   document.getElementById('rc-fecha-aaaa').value='';
+  rcSetIva('con');
   rcSetModo('unidad');
   document.getElementById('rc-guardar').disabled=true;
 }
@@ -462,9 +561,32 @@ function rcSetModo(modo){
   document.getElementById('rc-modo-unidad').classList.toggle('active',modo==='unidad');
   document.getElementById('rc-modo-caja').classList.toggle('active',modo==='caja');
   document.getElementById('rc-caja-campos').classList.toggle('hidden',modo!=='caja');
+  document.getElementById('rc-costo-label').textContent=modo==='caja'?'COSTO DE LA CAJA':'COSTO';
+  const esPeso=rcState.item&&rcState.item.peso;
+  document.getElementById('rc-unidad-lbl').textContent=modo==='caja'?'cajas':(esPeso?'kg':'u');
+  rcRenderResumen();
 }
 document.getElementById('rc-modo-unidad').onclick=()=>rcSetModo('unidad');
 document.getElementById('rc-modo-caja').onclick=()=>rcSetModo('caja');
+document.getElementById('rc-unidades-caja').oninput=rcRenderResumen;
+
+function rcSetIva(modo){
+  rcState.ivaModo=modo;
+  document.getElementById('rc-iva-con').classList.toggle('active',modo==='con');
+  document.getElementById('rc-iva-sin').classList.toggle('active',modo==='sin');
+  if(!rcState.precioTocado)rcRecalcularPrecioAuto();
+  rcRenderExplicaCosto();
+  rcRenderResumen();
+}
+document.getElementById('rc-iva-con').onclick=()=>rcSetIva('con');
+document.getElementById('rc-iva-sin').onclick=()=>rcSetIva('sin');
+
+function rcRenderExplicaCosto(){
+  const el=document.getElementById('rc-costo-explica');
+  el.textContent=rcState.ivaModo==='con'
+    ?'Este valor ya incluye IVA — se usará tal cual para calcular el precio y para guardar en Loyverse.'
+    :'Se le sumará 19% de IVA automáticamente. Ese valor con IVA es el que se usa para calcular el precio y el que se guarda en Loyverse.';
+}
 
 function rcPick(ref){
   const it=(DB.items||[]).find(i=>i.ref===ref);
@@ -479,8 +601,6 @@ function rcPick(ref){
   document.getElementById('rc-stock').textContent='Stock actual: '+stockTxt;
 
   if(!it.track){
-    // Producto sin seguimiento de inventario: se ofrece activarlo (1 toque) en vez de
-    // solo bloquear — así no hay que ir a Loyverse a mano para recibir este producto.
     document.getElementById('rc-cantidad-field').style.display='none';
     document.getElementById('rc-costo-field').style.display='none';
     document.getElementById('rc-fecha-field').style.display='none';
@@ -500,9 +620,35 @@ function rcPick(ref){
   cIn.disabled=false; cIn.value=''; cIn.placeholder=it.peso?'0.000':'0';
   document.getElementById('rc-costo').value=it.coste||'';
   document.getElementById('rc-precio').value=it.precio||'';
+  rcState.precioTocado=false; rcState.margenTocado=false;
+  document.getElementById('rc-margen-obj').value='30';
+  // El costo prellenado ya está guardado en Loyverse (siempre bruto/con IVA) — arranca en "Con IVA".
+  rcSetIva('con');
   rcSetModo('unidad');
   rcValidar();
 }
+
+document.getElementById('rc-activar-inv').onclick=async()=>{
+  const it=rcState.item; if(!it)return;
+  const btn=document.getElementById('rc-activar-inv');
+  btn.disabled=true; btn.textContent='Verificando…';
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'habilitar_track_stock',payload:{sku:it.ref}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      it.track=true; persist();
+      btn.textContent=j.yaEstaba?'✅ Inventario ya activado':'✅ Inventario activado';
+      showToast('🔓 Seguimiento activado · '+it.nombre);
+      setTimeout(()=>rcPick(it.ref),700);
+    }else{
+      showToast('❌ '+((j&&j.error)||'No se pudo activar en Loyverse'));
+      btn.disabled=false; btn.textContent='🔓 Activar inventario para este producto';
+    }
+  }catch(e){
+    showToast('❌ Error de conexión al activar');
+    btn.disabled=false; btn.textContent='🔓 Activar inventario para este producto';
+  }
+};
 
 function rcValidar(){
   const cant=Number(document.getElementById('rc-cantidad').value)||0;
@@ -517,32 +663,16 @@ document.getElementById('rc-search').oninput=e=>{
     box.innerHTML=lista.map(it=>`<div class="result-item" data-ref="${it.ref}"><div class="n">${it.nombre}</div><div class="s">${it.prov}${it.barcode?' · '+it.barcode:''}</div></div>`).join('');
     box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>rcPick(el.dataset.ref));
   }else if(q.trim().length>=3){
-    box.innerHTML='<div class="result-item" style="color:var(--muted)">Sin coincidencias. <span id="rc-crear-nuevo" style="color:var(--cielo);font-weight:700;text-decoration:underline">Crear producto nuevo</span></div>';
-    document.getElementById('rc-crear-nuevo').onclick=()=>openCrearProducto(q.trim());
+    // Redirección automática: no se ofrece "crear producto" como link secundario — se
+    // pasa directo al módulo de creación con el nombre ya escrito, para no perder un
+    // toque extra en el flujo más frecuente (producto nuevo que llegó y hay que recibir).
+    box.innerHTML='<div class="result-item" style="color:var(--muted)">Sin coincidencias, abriendo creación de producto…</div>';
+    clearTimeout(rcState._autoCrearT);
+    rcState._autoCrearT=setTimeout(()=>{
+      if(document.getElementById('rc-search').value.trim()===q.trim()) openCrearProducto(q.trim());
+    },600);
   }else{
     box.innerHTML='';
-  }
-};
-
-document.getElementById('rc-activar-inv').onclick=async()=>{
-  const it=rcState.item; if(!it)return;
-  const btn=document.getElementById('rc-activar-inv');
-  btn.disabled=true; btn.textContent='Verificando…';
-  try{
-    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'habilitar_track_stock',payload:{sku:it.ref}})});
-    const j=await res.json();
-    if(j&&j.ok){
-      it.track=true; persist();
-      btn.textContent=j.yaEstaba?'✅ Inventario ya activado':'✅ Inventario activado';
-      showToast('🔓 Seguimiento activado · '+it.nombre);
-      setTimeout(()=>rcPick(it.ref),700); // refresca la vista con los campos ya habilitados
-    }else{
-      showToast('❌ '+((j&&j.error)||'No se pudo activar en Loyverse'));
-      btn.disabled=false; btn.textContent='🔓 Activar inventario para este producto';
-    }
-  }catch(e){
-    showToast('❌ Error de conexión al activar');
-    btn.disabled=false; btn.textContent='🔓 Activar inventario para este producto';
   }
 };
 
@@ -550,24 +680,89 @@ document.getElementById('rc-qty-menos').onclick=()=>{
   const i=document.getElementById('rc-cantidad');
   const step=rcState.item&&rcState.item.peso?0.05:1;
   i.value=Math.max(0,(Number(i.value)||0)-step).toFixed(rcState.item&&rcState.item.peso?3:0);
-  rcValidar();
+  rcValidar(); rcRenderResumen();
 };
 document.getElementById('rc-qty-mas').onclick=()=>{
   const i=document.getElementById('rc-cantidad');
   const step=rcState.item&&rcState.item.peso?0.05:1;
   i.value=((Number(i.value)||0)+step).toFixed(rcState.item&&rcState.item.peso?3:0);
-  rcValidar();
+  rcValidar(); rcRenderResumen();
 };
-document.getElementById('rc-cantidad').oninput=rcValidar;
+document.getElementById('rc-cantidad').oninput=()=>{ rcValidar(); rcRenderResumen(); };
 
-// Fecha segmentada: al completar DD y MM, salta solo al siguiente campo.
+// ---- Cálculo de costo/precio, idéntico a Marín ----
+function rcCostoUnitarioBruto(){
+  const costoIngresado=Number(document.getElementById('rc-costo').value)||0;
+  if(rcState.modo!=='caja')return costoIngresado;
+  const uCaja=Number(document.getElementById('rc-unidades-caja').value)||0;
+  return uCaja>0?(costoIngresado/uCaja):0;
+}
+function rcCostoBruto(){
+  const ingresado=rcCostoUnitarioBruto();
+  return rcState.ivaModo==='sin'?(ingresado*(1+IVA)):ingresado;
+}
+function rcRecalcularPrecioAuto(){
+  const margenPct=Number(document.getElementById('rc-margen-obj').value);
+  const base=rcCostoBruto();
+  if(!base||!margenPct||margenPct<=0||margenPct>=100)return;
+  document.getElementById('rc-precio').value=Math.round(base/(1-margenPct/100));
+  rcState.precioTocado=false;
+}
+document.getElementById('rc-precio').oninput=()=>{ rcState.precioTocado=true; rcRenderResumen(); };
+document.getElementById('rc-costo').oninput=()=>{
+  if(!rcState.precioTocado)rcRecalcularPrecioAuto();
+  rcRenderExplicaCosto(); rcRenderResumen();
+};
+document.getElementById('rc-margen-obj').oninput=()=>{
+  rcState.margenTocado=true;
+  if(!rcState.precioTocado)rcRecalcularPrecioAuto();
+  rcRenderResumen();
+};
+
+function rcRenderResumen(){
+  const cont=document.getElementById('rc-resumen');
+  const costoIngresado=Number(document.getElementById('rc-costo').value)||0;
+  const costoUnitBruto=rcCostoUnitarioBruto();
+  const base=rcCostoBruto();
+  const margenPct=Number(document.getElementById('rc-margen-obj').value)||0;
+  const precio=Number(document.getElementById('rc-precio').value)||0;
+  const margenReal=precio>0?((precio-base)/precio)*100:null;
+  const cant=Number(document.getElementById('rc-cantidad').value)||0;
+  const uCaja=Number(document.getElementById('rc-unidades-caja').value)||0;
+
+  if(!costoIngresado){cont.innerHTML='';document.getElementById('rc-stock-total-hint').textContent='';return;}
+
+  const filas=[];
+  if(rcState.modo==='caja'){
+    filas.push('Costo de la caja: <b>'+fmtPeso(costoIngresado)+'</b>');
+    filas.push('Costo por unidad ('+(rcState.ivaModo==='con'?'con IVA':'neto')+'): <b>'+(costoUnitBruto?fmtPeso(Math.round(costoUnitBruto)):'—')+'</b>');
+  }else{
+    filas.push('Costo ingresado ('+(rcState.ivaModo==='con'?'con IVA':'neto')+'): <b>'+fmtPeso(costoIngresado)+'</b>');
+  }
+  if(rcState.ivaModo==='sin')filas.push('Costo con IVA (19% sumado): <b>'+(base?fmtPeso(Math.round(base)):'—')+'</b>');
+  filas.push('Costo con IVA guardado en Loyverse: <b>'+(base?fmtPeso(Math.round(base)):'—')+'</b>');
+  if(margenPct)filas.push('Margen objetivo: <b>'+margenPct.toFixed(1)+'%</b>');
+  if(margenReal!=null)filas.push('Margen real'+(rcState.precioTocado?' (precio editado a mano)':'')+': <b>'+margenReal.toFixed(1)+'%</b>');
+  filas.push('Precio de venta final: <b>'+(precio?fmtPeso(precio):'—')+'</b>');
+  if(rcState.modo==='caja'&&cant>0&&uCaja>0)filas.push('Stock a sumar: <b>'+cant+' caja'+(cant===1?'':'s')+' × '+uCaja+' u = '+(cant*uCaja)+' u</b>');
+  cont.innerHTML=filas.join('<br>');
+
+  const stockHint=document.getElementById('rc-stock-total-hint');
+  if(rcState.modo==='caja'&&cant>0&&uCaja>0){
+    stockHint.innerHTML='📦 '+cant+' caja'+(cant===1?'':'s')+' × '+uCaja+' u/caja = <b>'+(cant*uCaja)+' unidades</b> se sumarán al stock.';
+  }else if(rcState.modo==='caja'&&cant>0&&!uCaja){
+    stockHint.innerHTML='<span style="color:var(--rojo)">Escribe las unidades por caja para calcular el stock total.</span>';
+  }else{
+    stockHint.textContent='';
+  }
+}
+
+// ---- Fecha segmentada DD/MM/AAAA ----
 function wireFechaSegmentada(ddId,mmId,aaaaId,hiddenId,calId){
   const dd=document.getElementById(ddId),mm=document.getElementById(mmId),aaaa=document.getElementById(aaaaId),hidden=document.getElementById(hiddenId),cal=document.getElementById(calId);
   dd.oninput=()=>{ if(dd.value.length>=2)mm.focus(); };
   mm.oninput=()=>{ if(mm.value.length>=2)aaaa.focus(); };
-  cal.onclick=()=>{
-    hidden.showPicker?hidden.showPicker():hidden.click();
-  };
+  cal.onclick=()=>{ hidden.showPicker?hidden.showPicker():hidden.click(); };
   hidden.onchange=()=>{
     if(!hidden.value)return;
     const [y,m,d]=hidden.value.split('-');
@@ -590,7 +785,8 @@ document.getElementById('rc-guardar').onclick=async()=>{
   const uCaja=Number(document.getElementById('rc-unidades-caja').value)||0;
   const cantidad=(rcState.modo==='caja'&&uCaja>0)?(cantIngresada*uCaja):cantIngresada;
   const fecha=fechaSegmentadaTexto('rc-fecha-dd','rc-fecha-mm','rc-fecha-aaaa');
-  const nuevoCosto=Number(document.getElementById('rc-costo').value)||0;
+  // Lo que se guarda en Loyverse es el costo BRUTO (con IVA) — el mismo que sirvió de base para el precio.
+  const nuevoCosto=Math.round(rcCostoBruto());
   const nuevoPrecio=Number(document.getElementById('rc-precio').value)||0;
   const costoCambio=nuevoCosto>0&&nuevoCosto!==it.coste;
   const precioCambio=nuevoPrecio>0&&nuevoPrecio!==it.precio;
@@ -605,7 +801,6 @@ document.getElementById('rc-guardar').onclick=async()=>{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'lote_nuevo',payload}),signal:ctrl.signal});
     const j=await res.json();
     if(j&&j.ok){
-      // Refresca la copia local al instante (sin esperar a resincronizar todo).
       const itLocal=(DB.items||[]).find(x=>x.ref===it.ref);
       if(itLocal){
         if(j.nuevoStock!=null)itLocal.stock=j.nuevoStock;
@@ -636,9 +831,7 @@ function closeRecibir(){ cerrarModal('rc-ov'); }
 document.getElementById('rc-close').onclick=closeRecibir;
 
 // ============================================================
-//  ESCÁNER DE CÁMARA — usa BarcodeDetector nativo (soportado en
-//  Chrome Android, que es donde corre esta app). Vibra al detectar
-//  y vuelve a abrir el modal desde donde se llamó.
+//  ESCÁNER DE CÁMARA
 // ============================================================
 let scannerStream=null, scannerLoopId=null;
 
@@ -674,7 +867,7 @@ async function openScanner(onDetect){
           onDetect(valor);
           return;
         }
-      }catch(e){/* frame no legible, sigue intentando */}
+      }catch(e){}
       detectando=false;
     }
     scannerLoopId=requestAnimationFrame(loop);
@@ -692,11 +885,15 @@ document.getElementById('scanner-close').onclick=closeScanner;
 document.getElementById('rc-scan').onclick=()=>{
   closeRecibir();
   openScanner(code=>{
-    abrirModal('rc-ov');
     const lista=buscarProductos(code);
-    if(lista.length===1) rcPick(lista[0].ref);
-    else if(lista.length===0) showToast('⚠️ Código no encontrado en el catálogo: '+code);
-    else{
+    if(lista.length===1){ abrirModal('rc-ov'); rcPick(lista[0].ref); }
+    else if(lista.length===0){
+      // Redirección automática también al escanear: código no encontrado → directo a
+      // crear producto, con el código ya cargado en el campo de barcode.
+      showToast('⚠️ Código no encontrado, creando producto nuevo…');
+      openCrearProducto('', code);
+    }else{
+      abrirModal('rc-ov');
       document.getElementById('rc-search').value=code;
       document.getElementById('rc-search').dispatchEvent(new Event('input',{bubbles:true}));
     }
@@ -705,26 +902,29 @@ document.getElementById('rc-scan').onclick=()=>{
 
 // ============================================================
 //  MÓDULO: CREAR PRODUCTO NUEVO
-//  Se abre desde Recepción cuando una búsqueda no encuentra nada
-//  (mismo patrón que Marín) — crea el producto en Loyverse con un
-//  SKU asignado automáticamente, y vuelve a Recepción con él ya
-//  seleccionado, listo para recibir stock.
 // ============================================================
 const cpState={ peso:false, origen:null };
 
-function openCrearProducto(nombreSugerido){
+function openCrearProducto(nombreSugerido, barcodeSugerido){
   cpState.peso=false;
-  cpState.origen=document.getElementById('rc-ov').classList.contains('hidden')?null:'rc';
+  cpState.origen='rc';
+  const aviso=document.getElementById('cp-aviso-field');
+  if(nombreSugerido||barcodeSugerido){
+    aviso.style.display='block';
+    document.getElementById('cp-aviso-txt').textContent='⚠️ No se encontró ningún producto que coincida — completa los datos para crearlo en Loyverse.';
+  }else{
+    aviso.style.display='none';
+  }
   document.getElementById('cp-nombre').value=nombreSugerido||'';
-  document.getElementById('cp-barcode').value=/^\d{6,}$/.test(nombreSugerido||'')?nombreSugerido:'';
-  if(/^\d{6,}$/.test(nombreSugerido||''))document.getElementById('cp-nombre').value='';
+  document.getElementById('cp-barcode').value=barcodeSugerido||'';
   document.getElementById('cp-costo').value='';
   document.getElementById('cp-precio').value='';
   document.getElementById('cp-stock').value='';
   cpSetPeso(false);
-  closeRecibir();
+  cerrarModal('rc-ov');
   abrirModal('cp-ov');
-  document.getElementById('cp-nombre').focus();
+  if(!nombreSugerido) document.getElementById('cp-nombre').focus();
+  else document.getElementById('cp-costo').focus();
 }
 function closeCrearProducto(){
   cerrarModal('cp-ov');
@@ -766,8 +966,6 @@ document.getElementById('cp-guardar').onclick=async()=>{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'crear_producto',payload})});
     const j=await res.json();
     if(j&&j.ok){
-      // Agrega el producto recién creado a la copia local, para que aparezca en
-      // búsquedas inmediatamente sin esperar a la próxima sincronización.
       (DB.items=DB.items||[]).push({
         ref:j.sku, nombre:j.nombre, cat:'SIN CATEGORÍA', prov:'SIN PROVEEDOR',
         barcode:j.barcode||'', precio:j.precio||0, coste:j.costo||0, stock:j.stock,
@@ -788,11 +986,204 @@ document.getElementById('cp-guardar').onclick=async()=>{
 };
 
 // ============================================================
+//  MÓDULO: ARMAR PEDIDO
+// ============================================================
+const apState={ prov:'TODOS', search:'' };
+
+function apProveedores(){
+  const set=new Set((DB.items||[]).map(it=>it.prov||'SIN PROVEEDOR'));
+  return ['TODOS', ...Array.from(set).sort()];
+}
+
+function apRenderProvChips(){
+  const cont=document.getElementById('ap-prov-select');
+  cont.innerHTML=apProveedores().map(p=>
+    `<button class="prov-chip${p===apState.prov?' active':''}" data-p="${p}">${p==='TODOS'?'Todos':p}</button>`
+  ).join('');
+  cont.querySelectorAll('[data-p]').forEach(el=>el.onclick=()=>{
+    apState.prov=el.dataset.p;
+    apRenderProvChips();
+    apRenderLista();
+  });
+}
+
+function apItemsFiltrados(){
+  let items=DB.items||[];
+  if(apState.prov!=='TODOS') items=items.filter(it=>(it.prov||'SIN PROVEEDOR')===apState.prov);
+  if(apState.search.trim()){
+    const palabras=apState.search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    items=items.filter(it=>{
+      const nom=(it.nombre||'').toLowerCase();
+      return palabras.every(p=>nom.includes(p)||String(it.ref).includes(p));
+    });
+  }
+  return items;
+}
+
+function apRenderLista(){
+  const box=document.getElementById('ap-list');
+  const items=apItemsFiltrados().slice(0,150); // límite razonable en pantalla, la búsqueda acota el resto
+  if(!items.length){
+    box.innerHTML='<div class="ap-empty">Sin productos que coincidan.</div>';
+    return;
+  }
+  box.innerHTML=items.map(it=>{
+    const qty=CART[it.ref]||0;
+    const stockTxt=it.stock==null?'sin control':(it.stock+(it.peso?' kg':' u'));
+    return `<div class="ap-row" data-ref="${it.ref}">
+      <div class="info">
+        <div class="n">${it.nombre}</div>
+        <div class="s">${it.prov} · Stock: <b>${stockTxt}</b> · ${fmtPeso(it.precio)}</div>
+      </div>
+      <div class="ap-qty">
+        <button class="ap-qty-btn" data-act="menos">−</button>
+        <input type="text" inputmode="decimal" value="${qty||''}" placeholder="0" data-act="input">
+        <button class="ap-qty-btn" data-act="mas">+</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  box.querySelectorAll('.ap-row').forEach(row=>{
+    const ref=row.dataset.ref;
+    const input=row.querySelector('[data-act="input"]');
+    row.querySelector('[data-act="menos"]').onclick=()=>{
+      const v=Math.max(0,(Number(input.value)||0)-1);
+      apSetCantidad(ref,v); input.value=v||'';
+    };
+    row.querySelector('[data-act="mas"]').onclick=()=>{
+      const v=(Number(input.value)||0)+1;
+      apSetCantidad(ref,v); input.value=v;
+    };
+    input.oninput=()=>apSetCantidad(ref,Number(input.value)||0);
+  });
+  apUpdateFab();
+}
+
+function apSetCantidad(ref,cantidad){
+  if(cantidad>0) CART[ref]=cantidad;
+  else delete CART[ref];
+  persistCart();
+  apUpdateFab();
+}
+
+function apUpdateFab(){
+  const n=Object.keys(CART).length;
+  const fab=document.getElementById('ap-cart-fab');
+  document.getElementById('ap-cart-count').textContent=n;
+  fab.classList.toggle('hidden',n===0);
+}
+
+document.getElementById('ap-search').oninput=e=>{
+  apState.search=e.target.value;
+  apRenderLista();
+};
+
+function openArmarPedido(){
+  apState.prov='TODOS'; apState.search='';
+  document.getElementById('ap-search').value='';
+  apRenderProvChips();
+  apRenderLista();
+  abrirModal('ap-ov');
+}
+document.getElementById('ap-close').onclick=()=>cerrarModal('ap-ov');
+document.getElementById('ap-cart-fab').onclick=openCarrito;
+
+// ============================================================
+//  CARRITO DEL PEDIDO + COPIAR A WHATSAPP
+// ============================================================
+function cartLineas(){
+  return Object.keys(CART).map(ref=>{
+    const it=(DB.items||[]).find(i=>i.ref===ref);
+    return it?{ it, cantidad:CART[ref] }:null;
+  }).filter(Boolean);
+}
+
+function openCarrito(){
+  renderCarrito();
+  abrirModal('cart-ov');
+}
+document.getElementById('cart-close').onclick=()=>cerrarModal('cart-ov');
+
+function renderCarrito(){
+  const lineas=cartLineas();
+  const box=document.getElementById('cart-body');
+  const provs=new Set(lineas.map(l=>l.it.prov||'SIN PROVEEDOR'));
+  document.getElementById('cart-prov-txt').textContent='Proveedor: '+(provs.size===1?Array.from(provs)[0]:(provs.size>1?'(varios)':'—'));
+  document.getElementById('cart-total-txt').textContent=lineas.length+' producto'+(lineas.length===1?'':'s');
+
+  if(!lineas.length){
+    box.innerHTML='<div class="ap-empty">El carrito está vacío. Vuelve a "Armar pedido" y agrega productos.</div>';
+    return;
+  }
+  box.innerHTML=lineas.map(l=>`
+    <div class="cart-row" data-ref="${l.it.ref}">
+      <div class="info">
+        <div class="n">${l.it.nombre}</div>
+        <div class="s">${l.it.prov} · Cantidad: <b>${l.cantidad}</b></div>
+      </div>
+      <button class="del" data-del="${l.it.ref}">✕</button>
+    </div>`).join('');
+  box.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{
+    delete CART[btn.dataset.del];
+    persistCart();
+    renderCarrito();
+    apUpdateFab();
+  });
+}
+
+document.getElementById('btn-clear-cart').onclick=()=>{
+  if(!Object.keys(CART).length){ showToast('El carrito ya está vacío'); return; }
+  if(!confirm('¿Vaciar todo el carrito? Esta acción no se puede deshacer.'))return;
+  CART={};
+  persistCart();
+  renderCarrito();
+  apUpdateFab();
+  showToast('✕ Carrito vaciado');
+};
+
+document.getElementById('btn-copy-wa').onclick=()=>{
+  const lineas=cartLineas();
+  if(!lineas.length){ showToast('No hay productos en el carrito'); return; }
+
+  // Agrupa por proveedor — cada proveedor va en su propio bloque, ya que cada uno
+  // tiene su propio contacto de WhatsApp y no conviene mezclarlos en un solo mensaje.
+  const porProveedor={};
+  lineas.forEach(l=>{
+    const p=l.it.prov||'SIN PROVEEDOR';
+    (porProveedor[p]=porProveedor[p]||[]).push(l);
+  });
+
+  const fecha=new Date().toLocaleDateString('es-CL');
+  let txt=`*Los Cumpas Mini Market*\nPedido · ${fecha}\n\n`;
+  Object.keys(porProveedor).sort().forEach(prov=>{
+    txt+=`*Proveedor: ${prov}*\n`;
+    porProveedor[prov].forEach(l=>{
+      txt+=`• ${l.it.nombre} — ${l.cantidad} ${l.it.peso?'kg':'und'}\n`;
+    });
+    txt+='\n';
+  });
+
+  const btn=document.getElementById('btn-copy-wa');
+  const ok=()=>{
+    showToast('✓ Pedido copiado — pégalo en WhatsApp');
+    btn.classList.add('copied');
+    setTimeout(()=>btn.classList.remove('copied'),1400);
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(ok,()=>{
+      const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove(); ok();
+    });
+  }else{
+    const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove(); ok();
+  }
+};
+
+// ============================================================
 //  NAVEGACIÓN
 // ============================================================
-document.getElementById('btn-armar-pedido').onclick=()=>{
-  showToast('Módulo "Armar pedido" — se conecta en el siguiente paso');
-};
+document.getElementById('btn-armar-pedido').onclick=openArmarPedido;
 document.getElementById('btn-recibir').onclick=openRecibir;
 
 </script>
