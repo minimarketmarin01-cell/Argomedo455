@@ -4,5 +4,5 @@ compatibility_date = "2025-01-01"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "TU_BASE_D1"
-database_id = "TU_ID_DE_BASE_D1"
+database_name = "argomedo455-db"
+database_id = "bf33a21d-5fb9-48be-b877-b4e914beafc5"
