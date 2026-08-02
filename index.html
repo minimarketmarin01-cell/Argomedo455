@@ -720,6 +720,31 @@ function comboboxInit(inputId, resultsId, listaFn, crearAction, onElegir){
   document.addEventListener('click',(e)=>{ if(e.target!==inp && !box.contains(e.target)) cerrar(); });
 }
 
+// ============================================================
+//  ACTUALIZACIÓN AUTOMÁTICA — cada 20s pregunta al worker si algo
+//  cambió (venta, ajuste, webhook de Loyverse, etc.) mediante una
+//  consulta liviana; solo si cambió de verdad se vuelve a pedir el
+//  catálogo completo. Así la app se mantiene al día sin que el
+//  usuario tenga que recargarla a mano.
+// ============================================================
+let ultimaActualizacionConocida=null;
+async function revisarActualizacionCatalogo(){
+  try{
+    const res=await fetch(SYNC_URL+'?action=ultima_actualizacion');
+    const j=await res.json();
+    if(!j||!j.ok||!j.actualizadoEn) return;
+    if(ultimaActualizacionConocida===null){
+      ultimaActualizacionConocida=j.actualizadoEn; // primera vez: solo guarda la marca, no recarga
+      return;
+    }
+    if(j.actualizadoEn!==ultimaActualizacionConocida){
+      ultimaActualizacionConocida=j.actualizadoEn;
+      await cargarCatalogo(true);
+    }
+  }catch(e){ /* silencioso: si falla, se reintenta en el próximo ciclo */ }
+}
+setInterval(revisarActualizacionCatalogo, 20000);
+
 (function init(){
   restoreCart();
   const habiaLocal=restoreLocal();
@@ -731,6 +756,7 @@ function comboboxInit(inputId, resultsId, listaFn, crearAction, onElegir){
     cargarCatalogo(false);
   }
   cargarProveedoresSectores();
+  revisarActualizacionCatalogo();
 })();
 
 // ============================================================

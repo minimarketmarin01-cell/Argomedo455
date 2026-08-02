@@ -475,6 +475,13 @@ async function sincronizarCatalogo(env) {
   };
 }
 
+// Marca en `config` el momento del último cambio real en `productos`. El frontend
+// consulta esto cada cierto tiempo (polling liviano) para saber si debe refrescar
+// su copia local del catálogo, sin tener que revisar producto por producto.
+async function marcarCatalogoActualizado(env) {
+  await run(env, "INSERT INTO config (clave, valor) VALUES ('catalogo_actualizado_en', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor", new Date().toISOString());
+}
+
 // ============================================================
 //  WEBHOOKS DE LOYVERSE (tiempo real → D1)
 //  Loyverse envía POST a /webhook/loyverse cuando cambia stock o
@@ -587,6 +594,7 @@ async function manejarWebhookLoyverse(request, env, url) {
     } else {
       resultado.noManejado = true; // tipo recibido pero sin handler todavía (se registra igual)
     }
+    if (resultado.procesados > 0) await marcarCatalogoActualizado(env);
   } finally {
     await marcarEventoProcesado(env, eventId, tipo);
   }
@@ -1117,6 +1125,7 @@ export default {
       // GET /?action=sync  →  trae el catálogo completo de Loyverse y lo guarda en D1
       if (action === "sync") {
         const resultado = await sincronizarCatalogo(env);
+        await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
 
@@ -1127,10 +1136,20 @@ export default {
         return json({ ok: true, items, total: items.length });
       }
 
+      // GET /?action=ultima_actualizacion  →  devuelve solo la marca de tiempo del
+      // último cambio en el catálogo. Consulta muy liviana (una fila de `config`),
+      // pensada para que el frontend la pregunte cada 15-20s y solo pida el catálogo
+      // completo si de verdad cambió algo.
+      if (action === "ultima_actualizacion") {
+        const fila = await get(env, "SELECT valor FROM config WHERE clave = 'catalogo_actualizado_en'");
+        return json({ ok: true, actualizadoEn: fila ? fila.valor : null });
+      }
+
       // POST { action:'lote_nuevo', payload:{...} }  →  recibe mercadería: suma stock
       // en Loyverse, registra el lote de vencimiento, y opcionalmente actualiza costo/precio.
       if (action === "lote_nuevo") {
         const resultado = await accionLoteNuevo(env, payload);
+        await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
 
@@ -1138,6 +1157,7 @@ export default {
       // Loyverse (SKU asignado automáticamente) y lo guarda en D1.
       if (action === "crear_producto") {
         const resultado = await accionCrearProducto(env, payload);
+        await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
 
@@ -1145,6 +1165,7 @@ export default {
       // de inventario de un producto que se creó sin esa opción en Loyverse.
       if (action === "habilitar_track_stock") {
         const resultado = await accionHabilitarTrackStock(env, payload);
+        await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
 
@@ -1152,6 +1173,7 @@ export default {
       // Loyverse para un producto que se creó/quedó sin él.
       if (action === "activar_iva") {
         const resultado = await accionActivarIva(env, payload);
+        await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
 
@@ -1159,6 +1181,7 @@ export default {
       // corrige el stock a mano (conteo, merma, duplicado) y deja registro en auditoría.
       if (action === "ajustar_stock") {
         const resultado = await accionAjustarStock(env, payload);
+        await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
 
@@ -1192,7 +1215,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, historial_producto, proveedores_sectores. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
