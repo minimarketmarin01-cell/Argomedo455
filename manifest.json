@@ -1,0 +1,22 @@
+{
+  "name": "Los Cumpas · Pedidos y Recepción",
+  "short_name": "Los Cumpas",
+  "description": "Gestión de pedidos y recepción de mercadería con vencimientos para Los Cumpas Mini Market",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0A0F1A",
+  "theme_color": "#0A0F1A",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
