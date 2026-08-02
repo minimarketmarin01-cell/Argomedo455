@@ -370,7 +370,62 @@ async function sincronizarCatalogo(env) {
 
   await batchRun(env, stmts, 500);
 
-  return { totalLoyverse: items.length, guardados: stmts.length, saltados: saltados.length, ejemplosSaltados: saltados.slice(0, 10) };
+  // --------------------------------------------------------
+  // ELIMINAR de D1 los productos que ya no existen en Loyverse
+  // (borrados desde Loyverse Back Office o desde el POS). Sin esto,
+  // un producto eliminado en Loyverse seguía apareciendo para
+  // siempre en la app, porque la caché D1 solo se actualizaba/
+  // insertaba pero nunca se depuraba.
+  //
+  // Salvaguarda: si por algún corte/error parcial de la API de
+  // Loyverse `items` viniera vacío o incompleto, NO se debe vaciar
+  // el catálogo entero por error. Por eso solo se ejecuta el borrado
+  // si los "candidatos a eliminar" son una fracción razonable del
+  // catálogo actual (máx. 40%, y solo si ya había al menos 10
+  // productos guardados) — si supera ese umbral, se aborta el
+  // borrado y se avisa en la respuesta para revisar a mano.
+  // --------------------------------------------------------
+  const skusVigentes = new Set(
+    items.map(it => (it.variants && it.variants[0] && it.variants[0].sku) || null).filter(Boolean)
+  );
+
+  const existentesEnD1 = await env.DB.prepare("SELECT sku, nombre, id_loyverse FROM productos").all();
+  const filasD1 = existentesEnD1.results || [];
+  const aEliminar = filasD1.filter(p => !skusVigentes.has(p.sku));
+
+  let eliminados = { total: 0, nombres: [], abortado: false, motivoAborto: null };
+
+  if (aEliminar.length > 0) {
+    const umbral = Math.max(0.4 * filasD1.length, 0); // no más del 40% del catálogo actual
+    if (filasD1.length >= 10 && aEliminar.length > umbral) {
+      eliminados.abortado = true;
+      eliminados.motivoAborto =
+        "Se detectaron " + aEliminar.length + " de " + filasD1.length + " productos como 'ya no están en Loyverse', " +
+        "lo cual supera el 40% del catálogo — por seguridad NO se borró nada automáticamente " +
+        "(podría ser un corte/error temporal de la API de Loyverse, no borrados reales). Revisa manualmente o vuelve a sincronizar.";
+    } else {
+      const delStmts = aEliminar.map(p => env.DB.prepare("DELETE FROM productos WHERE sku = ?").bind(p.sku));
+      await batchRun(env, delStmts, 500);
+
+      const audStmts = aEliminar.map(p => env.DB.prepare(
+        `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+         VALUES (?,?,?,?,?,?,?,?,?)`
+      ).bind(fechaHoraDDMMAAAA(), "eliminado_en_loyverse", p.sku, p.nombre, "", p.id_loyverse, null,
+        "Producto ya no existe en Loyverse — eliminado automáticamente de la app al sincronizar", "sync"));
+      await batchRun(env, audStmts, 500);
+
+      eliminados.total = aEliminar.length;
+      eliminados.nombres = aEliminar.slice(0, 10).map(p => p.nombre);
+    }
+  }
+
+  return {
+    totalLoyverse: items.length,
+    guardados: stmts.length,
+    saltados: saltados.length,
+    ejemplosSaltados: saltados.slice(0, 10),
+    eliminados
+  };
 }
 
 // ============================================================
