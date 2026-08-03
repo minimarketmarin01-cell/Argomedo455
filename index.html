@@ -178,38 +178,6 @@ button{font-family:inherit}
 .ap-qty input{width:42px;height:34px;text-align:center;border:1.5px solid var(--line);border-radius:9px;font-family:'JetBrains Mono';font-weight:700;font-size:14px}
 .ap-empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:13px}
 
-/* ---- Vencimientos (Módulo 5) ---- */
-.menu-card.venc .ico{background:var(--ambar-bg)}
-.venc-tabs{display:flex;gap:8px;padding:0 16px 10px}
-.venc-tab{flex:none;padding:8px 14px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12.5px;cursor:pointer}
-.venc-tab.active{border-color:var(--cielo);background:var(--cielo);color:#fff}
-.venc-list{padding:0 16px 90px}
-.venc-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-left:5px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card);cursor:pointer}
-.venc-row:active{transform:scale(.99)}
-.venc-row.vencido{border-left-color:var(--rojo);background:var(--rojo-bg)}
-.venc-row.urgente{border-left-color:var(--rojo)}
-.venc-row.proximo{border-left-color:var(--ambar)}
-.venc-row.ok{border-left-color:var(--verde)}
-.venc-row.sin_fecha{border-left-color:var(--line)}
-.venc-row .info{flex:1;min-width:0}
-.venc-row .n{font-weight:700;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.venc-row .s{font-size:11px;color:var(--muted);margin-top:2px}
-.venc-chip{flex:none;font-size:10.5px;font-weight:800;padding:5px 9px;border-radius:8px;white-space:nowrap;text-align:center}
-.venc-chip.vencido,.venc-chip.urgente{background:var(--rojo-bg);color:var(--rojo)}
-.venc-chip.proximo{background:var(--ambar-bg);color:var(--ambar)}
-.venc-chip.ok{background:var(--verde-bg);color:var(--verde)}
-.venc-chip.sin_fecha{background:var(--card2);color:var(--muted)}
-.venc-detalle-box{background:var(--card2);border-radius:14px;padding:14px;margin-bottom:16px}
-.venc-detalle-box .n{font-weight:800;font-size:15px;color:var(--ink)}
-.venc-detalle-box .s{font-size:12.5px;color:var(--muted);margin-top:4px;line-height:1.5}
-.venc-estados{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
-.venc-estado-btn{padding:13px;border-radius:12px;border:1.5px solid var(--line);background:#fff;font-weight:700;font-size:13.5px;color:var(--ink);text-align:left;cursor:pointer}
-.venc-estado-btn:active{border-color:var(--cielo)}
-.venc-retiro{background:var(--card2);border-radius:12px;padding:12px;margin-bottom:14px;display:none}
-.venc-retiro.on{display:block}
-.venc-retiro label{display:flex;align-items:center;gap:8px;font-weight:700;font-size:12.5px;color:var(--ink);margin-bottom:8px}
-.venc-retiro input[type="text"],.venc-retiro input[type="number"]{width:100%;height:40px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;font-size:13px}
-
 /* Botón flotante del carrito */
 .cart-fab{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));z-index:270;height:52px;padding:0 18px;border-radius:26px;background:var(--brand-grad);color:#fff;border:none;font-size:14px;font-weight:800;box-shadow:var(--sh-float);cursor:pointer;display:flex;align-items:center;gap:8px}
 .cart-fab:active{transform:scale(.96)}
@@ -267,22 +235,13 @@ button{font-family:inherit}
     <div class="arrow">›</div>
   </button>
 
-  <button class=\"menu-card recibir\" id=\"btn-recibir\">
-    <div class=\"ico\">📦</div>
-    <div class=\"txt\">
-      <div class=\"t\">Recibir mercadería</div>
-      <div class=\"s\">Escanear, sumar stock y registrar fecha de vencimiento</div>
+  <button class="menu-card recibir" id="btn-recibir">
+    <div class="ico">📦</div>
+    <div class="txt">
+      <div class="t">Recibir mercadería</div>
+      <div class="s">Escanear, sumar stock y registrar fecha de vencimiento</div>
     </div>
-    <div class=\"arrow\">›</div>
-  </button>
-
-  <button class=\"menu-card venc\" id=\"btn-vencimientos\">
-    <div class=\"ico\">⏰</div>
-    <div class=\"txt\">
-      <div class=\"t\">Vencimientos</div>
-      <div class=\"s\">Revisar lotes por vencer y registrar cambios/descuentos/mermas</div>
-    </div>
-    <div class=\"arrow\">›</div>
+    <div class="arrow">›</div>
   </button>
 </div>
 
@@ -578,44 +537,6 @@ button{font-family:inherit}
   <div class="ov-foot">
     <button class="btn-wa" id="btn-copy-wa">📋 Copiar pedido para WhatsApp</button>
     <button class="btn-secondary" id="btn-clear-cart" style="color:var(--rojo);border-color:var(--rojo)">Vaciar carrito</button>
-  </div>
-</div>
-
-<!-- ===== MODAL: VENCIMIENTOS (lista) ===== -->
-<div class="ov hidden" id="venc-ov">
-  <div class="ov-head">
-    <h3>⏰ Vencimientos</h3>
-    <button class="ov-close" id="venc-close" aria-label="Cerrar">✕</button>
-  </div>
-  <div class="venc-tabs">
-    <button class="venc-tab active" data-estado="">Activos</button>
-    <button class="venc-tab" data-estado="todos">Todos</button>
-  </div>
-  <div class="ov-body" style="padding-top:0">
-    <div class="venc-list" id="venc-list"></div>
-  </div>
-</div>
-
-<!-- ===== MODAL: VENCIMIENTOS (detalle / gestionar lote) ===== -->
-<div class="ov hidden" id="venc-detalle-ov">
-  <div class="ov-head">
-    <h3>Gestionar lote</h3>
-    <button class="ov-close" id="venc-detalle-close" aria-label="Cerrar">✕</button>
-  </div>
-  <div class="ov-body">
-    <div class="venc-detalle-box" id="venc-detalle-info"></div>
-
-    <div class="venc-estados" id="venc-estados"></div>
-
-    <div class="venc-retiro" id="venc-retiro">
-      <label><input type="checkbox" id="venc-retirar-chk"> Descontar del stock (retiro de góndola)</label>
-      <input type="number" id="venc-retiro-cant" inputmode="decimal" placeholder="Cantidad a retirar">
-    </div>
-
-    <div class="field">
-      <label>Usuario responsable</label>
-      <input id="venc-responsable" placeholder="Tu nombre" autocomplete="off">
-    </div>
   </div>
 </div>
 
@@ -1875,154 +1796,6 @@ document.getElementById('btn-copy-wa').onclick=()=>{
 // ============================================================
 document.getElementById('btn-armar-pedido').onclick=openArmarPedido;
 document.getElementById('btn-recibir').onclick=openRecibir;
-
-// ============================================================
-//  VENCIMIENTOS (Módulo 5)
-// ============================================================
-const vencState = { estado: '', lista: [], loteActual: null };
-
-const VENC_ESTADOS_CIERRE = ['Cambiado', 'Descuento recibido', 'Desechado'];
-const VENC_LABELS = {
-  vencido: (d) => `Vencido hace ${Math.abs(d)}d`,
-  urgente: (d) => d === 0 ? 'Vence hoy' : `Vence en ${d}d`,
-  proximo: (d) => `Vence en ${d}d`,
-  ok: (d) => `Vence en ${d}d`,
-  sin_fecha: () => 'Sin fecha'
-};
-
-async function vencCargar(){
-  const box = document.getElementById('venc-list');
-  box.innerHTML = '<div class="ap-empty">Cargando…</div>';
-  try{
-    const qs = vencState.estado ? '&estado=' + encodeURIComponent(vencState.estado) : '';
-    const res = await fetch(SYNC_URL + '?action=vencimientos' + qs);
-    const j = await res.json();
-    if(!j.ok) throw new Error(j.error || 'Error al cargar vencimientos');
-    vencState.lista = j.lista;
-    vencRender();
-  }catch(e){
-    box.innerHTML = '<div class="ap-empty">⚠️ No se pudo cargar. Desliza para reintentar.</div>';
-  }
-}
-
-function vencRender(){
-  const box = document.getElementById('venc-list');
-  if(!vencState.lista.length){
-    box.innerHTML = '<div class="ap-empty">Sin lotes' + (vencState.estado ? '' : ' pendientes de revisión') + ' 🎉</div>';
-    return;
-  }
-  box.innerHTML = vencState.lista.map(l => {
-    const chip = VENC_LABELS[l.urgencia](l.diasRestantes);
-    return `<div class="venc-row ${l.urgencia}" data-id="${l.id}">
-      <div class="info">
-        <div class="n">${l.producto}</div>
-        <div class="s">${l.cantidad} ${l.unidad} · lote del ${l.fecha_ingreso}${l.fecha_vencimiento ? ' · vence ' + l.fecha_vencimiento : ''} · ${l.estado}</div>
-      </div>
-      <div class="venc-chip ${l.urgencia}">${chip}</div>
-    </div>`;
-  }).join('');
-
-  box.querySelectorAll('.venc-row').forEach(row => {
-    row.onclick = () => vencAbrirDetalle(Number(row.dataset.id));
-  });
-}
-
-function vencAbrirDetalle(id){
-  const lote = vencState.lista.find(l => l.id === id);
-  if(!lote) return;
-  vencState.loteActual = lote;
-
-  const chip = VENC_LABELS[lote.urgencia](lote.diasRestantes);
-  document.getElementById('venc-detalle-info').innerHTML =
-    `<div class="n">${lote.producto}</div>
-     <div class="s">${lote.cantidad} ${lote.unidad} · lote del ${lote.fecha_ingreso}<br>
-     ${lote.fecha_vencimiento ? 'Vence ' + lote.fecha_vencimiento + ' · ' + chip : 'Sin fecha de vencimiento cargada'}<br>
-     Estado actual: <b>${lote.estado}</b></div>`;
-
-  const estados = ['Revisado', 'Cambiado', 'Descuento recibido', 'Desechado'];
-  document.getElementById('venc-estados').innerHTML = estados.map(e =>
-    `<button class="venc-estado-btn" data-estado="${e}">${vencIconoEstado(e)} ${e}</button>`
-  ).join('');
-
-  document.getElementById('venc-retiro').classList.remove('on');
-  document.getElementById('venc-retirar-chk').checked = false;
-  document.getElementById('venc-retiro-cant').value = lote.cantidad;
-
-  const savedResp = localStorage.getItem('cumpas_responsable') || '';
-  document.getElementById('venc-responsable').value = savedResp;
-
-  document.getElementById('venc-estados').querySelectorAll('[data-estado]').forEach(btn => {
-    btn.onclick = () => vencSeleccionarEstado(btn.dataset.estado);
-  });
-
-  abrirModal('venc-detalle-ov');
-}
-
-function vencIconoEstado(e){
-  return { 'Revisado': '👀', 'Cambiado': '🔄', 'Descuento recibido': '🏷️', 'Desechado': '🗑️' }[e] || '•';
-}
-
-let vencEstadoSeleccionado = null;
-function vencSeleccionarEstado(estado){
-  vencEstadoSeleccionado = estado;
-  document.getElementById('venc-estados').querySelectorAll('.venc-estado-btn').forEach(b => {
-    b.style.borderColor = b.dataset.estado === estado ? 'var(--cielo)' : '';
-    b.style.background = b.dataset.estado === estado ? 'var(--cielo-tint)' : '#fff';
-  });
-  const mostrarRetiro = VENC_ESTADOS_CIERRE.includes(estado);
-  document.getElementById('venc-retiro').classList.toggle('on', mostrarRetiro);
-  vencConfirmar();
-}
-
-async function vencConfirmar(){
-  const lote = vencState.loteActual;
-  const estado = vencEstadoSeleccionado;
-  if(!lote || !estado) return;
-
-  const responsable = document.getElementById('venc-responsable').value.trim();
-  if(!responsable){ showToast('Indica el usuario responsable'); return; }
-  localStorage.setItem('cumpas_responsable', responsable);
-
-  const retirarStock = document.getElementById('venc-retirar-chk').checked;
-  const cantidadRetiro = Number(document.getElementById('venc-retiro-cant').value) || lote.cantidad;
-
-  if(!confirm(`Marcar "${lote.producto}" como "${estado}"${retirarStock ? ` y descontar ${cantidadRetiro} ${lote.unidad} del stock` : ''}?`)) return;
-
-  try{
-    const res = await fetch(SYNC_URL, { method: 'POST', body: JSON.stringify({
-      action: 'vencimiento_estado',
-      payload: { id: lote.id, estado, responsable, retirarStock, cantidadRetiro }
-    })});
-    const j = await res.json();
-    if(!j.ok) throw new Error(j.error || 'No se pudo actualizar');
-    if(j.avisoStock) showToast(j.avisoStock);
-    else showToast('✓ Lote actualizado a "' + estado + '"');
-    cerrarModal('venc-detalle-ov');
-    vencEstadoSeleccionado = null;
-    vencCargar();
-  }catch(e){
-    showToast('⚠️ ' + e.message);
-  }
-}
-
-document.getElementById('venc-close').onclick = () => cerrarModal('venc-ov');
-document.getElementById('venc-detalle-close').onclick = () => cerrarModal('venc-detalle-ov');
-document.querySelectorAll('.venc-tab').forEach(tab => {
-  tab.onclick = () => {
-    document.querySelectorAll('.venc-tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    vencState.estado = tab.dataset.estado;
-    vencCargar();
-  };
-});
-
-function openVencimientos(){
-  vencState.estado = '';
-  document.querySelectorAll('.venc-tab').forEach(t => t.classList.toggle('active', t.dataset.estado === ''));
-  abrirModal('venc-ov');
-  vencCargar();
-}
-document.getElementById('btn-vencimientos').onclick = openVencimientos;
 
 </script>
 </body>
