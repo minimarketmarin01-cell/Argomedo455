@@ -804,6 +804,106 @@ async function historialProducto(env, sku) {
 }
 
 // ============================================================
+//  VENCIMIENTOS (Módulo 5) — lista de lotes con fecha de
+//  vencimiento y cambio de estado (Cambiado / Descuento recibido /
+//  Desechado), con retiro opcional de stock en Loyverse.
+// ============================================================
+
+// Días restantes hasta la fecha de vencimiento (negativo = ya vencido).
+// Devuelve null si el lote no tiene fecha cargada.
+function diasRestantes(fechaTxt) {
+  const d = parseFechaDDMMAAAA(fechaTxt);
+  if (!d) return null;
+  const hoy = parseFechaDDMMAAAA(fechaDDMMAAAA());
+  return Math.round((d - hoy) / 86400000);
+}
+
+// Clasifica la urgencia para pintar la fila en la app:
+//  vencido (<0d) / urgente (0-3d) / proximo (4-7d) / ok (>7d) / sin_fecha
+function urgenciaDe(dias) {
+  if (dias == null) return "sin_fecha";
+  if (dias < 0) return "vencido";
+  if (dias <= 3) return "urgente";
+  if (dias <= 7) return "proximo";
+  return "ok";
+}
+
+// GET /?action=vencimientos[&estado=Pendiente][&sku=XXXX]
+// Por defecto trae los lotes "activos" (Pendiente / Revisado / Sin fecha),
+// ordenados por fecha de vencimiento más próxima primero. Si se pasa
+// estado=todos, trae también los ya cerrados (Cambiado/Descuento recibido/Desechado).
+async function listaVencimientos(env, { estado, sku } = {}) {
+  let sql = "SELECT * FROM vencimientos WHERE 1=1";
+  const params = [];
+  if (sku) { sql += " AND sku = ?"; params.push(sku); }
+  if (estado && estado !== "todos") { sql += " AND estado = ?"; params.push(estado); }
+  else if (!estado) { sql += " AND estado NOT IN ('Cambiado','Descuento recibido','Desechado')"; }
+  sql += " ORDER BY (fecha_vencimiento = '') ASC, id DESC";
+  const { results } = await env.DB.prepare(sql).bind(...params).all();
+  return results.map(r => {
+    const dias = diasRestantes(r.fecha_vencimiento);
+    return { ...r, diasRestantes: dias, urgencia: urgenciaDe(dias) };
+  }).sort((a, b) => {
+    // Vencidos y urgentes primero; sin fecha al final.
+    const rank = v => v.diasRestantes == null ? 999999 : v.diasRestantes;
+    return rank(a) - rank(b);
+  });
+}
+
+// POST { action:'vencimiento_estado', payload:{ id, estado, responsable,
+//        retirarStock (bool), cantidadRetiro } }
+//  → cambia el estado del lote (Revisado, Cambiado, Descuento recibido,
+//    Desechado) y, si retirarStock es true, resta esa cantidad del stock
+//    en Loyverse (retiro de góndola) dejando registro en auditoría.
+const ESTADOS_VENCIMIENTO = ["Pendiente", "Revisado", "Cambiado", "Descuento recibido", "Desechado", "Sin fecha"];
+async function accionVencimientoEstado(env, payload) {
+  payload = payload || {};
+  const id = Number(payload.id);
+  if (!id) throw new Error("Falta el id del lote");
+
+  const estado = String(payload.estado || "").trim();
+  if (!ESTADOS_VENCIMIENTO.includes(estado)) throw new Error("Estado inválido: " + estado);
+
+  const responsable = String(payload.responsable || "").trim();
+  if (!responsable) throw new Error("Indica el usuario responsable");
+
+  const lote = await get(env, "SELECT * FROM vencimientos WHERE id = ?", id);
+  if (!lote) throw new Error("Lote no encontrado");
+
+  const fecha = fechaHoraDDMMAAAA();
+  const out = { id, estado, retiroStock: null };
+
+  // Retiro de góndola: resta stock en Loyverse solo para estados de cierre
+  // (el producto sale de la venta) y solo si el usuario lo pidió explícitamente.
+  const estadosQueRetiran = ["Cambiado", "Descuento recibido", "Desechado"];
+  if (payload.retirarStock && estadosQueRetiran.includes(estado)) {
+    const cantidadRetiro = Number(payload.cantidadRetiro) || Number(lote.cantidad) || 0;
+    if (cantidadRetiro > 0) {
+      const it = await get(env, "SELECT * FROM productos WHERE sku = ?", lote.sku);
+      if (!it) throw new Error("Producto no encontrado en el catálogo local: " + lote.sku);
+      const res = await sumarStockLoyverse(env, it, -cantidadRetiro);
+      if (res.ok) {
+        out.retiroStock = { antes: res.antes, despues: res.despues, cantidad: cantidadRetiro };
+        await run(env,
+          `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
+          fecha, "retiro_gondola", lote.sku, lote.producto, lote.categoria, it.id_loyverse, res.despues,
+          "Retiro de góndola (" + estado + "): -" + cantidadRetiro + " " + lote.unidad + " (" + res.antes + " → " + res.despues + ") · lote vence " + lote.fecha_vencimiento,
+          responsable);
+      } else {
+        out.avisoStock = "⚠️ No se pudo descontar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+      }
+    }
+  }
+
+  await run(env,
+    `UPDATE vencimientos SET estado = ?, fecha_revision = ?, revisado_por = ? WHERE id = ?`,
+    estado, fecha, responsable, id);
+
+  return out;
+}
+
+// ============================================================
 //  PROVEEDORES Y SECTORES — catálogos reutilizables para el
 //  buscador con creación rápida (Módulo 3). Se combinan con los
 //  valores ya usados en `productos` por si algún producto viejo
@@ -1212,10 +1312,28 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // GET /?action=vencimientos[&estado=Pendiente|Revisado|todos][&sku=XXXX]
+      // → lotes con fecha de vencimiento, con días restantes y urgencia calculados.
+      if (action === "vencimientos") {
+        const estado = url.searchParams.get("estado") || "";
+        const sku = url.searchParams.get("sku") || "";
+        const lista = await listaVencimientos(env, { estado, sku });
+        return json({ ok: true, lista });
+      }
+
+      // POST { action:'vencimiento_estado', payload:{id,estado,responsable,retirarStock,cantidadRetiro} }
+      // → cambia el estado de un lote (Revisado/Cambiado/Descuento recibido/Desechado),
+      //   descontando stock en Loyverse si corresponde retiro de góndola.
+      if (action === "vencimiento_estado") {
+        const resultado = await accionVencimientoEstado(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
