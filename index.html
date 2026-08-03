@@ -18,7 +18,7 @@
      Fondo blanco/celeste muy pálido (como el círculo del logo), tarjetas blancas,
      texto azul marino oscuro (como el texto "Los Cumpas" del logo). Sin negros ni
      fondos oscuros — el celeste vivo es el único acento fuerte. */
-  --ink:#0B1A33;--paper:#F4FAFE;--card:#FFFFFF;--card2:#EAF6FD;
+  --ink:#0B1A33;--paper:#F6F8FB;--card:#FFFFFF;--card2:#EAF6FD;
   --line:#D8E9F5;--line2:#E4F1FA;
   --text:#0B1A33;--muted:#5C7593;
 
@@ -48,10 +48,17 @@ button{font-family:inherit}
 :focus-visible{outline:none;box-shadow:var(--focus-ring)}
 
 /* ===== Encabezado ===== */
-.top{background:linear-gradient(160deg,#FFFFFF 0%,var(--marino-tint) 100%);border-bottom:1px solid var(--line);padding:14px 18px;padding-top:max(14px,env(safe-area-inset-top));display:flex;align-items:center;gap:12px}
-.brand-mark{width:40px;height:40px;border-radius:12px;flex:none;box-shadow:var(--sh-card);object-fit:cover}
-.brand-txt .mk{font-family:'Manrope';font-weight:800;font-size:17px;letter-spacing:-.01em;color:var(--ink)}
-.brand-txt .loc{color:var(--muted);font-size:11.5px;font-weight:600;margin-top:1px}
+.top{background:#fff;border-bottom:1px solid var(--line);padding:10px 16px;padding-top:max(10px,env(safe-area-inset-top));display:flex;align-items:center;gap:10px}
+.brand-mark{width:34px;height:34px;border-radius:10px;flex:none;box-shadow:var(--sh-card);object-fit:cover}
+.brand-txt .mk{font-family:'Manrope';font-weight:800;font-size:15.5px;letter-spacing:-.01em;color:var(--ink)}
+.brand-txt .loc{color:var(--muted);font-size:11px;font-weight:600;margin-top:1px}
+.brand-txt .sync-state{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);font-weight:600;margin-top:2px}
+.brand-txt .sync-state .dot{width:6px;height:6px;border-radius:50%;background:var(--verde);flex:none}
+.top-sync-btn{margin-left:auto;flex:none;width:38px;height:38px;border-radius:12px;background:var(--card2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--cielo-d);transition:transform .12s ease}
+.top-sync-btn:active{transform:scale(.9)}
+.top-sync-btn svg{width:18px;height:18px}
+.top-sync-btn.spinning svg{animation:girar 1s linear infinite}
+@keyframes girar{to{transform:rotate(360deg)}}
 
 /* ===== Estado de carga del catálogo ===== */
 .load-banner{margin:14px 16px;padding:12px 14px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-card);display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted);box-shadow:var(--sh-card)}
@@ -60,30 +67,59 @@ button{font-family:inherit}
 @keyframes spin{to{transform:rotate(360deg)}}
 .load-banner button{background:none;border:1px solid var(--rojo);color:var(--rojo);border-radius:9px;padding:5px 10px;font-weight:700;font-size:11.5px;cursor:pointer;margin-left:auto}
 
-/* ===== Menú principal: 2 accesos grandes, pensado para una sola mano ===== */
-.menu{padding:8px 16px 16px;display:flex;flex-direction:column;gap:14px;max-width:520px;margin:0 auto}
-.menu-card{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-card);padding:18px;text-align:left;cursor:pointer;box-shadow:var(--sh-card);transition:transform .12s ease,border-color .12s ease}
+/* ===== Menú principal: accesos compactos, pensado para una sola mano ===== */
+.menu{padding:6px 16px 10px;display:flex;flex-direction:column;gap:10px;max-width:520px;margin:0 auto}
+.menu-card{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:13px 14px;text-align:left;cursor:pointer;box-shadow:var(--sh-card);transition:transform .12s ease,border-color .12s ease}
 .menu-card:active{transform:scale(.98);border-color:var(--cielo)}
-.menu-card .ico{width:52px;height:52px;border-radius:14px;flex:none;display:flex;align-items:center;justify-content:center;font-size:26px}
-.menu-card.pedido .ico{background:var(--marino-tint)}
-.menu-card.recibir .ico{background:var(--cielo-tint)}
+.menu-card .ico{width:42px;height:42px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center}
+.menu-card .ico svg{width:21px;height:21px}
+.menu-card.pedido .ico{background:var(--cielo-tint);color:var(--cielo-d)}
+.menu-card.recibir .ico{background:var(--verde-bg);color:var(--verde)}
+.menu-card.venc .ico{background:var(--ambar-bg);color:var(--ambar)}
+.menu-card.reportes .ico{background:var(--violeta-bg);color:var(--violeta)}
 .menu-card .txt{flex:1;min-width:0}
-.menu-card .txt .t{font-family:'Manrope';font-weight:800;font-size:16px;color:var(--ink)}
-.menu-card .txt .s{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.35}
-.menu-card .arrow{color:var(--muted);font-size:20px;flex:none}
+.menu-card .txt .t{font-family:'Manrope';font-weight:800;font-size:14.5px;color:var(--ink)}
+.menu-card .txt .s{font-size:11.5px;color:var(--muted);margin-top:1px;line-height:1.3}
+.menu-card .arrow{color:var(--muted);flex:none;display:flex}
+.menu-card .arrow svg{width:18px;height:18px}
 
-/* ===== Resumen del catálogo cargado ===== */
-.stats-row{display:flex;gap:8px;padding:0 16px;max-width:520px;margin:0 auto 4px}
+/* ===== Resumen del catálogo cargado (3 tarjetas con ícono) ===== */
+.stats-row{display:flex;gap:8px;padding:0 16px;max-width:520px;margin:0 auto 12px}
+.stat{flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 10px;box-shadow:var(--sh-card)}
+.stat .stat-ico{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;margin-bottom:8px}
+.stat .stat-ico svg{width:16px;height:16px}
+.stat.c-cielo .stat-ico{background:var(--cielo-tint);color:var(--cielo-d)}
+.stat.c-verde .stat-ico{background:var(--verde-bg);color:var(--verde)}
+.stat.c-ambar .stat-ico{background:var(--ambar-bg);color:var(--ambar)}
+.stat .n{font-family:'JetBrains Mono';font-weight:700;font-size:17px;color:var(--ink)}
+.stat .l{font-size:10px;color:var(--muted);font-weight:700;margin-top:1px}
 
-/* Botón "Sincronizar con Loyverse" */
+/* ===== Acciones rápidas ===== */
+.quick-title{padding:2px 16px 8px;max-width:520px;margin:0 auto;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.quick-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:0 16px;max-width:520px;margin:0 auto 16px}
+.quick-btn{display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 4px;cursor:pointer;box-shadow:var(--sh-card);transition:transform .12s ease}
+.quick-btn:active{transform:scale(.94)}
+.quick-btn .qi{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--card2);color:var(--cielo-d)}
+.quick-btn .qi svg{width:17px;height:17px}
+.quick-btn span{font-size:10.5px;font-weight:700;color:var(--ink);text-align:center;line-height:1.2}
+
+/* ===== Barra de navegación inferior fija ===== */
+.bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:150;background:#fff;border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -2px 10px rgba(11,26,51,.05)}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px 7px;background:none;border:none;cursor:pointer;color:var(--muted);transition:transform .12s ease}
+.nav-item:active{transform:scale(.92)}
+.nav-item svg{width:21px;height:21px}
+.nav-item span{font-size:9.5px;font-weight:700}
+.nav-item.active{color:var(--cielo-d)}
+body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+.ov .ov-body{padding-bottom:calc(14px + 64px + env(safe-area-inset-bottom))}
+
+/* Botón "Sincronizar con Loyverse" (versión larga, se mantiene disponible aunque
+   el atajo principal ahora vive en el header como ícono compacto) */
 .sync-row{padding:0 16px;max-width:520px;margin:0 auto 10px;display:flex;flex-direction:column;gap:4px}
 .sync-btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;border-radius:12px;border:1.5px solid var(--line);background:#fff;color:var(--text);font-weight:700;font-size:13px;cursor:pointer;width:100%}
 .sync-btn:disabled{opacity:.65;cursor:default}
 .sync-btn .spin{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--cielo);border-radius:50%;flex:none;animation:spin .8s linear infinite}
 .sync-last{font-size:10.5px;color:var(--muted);text-align:center}
-.stat{flex:1;background:var(--card2);border:1px solid var(--line2);border-radius:12px;padding:10px 12px}
-.stat .n{font-family:'JetBrains Mono';font-weight:700;font-size:18px;color:var(--cielo-d)}
-.stat .l{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.02em;margin-top:2px}
 
 /* ===== Toast simple de confirmación ===== */
 #toast{position:fixed;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));background:var(--ink);border:1px solid var(--marino-hi);color:#fff;padding:12px 16px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:var(--sh-float);z-index:500;transform:translateY(120%);opacity:0;transition:transform .25s ease,opacity .25s ease;max-width:520px;margin:0 auto}
@@ -120,6 +156,11 @@ button{font-family:inherit}
 .picked .n{font-weight:800;font-size:14.5px;color:var(--ink)}
 .picked .s{color:var(--muted);font-size:12px;margin-top:2px}
 .picked .stock{font-weight:700;margin-top:6px;font-size:12.5px;color:var(--ink)}
+.rc-resumen{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.rc-resumen .item{background:#fff;border:1px solid var(--line);border-radius:10px;padding:7px 4px;text-align:center}
+.rc-resumen .item .v{font-family:'JetBrains Mono';font-weight:700;font-size:12.5px;color:var(--ink)}
+.rc-resumen .item .v.bajo{color:var(--rojo)}
+.rc-resumen .item .k{font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px}
 
 .toggle-row{display:flex;gap:6px;margin-bottom:8px}
 .toggle-btn{flex:1;padding:9px;border-radius:10px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12px;cursor:pointer}
@@ -271,8 +312,12 @@ button{font-family:inherit}
   <img class="brand-mark" src="icon-192.png" alt="Los Cumpas">
   <div class="brand-txt">
     <div class="mk">Los Cumpas</div>
-    <div class="loc">Mini Market · Pedidos y Recepción</div>
+    <div class="loc">Mini Market</div>
+    <div class="sync-state"><span class="dot" id="sync-dot"></span><span id="sync-last">Sin sincronizar aún</span></div>
   </div>
+  <button class="top-sync-btn" id="btn-sync-loyverse" type="button" aria-label="Sincronizar con Loyverse">
+    <svg id="sync-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+  </button>
 </div>
 
 <!-- Banner de estado: se muestra mientras carga el catálogo y si algo falla -->
@@ -283,46 +328,102 @@ button{font-family:inherit}
 
 <!-- Resumen rápido, solo visible cuando el catálogo ya cargó -->
 <div class="stats-row hidden" id="stats-row">
-  <div class="stat"><div class="n mono" id="stat-total">—</div><div class="l">Productos</div></div>
-  <div class="stat"><div class="n mono" id="stat-sinprov">—</div><div class="l">Sin proveedor</div></div>
+  <div class="stat c-cielo">
+    <div class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div>
+    <div class="n mono" id="stat-total">—</div><div class="l">Productos</div>
+  </div>
+  <div class="stat c-verde">
+    <div class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7h20"/><path d="M3 7v13a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7"/><path d="M2 7 4 3h16l2 4"/><path d="M9 12h6"/></svg></div>
+    <div class="n mono" id="stat-proveedores">—</div><div class="l">Proveedores</div>
+  </div>
+  <div class="stat c-ambar">
+    <div class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/></svg></div>
+    <div class="n mono" id="stat-porvencer">—</div><div class="l">Por vencer</div>
+  </div>
 </div>
 
-<!-- Sincroniza manualmente el catálogo D1 con Loyverse (trae altas/bajas/cambios de precio) -->
-<div class="sync-row hidden" id="sync-row">
-  <button class="sync-btn" id="btn-sync-loyverse" type="button">
-    <span id="sync-ico">🔄</span><span id="sync-txt">Sincronizar con Loyverse</span>
+<div class="quick-title">Acciones rápidas</div>
+<div class="quick-row">
+  <button class="quick-btn" id="qa-escanear">
+    <div class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></div>
+    <span>Escanear</span>
   </button>
-  <div class="sync-last" id="sync-last"></div>
+  <button class="quick-btn" id="qa-nuevo">
+    <div class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg></div>
+    <span>Nuevo producto</span>
+  </button>
+  <button class="quick-btn" id="qa-buscar">
+    <div class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
+    <span>Buscar producto</span>
+  </button>
+  <button class="quick-btn" id="qa-sync">
+    <div class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div>
+    <span>Sincronizar</span>
+  </button>
 </div>
 
 <div class="menu">
   <button class="menu-card pedido" id="btn-armar-pedido">
-    <div class="ico">📝</div>
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
     <div class="txt">
       <div class="t">Armar pedido</div>
       <div class="s">Elegir productos y cantidades para pedir a un proveedor</div>
     </div>
-    <div class="arrow">›</div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 
   <button class="menu-card recibir" id="btn-recibir">
-    <div class="ico">📦</div>
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div>
     <div class="txt">
       <div class="t">Recibir mercadería</div>
       <div class="s">Escanear, sumar stock y registrar fecha de vencimiento</div>
     </div>
-    <div class="arrow">›</div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 
   <button class="menu-card venc" id="btn-vencimientos">
-    <div class="ico">⏰</div>
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/></svg></div>
     <div class="txt">
       <div class="t">Vencimientos</div>
       <div class="s">Revisar lotes por vencer y registrar cambios/descuentos/mermas</div>
     </div>
-    <div class="arrow">›</div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+  </button>
+
+  <button class="menu-card reportes" id="btn-reportes">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-4"/></svg></div>
+    <div class="txt">
+      <div class="t">Reportes</div>
+      <div class="s">Ver movimientos, stock y resumen de operaciones</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 </div>
+
+<!-- Barra de navegación inferior fija (comportamiento tipo app nativa) -->
+<nav class="bottom-nav" id="bottom-nav">
+  <button class="nav-item active" data-seccion="inicio">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
+    <span>Inicio</span>
+  </button>
+  <button class="nav-item" data-seccion="pedidos">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
+    <span>Pedidos</span>
+  </button>
+  <button class="nav-item" data-seccion="recepcion">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+    <span>Recepción</span>
+  </button>
+  <button class="nav-item" data-seccion="vencimientos">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/></svg>
+    <span>Vencimientos</span>
+  </button>
+  <button class="nav-item" id="nav-mas" data-seccion="mas">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+    <span>Más</span>
+  </button>
+</nav>
+
 
 <div id="toast"></div>
 
@@ -352,7 +453,12 @@ button{font-family:inherit}
       <div class="picked" id="rc-picked">
         <div class="n" id="rc-nom">—</div>
         <div class="s" id="rc-cat">—</div>
-        <div class="stock" id="rc-stock">Stock actual: —</div>
+        <div class="rc-resumen">
+          <div class="item"><div class="v" id="rc-res-costo">—</div><div class="k">Costo</div></div>
+          <div class="item"><div class="v" id="rc-res-precio">—</div><div class="k">Precio</div></div>
+          <div class="item"><div class="v" id="rc-res-margen">—</div><div class="k">Margen</div></div>
+          <div class="item"><div class="v" id="rc-res-stock">—</div><div class="k">Stock</div></div>
+        </div>
         <button class="btn-secondary hidden" id="rc-activar-inv" style="margin-top:10px;color:var(--cielo-d);border-color:var(--cielo)" type="button">🔓 Activar inventario para este producto</button>
         <button class="btn-secondary hidden" id="rc-activar-iva" style="margin-top:10px;color:#b45309;border-color:#f0c987" type="button">🧾 Activar IVA para este producto</button>
         <button class="btn-secondary" id="rc-ver-historial" style="margin-top:10px" type="button">🕘 Ver historial de este producto</button>
@@ -724,12 +830,23 @@ function restoreCart(){
 // ============================================================
 function actualizarStats(){
   const total=DB.items.length;
-  const sinProv=DB.items.filter(it=>!it.prov||it.prov==='SIN PROVEEDOR').length;
+  const proveedores=new Set(DB.items.filter(it=>it.prov&&it.prov!=='SIN PROVEEDOR').map(it=>it.prov)).size;
   document.getElementById('stat-total').textContent=total;
-  document.getElementById('stat-sinprov').textContent=sinProv;
+  document.getElementById('stat-proveedores').textContent=proveedores;
   document.getElementById('stats-row').classList.remove('hidden');
-  document.getElementById('sync-row').classList.remove('hidden');
   actualizarUltimoSync();
+  actualizarStatPorVencer();
+}
+
+// "Por vencer" se trae aparte (vive en su propia tabla D1, no en el catálogo
+// compacto) — falla en silencio si no responde, no bloquea el resto del Inicio.
+async function actualizarStatPorVencer(){
+  const el=document.getElementById('stat-porvencer');
+  try{
+    const res=await fetch(SYNC_URL+'?action=vencimientos');
+    const j=await res.json();
+    el.textContent=j.ok?j.lista.length:'—';
+  }catch(e){ el.textContent='—'; }
 }
 
 // ============================================================
@@ -740,7 +857,7 @@ function actualizarStats(){
 function actualizarUltimoSync(){
   const el=document.getElementById('sync-last');
   const raw=localStorage.getItem('cumpas_last_sync');
-  if(!raw){ el.textContent='Nunca sincronizado manualmente'; return; }
+  if(!raw){ el.textContent='Sin sincronizar aún'; return; }
   const d=new Date(raw);
   const ahora=new Date();
   const minutos=Math.round((ahora-d)/60000);
@@ -749,16 +866,13 @@ function actualizarUltimoSync(){
   else if(minutos<60) cuando='hace '+minutos+' min';
   else if(minutos<1440) cuando='hace '+Math.round(minutos/60)+' h';
   else cuando='hace '+Math.round(minutos/1440)+' días';
-  el.textContent='Última sincronización: '+cuando;
+  el.textContent='Sincronizado '+cuando;
 }
 
 async function sincronizarConLoyverse(){
   const btn=document.getElementById('btn-sync-loyverse');
-  const ico=document.getElementById('sync-ico');
-  const txt=document.getElementById('sync-txt');
   btn.disabled=true;
-  ico.outerHTML='<span class="spin" id="sync-ico"></span>';
-  txt.textContent='Sincronizando…';
+  btn.classList.add('spinning');
   try{
     const res=await fetch(SYNC_URL+'?action=sync');
     const j=await res.json();
@@ -774,13 +888,14 @@ async function sincronizarConLoyverse(){
   }catch(e){
     showToast('❌ No se pudo sincronizar: '+e.message);
   }finally{
-    document.getElementById('sync-ico').outerHTML='<span id="sync-ico">🔄</span>';
-    document.getElementById('sync-txt').textContent='Sincronizar con Loyverse';
+    btn.classList.remove('spinning');
     btn.disabled=false;
     actualizarUltimoSync();
   }
 }
 document.getElementById('btn-sync-loyverse').onclick=sincronizarConLoyverse;
+document.getElementById('qa-sync').onclick=sincronizarConLoyverse;
+
 
 async function cargarCatalogo(silencioso){
   const banner=document.getElementById('load-banner');
@@ -910,6 +1025,89 @@ function buscarProductos(q){
 
 function abrirModal(id){ document.getElementById(id).classList.remove('hidden'); }
 function cerrarModal(id){ document.getElementById(id).classList.add('hidden'); }
+
+// ============================================================
+//  NAVEGACIÓN TIPO APP NATIVA (History API)
+//  Los 4 módulos de primer nivel (Pedidos/Recepción/Vencimientos e
+//  Inicio) quedan representados en el historial del navegador:
+//  - Abrir un módulo desde Inicio → pushState (nueva entrada).
+//  - Cambiar de un módulo a otro (barra inferior) → replaceState
+//    (no apila pestañas una sobre otra).
+//  - Volver a Inicio (✕ o pestaña "Inicio") → history.back(),
+//    consume esa entrada.
+//  - Botón/gesto Atrás de Android → dispara 'popstate', que hace
+//    exactamente lo mismo que lo anterior pero a la inversa: nunca
+//    cierra la app salvo que ya estemos en Inicio (ahí no hay
+//    ninguna entrada nuestra que consumir, así que el navegador/SO
+//    sigue con su comportamiento normal).
+//  Los sub-paneles (detalle de vencimiento, carrito, escáner, crear
+//  producto) no tienen su propia entrada: si el usuario presiona
+//  Atrás estando en uno de ellos, se cierra todo el módulo de una
+//  vez y vuelve a Inicio (evita condiciones de carrera entre
+//  history.back() y pushState al encadenar aperturas/cierres).
+// ============================================================
+let seccionActual='inicio';
+const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov' };
+history.replaceState({ cumpasSeccion:'inicio' }, '', location.pathname);
+
+function cerrarSeccionActual(){
+  const id=SECCION_MODAL[seccionActual];
+  if(id) cerrarModal(id);
+  if(seccionActual==='pedidos' && typeof esPantallaAncha==='function' && esPantallaAncha()) cerrarModal('cart-ov');
+  // Por si quedó algo abierto dentro del módulo (detalle, carrito en celular,
+  // escáner, crear producto) — se cierra todo junto al salir del módulo.
+  ['venc-detalle-ov','cart-ov','scanner-ov','cp-ov'].forEach(childId=>{
+    const el=document.getElementById(childId);
+    if(el && !el.classList.contains('hidden')){
+      if(childId==='scanner-ov') closeScanner(); else cerrarModal(childId);
+    }
+  });
+}
+
+function abrirSeccionVisual(seccion){
+  if(seccion==='pedidos') openArmarPedido();
+  else if(seccion==='recepcion') openRecibir();
+  else if(seccion==='vencimientos') openVencimientos();
+}
+
+function actualizarNavActiva(){
+  document.querySelectorAll('#bottom-nav .nav-item').forEach(el=>{
+    el.classList.toggle('active', el.dataset.seccion===seccionActual);
+  });
+}
+
+function irASeccion(seccion){
+  if(seccion===seccionActual) return; // ya estamos ahí, no hacer nada
+  cerrarSeccionActual();
+  if(seccion==='inicio'){
+    history.back(); // consume la entrada del módulo que se está cerrando
+  } else if(seccionActual==='inicio'){
+    abrirSeccionVisual(seccion);
+    history.pushState({ cumpasSeccion:seccion }, '', '#'+seccion);
+  } else {
+    abrirSeccionVisual(seccion);
+    history.replaceState({ cumpasSeccion:seccion }, '', '#'+seccion);
+  }
+  seccionActual=seccion;
+  actualizarNavActiva();
+}
+
+window.addEventListener('popstate', (e)=>{
+  const destino=(e.state && e.state.cumpasSeccion) || 'inicio';
+  cerrarSeccionActual();
+  if(destino!=='inicio') abrirSeccionVisual(destino);
+  seccionActual=destino;
+  actualizarNavActiva();
+});
+
+document.querySelectorAll('#bottom-nav .nav-item').forEach(btn=>{
+  btn.onclick=()=>{
+    const seccion=btn.dataset.seccion;
+    if(seccion==='mas'){ showToast('Más opciones — próximamente'); return; }
+    irASeccion(seccion);
+  };
+});
+
 
 // ============================================================
 //  MÓDULO: RECIBIR MERCADERÍA (campos idénticos a Marín:
@@ -1058,8 +1256,13 @@ function rcPick(ref){
   document.getElementById('rc-picked').classList.add('on');
   document.getElementById('rc-nom').textContent=it.nombre;
   document.getElementById('rc-cat').textContent=it.prov+(it.barcode?' · '+it.barcode:'');
-  const stockTxt=(it.stock==null)?'sin control':(it.stock+(it.peso?' kg':' u'));
-  document.getElementById('rc-stock').textContent='Stock actual: '+stockTxt;
+  const stockTxt=(it.stock==null)?'s/c':(it.stock+(it.peso?' kg':' u'));
+  document.getElementById('rc-res-stock').textContent=stockTxt;
+  document.getElementById('rc-res-stock').classList.toggle('bajo', it.stock!=null && it.stock<=0);
+  document.getElementById('rc-res-costo').textContent=fmtPeso(it.coste);
+  document.getElementById('rc-res-precio').textContent=fmtPeso(it.precio);
+  const margenActual=(it.precio>0)?Math.round((1-(it.coste||0)/it.precio)*100):null;
+  document.getElementById('rc-res-margen').textContent=margenActual==null?'—':margenActual+'%';
 
   // Proveedor y sector: se muestran siempre (son campos solo locales, no requieren
   // seguimiento de inventario) y se prellenan con lo que ya tiene el producto.
@@ -1918,10 +2121,7 @@ function openArmarPedido(){
   abrirModal('ap-ov');
   if(esPantallaAncha()){ renderCarrito(); abrirModal('cart-ov'); } // panel fijo estilo tablet/POS
 }
-document.getElementById('ap-close').onclick=()=>{
-  cerrarModal('ap-ov');
-  if(esPantallaAncha()) cerrarModal('cart-ov');
-};
+document.getElementById('ap-close').onclick=()=>irASeccion('inicio');
 document.getElementById('ap-cart-fab').onclick=openCarrito;
 
 // ============================================================
@@ -2019,8 +2219,8 @@ document.getElementById('btn-copy-wa').onclick=()=>{
 // ============================================================
 //  NAVEGACIÓN
 // ============================================================
-document.getElementById('btn-armar-pedido').onclick=openArmarPedido;
-document.getElementById('btn-recibir').onclick=openRecibir;
+document.getElementById('btn-armar-pedido').onclick=()=>irASeccion('pedidos');
+document.getElementById('btn-recibir').onclick=()=>irASeccion('recepcion');
 
 // ============================================================
 //  VENCIMIENTOS (Módulo 5)
@@ -2151,7 +2351,7 @@ async function vencConfirmar(){
   }
 }
 
-document.getElementById('venc-close').onclick = () => cerrarModal('venc-ov');
+document.getElementById('venc-close').onclick = () => irASeccion('inicio');
 document.getElementById('venc-detalle-close').onclick = () => cerrarModal('venc-detalle-ov');
 document.querySelectorAll('.venc-tab').forEach(tab => {
   tab.onclick = () => {
@@ -2168,7 +2368,25 @@ function openVencimientos(){
   abrirModal('venc-ov');
   vencCargar();
 }
-document.getElementById('btn-vencimientos').onclick = openVencimientos;
+document.getElementById('btn-vencimientos').onclick = () => irASeccion('vencimientos');
+
+// ============================================================
+//  TARJETA "REPORTES" Y ACCIONES RÁPIDAS DEL INICIO
+//  Reportes es solo un acceso visual por ahora (no hay módulo de
+//  reportes implementado todavía) — se lo digo explícitamente al
+//  usuario en vez de simular una función que no existe.
+// ============================================================
+document.getElementById('btn-reportes').onclick = () => showToast('📊 Reportes — próximamente');
+
+document.getElementById('qa-nuevo').onclick = () => openCrearProducto();
+document.getElementById('qa-buscar').onclick = () => {
+  irASeccion('pedidos');
+  setTimeout(() => document.getElementById('ap-search').focus(), 150);
+};
+document.getElementById('qa-escanear').onclick = () => {
+  irASeccion('recepcion');
+  setTimeout(() => document.getElementById('rc-scan').click(), 150);
+};
 
 </script>
 </body>
