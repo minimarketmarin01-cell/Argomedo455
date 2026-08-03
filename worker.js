@@ -163,6 +163,20 @@ async function asegurarTablas(env) {
     tipo TEXT,
     recibido_en TEXT
   )`);
+
+  // Ventas línea a línea (una fila por sku vendido en un recibo), alimentada en
+  // tiempo real por el webhook receipts.update y, para el historial previo a la
+  // instalación del webhook, por una sincronización manual (Módulo 4: Armar pedido).
+  // Clave única (receipt_id, sku) para poder hacer upsert si Loyverse reenvía el
+  // mismo recibo (ej. una devolución que actualiza el original).
+  await run(env, `CREATE TABLE IF NOT EXISTS ventas (
+    receipt_id TEXT,
+    sku TEXT,
+    cantidad REAL,
+    fecha_venta TEXT,
+    PRIMARY KEY (receipt_id, sku)
+  )`);
+  await run(env, `CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas (fecha_venta)`);
 }
 
 // ============================================================
@@ -181,6 +195,14 @@ function chileNowParts() {
 function fechaDDMMAAAA() {
   const p = chileNowParts();
   return p.dd + "/" + p.mm + "/" + p.yyyy;
+}
+// Formato ISO (YYYY-MM-DD) — solo se usa internamente para poder comparar y filtrar
+// fechas en SQL con `>=`/`<=` (el DD/MM/AAAA que ve el usuario no ordena bien como texto).
+function fechaISO(date) {
+  const d = date || new Date();
+  const p = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d);
+  const get = t => p.find(x => x.type === t).value;
+  return get("year") + "-" + get("month") + "-" + get("day");
 }
 function fechaHoraDDMMAAAA() {
   const p = chileNowParts();
@@ -531,7 +553,41 @@ async function aplicarCambiosInventario(env, niveles) {
   return actualizados;
 }
 
-// Aplica cambios de producto recibidos por webhook (items.update): nombre, precio,
+// Aplica ventas recibidas por webhook (receipts.update): guarda una fila por
+// sku vendido en `ventas`, para poder calcular v7/v14 (ventas de los últimos
+// 7/14 días) sin volver a golpear la API de Loyverse en cada carga del catálogo.
+// Se ignoran recibos anulados. Las devoluciones (REFUND) restan cantidad.
+async function aplicarVentas(env, receipts) {
+  if (!receipts || !receipts.length) return 0;
+  let procesados = 0;
+  for (const r of receipts) {
+    if (r.cancelled_at) continue; // recibo anulado, no cuenta como venta
+    if (!r.line_items || !r.line_items.length) continue;
+    const receiptId = String(r.receipt_number || r.id || "");
+    if (!receiptId) continue;
+    const fechaVenta = fechaISO(new Date(r.receipt_date || r.created_at || Date.now()));
+    const signo = r.receipt_type === "REFUND" ? -1 : 1;
+
+    // Suma por sku dentro del mismo recibo (un producto puede aparecer en más de
+    // una línea si se vendió con distinto precio/descuento).
+    const porSku = {};
+    for (const li of r.line_items) {
+      const fila = await get(env, "SELECT sku FROM productos WHERE variant_id = ?", li.variant_id);
+      if (!fila) continue; // producto no está en D1 todavía
+      porSku[fila.sku] = (porSku[fila.sku] || 0) + signo * (Number(li.quantity) || 0);
+    }
+    for (const sku of Object.keys(porSku)) {
+      await run(env,
+        `INSERT INTO ventas (receipt_id, sku, cantidad, fecha_venta) VALUES (?,?,?,?)
+         ON CONFLICT(receipt_id, sku) DO UPDATE SET cantidad = excluded.cantidad, fecha_venta = excluded.fecha_venta`,
+        receiptId, sku, porSku[sku], fechaVenta);
+      procesados++;
+    }
+  }
+  return procesados;
+}
+
+
 // costo, categoría, código de barras, IVA. Nunca toca `stock` (eso lo maneja el
 // webhook de inventario) ni `proveedor`/`sector` (campos propios de la app).
 async function aplicarCambiosItems(env, items) {
@@ -591,6 +647,8 @@ async function manejarWebhookLoyverse(request, env, url) {
       resultado.procesados = await aplicarCambiosInventario(env, evento.inventory_levels);
     } else if (tipo === "items.update" && evento.items) {
       resultado.procesados = await aplicarCambiosItems(env, evento.items);
+    } else if (tipo === "receipts.update" && evento.receipts) {
+      resultado.procesados = await aplicarVentas(env, evento.receipts);
     } else {
       resultado.noManejado = true; // tipo recibido pero sin handler todavía (se registra igual)
     }
@@ -617,6 +675,8 @@ async function catalogoCompacto(env) {
      FROM productos ORDER BY nombre`
   ).all();
 
+  const [v7, v14] = await Promise.all([ventasPorSku(env, 7), ventasPorSku(env, 14)]);
+
   return results.map(p => ({
     ref: p.sku,
     nombre: p.nombre,
@@ -629,7 +689,9 @@ async function catalogoCompacto(env) {
     stock: p.stock,
     peso: !!p.sold_by_weight,
     track: !!p.track_stock,
-    iva: !!p.con_iva
+    iva: !!p.con_iva,
+    v7: v7[p.sku] || 0,
+    v14: v14[p.sku] || 0
   }));
 }
 
@@ -903,6 +965,46 @@ async function accionVencimientoEstado(env, payload) {
   return out;
 }
 
+// ============================================================
+//  SINCRONIZACIÓN MANUAL DE VENTAS (Módulo 4 — Armar pedido)
+//  El día a día se alimenta solo con el webhook receipts.update
+//  (tiempo real, sin golpear la API). Esta función es para el
+//  historial previo a instalar el webhook, o para rellenar un
+//  hueco puntual — se dispara a mano con el botón "Actualizar
+//  ventas", nunca de forma automática/periódica.
+// ============================================================
+async function accionSyncVentas(env, dias) {
+  const diasBack = Number(dias) || 14;
+  const { storeId } = await obtenerStoreId(env);
+  const desde = new Date(Date.now() - diasBack * 86400000);
+
+  const receipts = await loyverseGetAll(env, "/receipts", "receipts", {
+    store_id: storeId,
+    created_at_min: desde.toISOString(),
+    created_at_max: new Date().toISOString()
+  });
+
+  const procesados = await aplicarVentas(env, receipts);
+  return { recibos: receipts.length, lineasGuardadas: procesados, dias: diasBack };
+}
+
+// Ventas de los últimos N días por sku — usado para armar el mapa v7/v14 que se
+// suma al catálogo compacto. Lee solo D1 (rápido, no toca la API de Loyverse).
+async function ventasPorSku(env, dias) {
+  const desde = fechaISO(new Date(Date.now() - dias * 86400000));
+  const { results } = await env.DB.prepare(
+    "SELECT sku, SUM(cantidad) as total FROM ventas WHERE fecha_venta >= ? GROUP BY sku"
+  ).bind(desde).all();
+  const mapa = {};
+  results.forEach(r => { mapa[r.sku] = r.total || 0; });
+  return mapa;
+}
+
+
+//  buscador con creación rápida (Módulo 3). Se combinan con los
+//  valores ya usados en `productos` por si algún producto viejo
+//  trae un proveedor/sector que todavía no está en el catálogo.
+// ============================================================
 // ============================================================
 //  PROVEEDORES Y SECTORES — catálogos reutilizables para el
 //  buscador con creación rápida (Módulo 3). Se combinan con los
@@ -1330,10 +1432,20 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // GET /?action=sync_ventas[&dias=14]  →  trae recibos recientes de Loyverse y
+      // los guarda en `ventas`. SOLO manual (botón "Actualizar ventas" en Armar pedido)
+      // — el día a día lo cubre el webhook receipts.update, no hay polling automático.
+      if (action === "sync_ventas") {
+        const dias = url.searchParams.get("dias") || 14;
+        const resultado = await accionSyncVentas(env, dias);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);

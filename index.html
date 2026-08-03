@@ -31,6 +31,7 @@
   --rojo:#C6483D;--rojo-bg:#FBEAE8;
   --ambar:#B8791A;--ambar-bg:#FBF1DF;
   --verde:#2E9E5B;--verde-bg:#E7F7EE;
+  --violeta:#7A5CC0;--violeta-bg:#F0EBFA;
 
   --sh-card:0 1px 3px rgba(11,26,51,.06),0 3px 10px rgba(11,26,51,.05);
   --sh-float:0 8px 24px rgba(11,26,51,.14);
@@ -172,11 +173,80 @@ button{font-family:inherit}
 .ap-row .n{font-weight:700;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ap-row .s{font-size:11px;color:var(--muted);margin-top:2px}
 .ap-row .s b{color:var(--ink)}
+.ap-row .datos{display:flex;gap:10px;margin-top:4px;font-size:10.5px;color:var(--muted)}
+.ap-row .datos b{color:var(--ink);font-family:'JetBrains Mono',monospace}
+.ap-row .sugerido{cursor:pointer;font-weight:800;color:var(--cielo-d);border-bottom:1px dashed var(--cielo)}
+
+.ap-legend{display:flex;gap:14px;padding:8px 16px 0;font-size:11px;color:var(--muted)}
+.ap-legend span{display:inline-flex;align-items:center;gap:5px}
+.ap-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.ap-legend .d-urgente{background:var(--rojo)}
+.ap-legend .d-pedir{background:var(--verde)}
+.ap-legend .d-sobre{background:var(--violeta)}
+
+.ap-thead{display:flex;align-items:center;gap:8px;padding:10px 16px 6px;font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase}
+.ap-thead .th{cursor:pointer;user-select:none;white-space:nowrap}
+.ap-thead .th.active{color:var(--cielo-d)}
+.ap-thead .th-nombre{flex:1}
+.ap-thead .th-col{width:52px;text-align:center}
+.ap-thead .th-pedir{width:96px;text-align:center}
+
+.ap-row{border-left:4px solid var(--line)}
+.ap-row.urgente{border-left-color:var(--rojo);background:var(--rojo-bg)}
+.ap-row.pedir{border-left-color:var(--verde)}
+.ap-row.sobrestock{border-left-color:var(--violeta)}
+.ap-row .estado-badge{flex:none;font-size:9px;font-weight:800;padding:2px 6px;border-radius:6px;text-transform:uppercase;margin-left:6px}
+.ap-row .estado-badge.urgente{background:var(--rojo);color:#fff}
+.ap-row .estado-badge.pedir{background:var(--verde);color:#fff}
+.ap-row .estado-badge.sobrestock{background:var(--violeta);color:#fff}
+
+/* ---- Layout ancho (tablet / POS), estilo referencia con carrito fijo lateral ---- */
+@media (min-width:900px){
+  #ap-ov:not(.hidden){ right:38%; }
+  #cart-ov:not(.hidden){ left:62%; right:0; border-left:1px solid var(--line); box-shadow:-6px 0 18px rgba(11,26,51,.06); }
+  #ap-ov .ov-body, #ap-ov .ov-foot,
+  #cart-ov .ov-body, #cart-ov .ov-foot{ max-width:none }
+  #ap-cart-fab{ display:none !important } /* el panel fijo reemplaza al botón flotante */
+  .ap-thead{ padding-left:16px; padding-right:16px }
+  .ap-row{ padding:10px 14px }
+}
 .ap-qty{display:flex;align-items:center;gap:6px;flex:none}
 .ap-qty-btn{width:34px;height:34px;border-radius:9px;background:var(--card2);border:1.5px solid var(--line);font-size:17px;font-weight:700;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer}
 .ap-qty-btn:active{background:var(--cielo-tint);border-color:var(--cielo)}
 .ap-qty input{width:42px;height:34px;text-align:center;border:1.5px solid var(--line);border-radius:9px;font-family:'JetBrains Mono';font-weight:700;font-size:14px}
 .ap-empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:13px}
+
+/* ---- Vencimientos (Módulo 5) ---- */
+.menu-card.venc .ico{background:var(--ambar-bg)}
+.venc-tabs{display:flex;gap:8px;padding:0 16px 10px}
+.venc-tab{flex:none;padding:8px 14px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12.5px;cursor:pointer}
+.venc-tab.active{border-color:var(--cielo);background:var(--cielo);color:#fff}
+.venc-list{padding:0 16px 90px}
+.venc-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-left:5px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card);cursor:pointer}
+.venc-row:active{transform:scale(.99)}
+.venc-row.vencido{border-left-color:var(--rojo);background:var(--rojo-bg)}
+.venc-row.urgente{border-left-color:var(--rojo)}
+.venc-row.proximo{border-left-color:var(--ambar)}
+.venc-row.ok{border-left-color:var(--verde)}
+.venc-row.sin_fecha{border-left-color:var(--line)}
+.venc-row .info{flex:1;min-width:0}
+.venc-row .n{font-weight:700;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.venc-row .s{font-size:11px;color:var(--muted);margin-top:2px}
+.venc-chip{flex:none;font-size:10.5px;font-weight:800;padding:5px 9px;border-radius:8px;white-space:nowrap;text-align:center}
+.venc-chip.vencido,.venc-chip.urgente{background:var(--rojo-bg);color:var(--rojo)}
+.venc-chip.proximo{background:var(--ambar-bg);color:var(--ambar)}
+.venc-chip.ok{background:var(--verde-bg);color:var(--verde)}
+.venc-chip.sin_fecha{background:var(--card2);color:var(--muted)}
+.venc-detalle-box{background:var(--card2);border-radius:14px;padding:14px;margin-bottom:16px}
+.venc-detalle-box .n{font-weight:800;font-size:15px;color:var(--ink)}
+.venc-detalle-box .s{font-size:12.5px;color:var(--muted);margin-top:4px;line-height:1.5}
+.venc-estados{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.venc-estado-btn{padding:13px;border-radius:12px;border:1.5px solid var(--line);background:#fff;font-weight:700;font-size:13.5px;color:var(--ink);text-align:left;cursor:pointer}
+.venc-estado-btn:active{border-color:var(--cielo)}
+.venc-retiro{background:var(--card2);border-radius:12px;padding:12px;margin-bottom:14px;display:none}
+.venc-retiro.on{display:block}
+.venc-retiro label{display:flex;align-items:center;gap:8px;font-weight:700;font-size:12.5px;color:var(--ink);margin-bottom:8px}
+.venc-retiro input[type="text"],.venc-retiro input[type="number"]{width:100%;height:40px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;font-size:13px}
 
 /* Botón flotante del carrito */
 .cart-fab{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));z-index:270;height:52px;padding:0 18px;border-radius:26px;background:var(--brand-grad);color:#fff;border:none;font-size:14px;font-weight:800;box-shadow:var(--sh-float);cursor:pointer;display:flex;align-items:center;gap:8px}
@@ -235,13 +305,22 @@ button{font-family:inherit}
     <div class="arrow">›</div>
   </button>
 
-  <button class="menu-card recibir" id="btn-recibir">
-    <div class="ico">📦</div>
-    <div class="txt">
-      <div class="t">Recibir mercadería</div>
-      <div class="s">Escanear, sumar stock y registrar fecha de vencimiento</div>
+  <button class=\"menu-card recibir\" id=\"btn-recibir\">
+    <div class=\"ico\">📦</div>
+    <div class=\"txt\">
+      <div class=\"t\">Recibir mercadería</div>
+      <div class=\"s\">Escanear, sumar stock y registrar fecha de vencimiento</div>
     </div>
-    <div class="arrow">›</div>
+    <div class=\"arrow\">›</div>
+  </button>
+
+  <button class=\"menu-card venc\" id=\"btn-vencimientos\">
+    <div class=\"ico\">⏰</div>
+    <div class=\"txt\">
+      <div class=\"t\">Vencimientos</div>
+      <div class=\"s\">Revisar lotes por vencer y registrar cambios/descuentos/mermas</div>
+    </div>
+    <div class=\"arrow\">›</div>
   </button>
 </div>
 
@@ -517,7 +596,24 @@ button{font-family:inherit}
       <input id="ap-search" placeholder="Buscar producto…" style="width:100%;height:44px;padding:0 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-size:14px">
     </div>
   </div>
+  <div class="ap-toolbar" style="display:flex;align-items:center;gap:10px;padding:10px 16px 0">
+    <label style="font-size:11.5px;font-weight:700;color:var(--muted);white-space:nowrap">Cob. (días)</label>
+    <input id="ap-cobertura" type="number" inputmode="numeric" value="10" style="width:56px;height:34px;text-align:center;border:1.5px solid var(--line);border-radius:8px;font-size:13px">
+    <button id="ap-btn-ventas" style="margin-left:auto;height:34px;padding:0 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--cielo-d);font-weight:700;font-size:12px;white-space:nowrap">🔄 Actualizar ventas</button>
+  </div>
   <div class="prov-select" id="ap-prov-select"></div>
+  <div class="ap-legend">
+    <span><i class="d-urgente"></i>Urgente</span>
+    <span><i class="d-pedir"></i>Pedir</span>
+    <span><i class="d-sobre"></i>Sobrestock</span>
+  </div>
+  <div class="ap-thead">
+    <span class="th th-nombre" data-sort="nombre">Producto</span>
+    <span class="th th-col" data-sort="cob">Cob ▾</span>
+    <span class="th th-col" data-sort="stock">Stk ▾</span>
+    <span class="th th-col" data-sort="v7">Vta7d ▾</span>
+    <span class="th th-pedir" data-sort="sugerido">Pedir ▾</span>
+  </div>
   <div class="ov-body" style="padding-top:0" id="ap-body">
     <div class="ap-list" id="ap-list"></div>
   </div>
@@ -537,6 +633,44 @@ button{font-family:inherit}
   <div class="ov-foot">
     <button class="btn-wa" id="btn-copy-wa">📋 Copiar pedido para WhatsApp</button>
     <button class="btn-secondary" id="btn-clear-cart" style="color:var(--rojo);border-color:var(--rojo)">Vaciar carrito</button>
+  </div>
+</div>
+
+<!-- ===== MODAL: VENCIMIENTOS (lista) ===== -->
+<div class="ov hidden" id="venc-ov">
+  <div class="ov-head">
+    <h3>⏰ Vencimientos</h3>
+    <button class="ov-close" id="venc-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="venc-tabs">
+    <button class="venc-tab active" data-estado="">Activos</button>
+    <button class="venc-tab" data-estado="todos">Todos</button>
+  </div>
+  <div class="ov-body" style="padding-top:0">
+    <div class="venc-list" id="venc-list"></div>
+  </div>
+</div>
+
+<!-- ===== MODAL: VENCIMIENTOS (detalle / gestionar lote) ===== -->
+<div class="ov hidden" id="venc-detalle-ov">
+  <div class="ov-head">
+    <h3>Gestionar lote</h3>
+    <button class="ov-close" id="venc-detalle-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="venc-detalle-box" id="venc-detalle-info"></div>
+
+    <div class="venc-estados" id="venc-estados"></div>
+
+    <div class="venc-retiro" id="venc-retiro">
+      <label><input type="checkbox" id="venc-retirar-chk"> Descontar del stock (retiro de góndola)</label>
+      <input type="number" id="venc-retiro-cant" inputmode="decimal" placeholder="Cantidad a retirar">
+    </div>
+
+    <div class="field">
+      <label>Usuario responsable</label>
+      <input id="venc-responsable" placeholder="Tu nombre" autocomplete="off">
+    </div>
   </div>
 </div>
 
@@ -1599,7 +1733,7 @@ document.getElementById('cp-guardar').onclick=async()=>{
 // ============================================================
 //  MÓDULO: ARMAR PEDIDO
 // ============================================================
-const apState={ prov:'TODOS', search:'' };
+const apState={ prov:'TODOS', search:'', cobertura: Number(localStorage.getItem('cumpas_cobertura'))||10, sortBy:null, sortDir:'desc' };
 
 function apProveedores(){
   const set=new Set((DB.items||[]).map(it=>it.prov||'SIN PROVEEDOR'));
@@ -1631,9 +1765,45 @@ function apItemsFiltrados(){
   return items;
 }
 
+// Sugerido = cubrir `cobertura` días de venta futura según el ritmo de los
+// últimos 7 días, descontando el stock que ya hay. Nunca negativo.
+function apSugerido(it){
+  const ritmoDiario = (it.v7||0) / 7;
+  const necesario = Math.ceil(ritmoDiario * apState.cobertura);
+  return Math.max(0, necesario - (it.stock||0));
+}
+
+// Días de cobertura actual (cuánto dura el stock al ritmo de venta de los
+// últimos 7 días) y estado semántico para colorear la fila (Urgente/Pedir/
+// Sobrestock), igual a la lógica que usa Marín.
+function apEstadoDe(it){
+  const ritmoDiario=(it.v7||0)/7;
+  const cob=ritmoDiario>0 ? (it.stock||0)/ritmoDiario : ((it.stock||0)>0 ? Infinity : 0);
+  let estado='';
+  if((it.stock||0)<=0 || (ritmoDiario>0 && cob<3)) estado='urgente';
+  else if(ritmoDiario>0 && cob>apState.cobertura*2) estado='sobrestock';
+  else if(apSugerido(it)>0) estado='pedir';
+  return { cob, estado };
+}
+
 function apRenderLista(){
   const box=document.getElementById('ap-list');
-  const items=apItemsFiltrados().slice(0,150); // límite razonable en pantalla, la búsqueda acota el resto
+  let items=apItemsFiltrados().map(it=>{
+    const {cob,estado}=apEstadoDe(it);
+    return Object.assign({}, it, { _cob:cob, _estado:estado, _sugerido:apSugerido(it) });
+  });
+
+  if(apState.sortBy){
+    const dir=apState.sortDir==='asc'?1:-1;
+    const key = apState.sortBy==='cob'?'_cob' : apState.sortBy==='sugerido'?'_sugerido' : apState.sortBy==='stock'?'stock' : apState.sortBy==='v7'?'v7' : 'nombre';
+    items=items.sort((a,b)=>{
+      const va=a[key], vb=b[key];
+      if(typeof va==='string') return dir*va.localeCompare(vb,'es');
+      return dir*((va==Infinity?9e15:va||0)-(vb==Infinity?9e15:vb||0));
+    });
+  }
+  items=items.slice(0,150); // límite razonable en pantalla, la búsqueda acota el resto
+
   if(!items.length){
     box.innerHTML='<div class="ap-empty">Sin productos que coincidan.</div>';
     return;
@@ -1641,10 +1811,16 @@ function apRenderLista(){
   box.innerHTML=items.map(it=>{
     const qty=CART[it.ref]||0;
     const stockTxt=it.stock==null?'sin control':(it.stock+(it.peso?' kg':' u'));
-    return `<div class="ap-row" data-ref="${it.ref}">
+    const badge=it._estado?`<span class="estado-badge ${it._estado}">${it._estado}</span>`:'';
+    return `<div class="ap-row ${it._estado}" data-ref="${it.ref}">
       <div class="info">
-        <div class="n">${it.nombre}</div>
+        <div class="n">${it.nombre}${badge}</div>
         <div class="s">${it.prov} · Stock: <b>${stockTxt}</b> · ${fmtPeso(it.precio)}</div>
+        <div class="datos">
+          <span>VTA 7d: <b>${it.v7||0}</b></span>
+          <span>VTA 14d: <b>${it.v14||0}</b></span>
+          <span>Sugerido: <b class="sugerido" data-act="sugerido">${it._sugerido}</b></span>
+        </div>
       </div>
       <div class="ap-qty">
         <button class="ap-qty-btn" data-act="menos">−</button>
@@ -1666,9 +1842,24 @@ function apRenderLista(){
       apSetCantidad(ref,v); input.value=v;
     };
     input.oninput=()=>apSetCantidad(ref,Number(input.value)||0);
+    const sugBtn=row.querySelector('[data-act="sugerido"]');
+    sugBtn.onclick=()=>{
+      const v=Number(sugBtn.textContent)||0;
+      apSetCantidad(ref,v); input.value=v||'';
+    };
   });
   apUpdateFab();
 }
+
+document.querySelectorAll('.ap-thead .th').forEach(th=>{
+  th.onclick=()=>{
+    const key=th.dataset.sort;
+    if(apState.sortBy===key) apState.sortDir=apState.sortDir==='asc'?'desc':'asc';
+    else { apState.sortBy=key; apState.sortDir='desc'; }
+    document.querySelectorAll('.ap-thead .th').forEach(t=>t.classList.toggle('active',t===th));
+    apRenderLista();
+  };
+});
 
 function apSetCantidad(ref,cantidad){
   if(cantidad>0) CART[ref]=cantidad;
@@ -1682,6 +1873,9 @@ function apUpdateFab(){
   const fab=document.getElementById('ap-cart-fab');
   document.getElementById('ap-cart-count').textContent=n;
   fab.classList.toggle('hidden',n===0);
+  // Si el panel del carrito ya está visible (overlay en celular, panel fijo en
+  // tablet/POS), lo mantenemos sincronizado en vivo sin que el usuario lo reabra.
+  if(!document.getElementById('cart-ov').classList.contains('hidden')) renderCarrito();
 }
 
 document.getElementById('ap-search').oninput=e=>{
@@ -1689,14 +1883,45 @@ document.getElementById('ap-search').oninput=e=>{
   apRenderLista();
 };
 
+document.getElementById('ap-cobertura').oninput=e=>{
+  apState.cobertura=Number(e.target.value)||10;
+  localStorage.setItem('cumpas_cobertura', apState.cobertura);
+  apRenderLista();
+};
+
+document.getElementById('ap-btn-ventas').onclick=async()=>{
+  const btn=document.getElementById('ap-btn-ventas');
+  const txtOriginal=btn.textContent;
+  btn.disabled=true; btn.textContent='Actualizando…';
+  try{
+    const res=await fetch(SYNC_URL+'?action=sync_ventas&dias=14');
+    const j=await res.json();
+    if(!j.ok) throw new Error(j.error||'No se pudo actualizar');
+    showToast(`✓ ${j.recibos} recibos revisados`);
+    await cargarCatalogo(); // trae v7/v14 recalculados
+    apRenderLista();
+  }catch(e){
+    showToast('⚠️ '+e.message);
+  }finally{
+    btn.disabled=false; btn.textContent=txtOriginal;
+  }
+};
+
+const esPantallaAncha=()=>window.matchMedia('(min-width:900px)').matches;
+
 function openArmarPedido(){
   apState.prov='TODOS'; apState.search='';
   document.getElementById('ap-search').value='';
+  document.getElementById('ap-cobertura').value=apState.cobertura;
   apRenderProvChips();
   apRenderLista();
   abrirModal('ap-ov');
+  if(esPantallaAncha()){ renderCarrito(); abrirModal('cart-ov'); } // panel fijo estilo tablet/POS
 }
-document.getElementById('ap-close').onclick=()=>cerrarModal('ap-ov');
+document.getElementById('ap-close').onclick=()=>{
+  cerrarModal('ap-ov');
+  if(esPantallaAncha()) cerrarModal('cart-ov');
+};
 document.getElementById('ap-cart-fab').onclick=openCarrito;
 
 // ============================================================
@@ -1796,6 +2021,154 @@ document.getElementById('btn-copy-wa').onclick=()=>{
 // ============================================================
 document.getElementById('btn-armar-pedido').onclick=openArmarPedido;
 document.getElementById('btn-recibir').onclick=openRecibir;
+
+// ============================================================
+//  VENCIMIENTOS (Módulo 5)
+// ============================================================
+const vencState = { estado: '', lista: [], loteActual: null };
+
+const VENC_ESTADOS_CIERRE = ['Cambiado', 'Descuento recibido', 'Desechado'];
+const VENC_LABELS = {
+  vencido: (d) => `Vencido hace ${Math.abs(d)}d`,
+  urgente: (d) => d === 0 ? 'Vence hoy' : `Vence en ${d}d`,
+  proximo: (d) => `Vence en ${d}d`,
+  ok: (d) => `Vence en ${d}d`,
+  sin_fecha: () => 'Sin fecha'
+};
+
+async function vencCargar(){
+  const box = document.getElementById('venc-list');
+  box.innerHTML = '<div class="ap-empty">Cargando…</div>';
+  try{
+    const qs = vencState.estado ? '&estado=' + encodeURIComponent(vencState.estado) : '';
+    const res = await fetch(SYNC_URL + '?action=vencimientos' + qs);
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || 'Error al cargar vencimientos');
+    vencState.lista = j.lista;
+    vencRender();
+  }catch(e){
+    box.innerHTML = '<div class="ap-empty">⚠️ No se pudo cargar. Desliza para reintentar.</div>';
+  }
+}
+
+function vencRender(){
+  const box = document.getElementById('venc-list');
+  if(!vencState.lista.length){
+    box.innerHTML = '<div class="ap-empty">Sin lotes' + (vencState.estado ? '' : ' pendientes de revisión') + ' 🎉</div>';
+    return;
+  }
+  box.innerHTML = vencState.lista.map(l => {
+    const chip = VENC_LABELS[l.urgencia](l.diasRestantes);
+    return `<div class="venc-row ${l.urgencia}" data-id="${l.id}">
+      <div class="info">
+        <div class="n">${l.producto}</div>
+        <div class="s">${l.cantidad} ${l.unidad} · lote del ${l.fecha_ingreso}${l.fecha_vencimiento ? ' · vence ' + l.fecha_vencimiento : ''} · ${l.estado}</div>
+      </div>
+      <div class="venc-chip ${l.urgencia}">${chip}</div>
+    </div>`;
+  }).join('');
+
+  box.querySelectorAll('.venc-row').forEach(row => {
+    row.onclick = () => vencAbrirDetalle(Number(row.dataset.id));
+  });
+}
+
+function vencAbrirDetalle(id){
+  const lote = vencState.lista.find(l => l.id === id);
+  if(!lote) return;
+  vencState.loteActual = lote;
+
+  const chip = VENC_LABELS[lote.urgencia](lote.diasRestantes);
+  document.getElementById('venc-detalle-info').innerHTML =
+    `<div class="n">${lote.producto}</div>
+     <div class="s">${lote.cantidad} ${lote.unidad} · lote del ${lote.fecha_ingreso}<br>
+     ${lote.fecha_vencimiento ? 'Vence ' + lote.fecha_vencimiento + ' · ' + chip : 'Sin fecha de vencimiento cargada'}<br>
+     Estado actual: <b>${lote.estado}</b></div>`;
+
+  const estados = ['Revisado', 'Cambiado', 'Descuento recibido', 'Desechado'];
+  document.getElementById('venc-estados').innerHTML = estados.map(e =>
+    `<button class="venc-estado-btn" data-estado="${e}">${vencIconoEstado(e)} ${e}</button>`
+  ).join('');
+
+  document.getElementById('venc-retiro').classList.remove('on');
+  document.getElementById('venc-retirar-chk').checked = false;
+  document.getElementById('venc-retiro-cant').value = lote.cantidad;
+
+  const savedResp = localStorage.getItem('cumpas_responsable') || '';
+  document.getElementById('venc-responsable').value = savedResp;
+
+  document.getElementById('venc-estados').querySelectorAll('[data-estado]').forEach(btn => {
+    btn.onclick = () => vencSeleccionarEstado(btn.dataset.estado);
+  });
+
+  abrirModal('venc-detalle-ov');
+}
+
+function vencIconoEstado(e){
+  return { 'Revisado': '👀', 'Cambiado': '🔄', 'Descuento recibido': '🏷️', 'Desechado': '🗑️' }[e] || '•';
+}
+
+let vencEstadoSeleccionado = null;
+function vencSeleccionarEstado(estado){
+  vencEstadoSeleccionado = estado;
+  document.getElementById('venc-estados').querySelectorAll('.venc-estado-btn').forEach(b => {
+    b.style.borderColor = b.dataset.estado === estado ? 'var(--cielo)' : '';
+    b.style.background = b.dataset.estado === estado ? 'var(--cielo-tint)' : '#fff';
+  });
+  const mostrarRetiro = VENC_ESTADOS_CIERRE.includes(estado);
+  document.getElementById('venc-retiro').classList.toggle('on', mostrarRetiro);
+  vencConfirmar();
+}
+
+async function vencConfirmar(){
+  const lote = vencState.loteActual;
+  const estado = vencEstadoSeleccionado;
+  if(!lote || !estado) return;
+
+  const responsable = document.getElementById('venc-responsable').value.trim();
+  if(!responsable){ showToast('Indica el usuario responsable'); return; }
+  localStorage.setItem('cumpas_responsable', responsable);
+
+  const retirarStock = document.getElementById('venc-retirar-chk').checked;
+  const cantidadRetiro = Number(document.getElementById('venc-retiro-cant').value) || lote.cantidad;
+
+  if(!confirm(`Marcar "${lote.producto}" como "${estado}"${retirarStock ? ` y descontar ${cantidadRetiro} ${lote.unidad} del stock` : ''}?`)) return;
+
+  try{
+    const res = await fetch(SYNC_URL, { method: 'POST', body: JSON.stringify({
+      action: 'vencimiento_estado',
+      payload: { id: lote.id, estado, responsable, retirarStock, cantidadRetiro }
+    })});
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || 'No se pudo actualizar');
+    if(j.avisoStock) showToast(j.avisoStock);
+    else showToast('✓ Lote actualizado a "' + estado + '"');
+    cerrarModal('venc-detalle-ov');
+    vencEstadoSeleccionado = null;
+    vencCargar();
+  }catch(e){
+    showToast('⚠️ ' + e.message);
+  }
+}
+
+document.getElementById('venc-close').onclick = () => cerrarModal('venc-ov');
+document.getElementById('venc-detalle-close').onclick = () => cerrarModal('venc-detalle-ov');
+document.querySelectorAll('.venc-tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.venc-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    vencState.estado = tab.dataset.estado;
+    vencCargar();
+  };
+});
+
+function openVencimientos(){
+  vencState.estado = '';
+  document.querySelectorAll('.venc-tab').forEach(t => t.classList.toggle('active', t.dataset.estado === ''));
+  abrirModal('venc-ov');
+  vencCargar();
+}
+document.getElementById('btn-vencimientos').onclick = openVencimientos;
 
 </script>
 </body>
