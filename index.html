@@ -909,9 +909,17 @@ async function cargarCatalogo(silencioso){
     if(!j||!j.ok) throw new Error((j&&j.error)||'Respuesta inválida del servidor');
     DB.items=j.items||[];
     persist();
+    // "Sincronizado hace X" refleja qué tan fresco es lo que se ve en pantalla, no
+    // solo la última vez que se tocó el botón manual — así que se marca acá, en
+    // TODA carga exitosa del catálogo (incluida la automática cada pocos segundos
+    // que trae los cambios que llegaron por webhook desde Loyverse).
+    localStorage.setItem('cumpas_last_sync', new Date().toISOString());
     actualizarStats();
     banner.classList.add('hidden');
     if(silencioso) showToast('✓ Catálogo actualizado · '+DB.items.length+' productos');
+    // Si "Armar pedido" está abierto en este momento, refresca la lista visible
+    // (stock/precio/sugerido) en el momento, sin esperar a que el usuario toque algo.
+    if(!document.getElementById('ap-ov').classList.contains('hidden')) apRenderLista();
   }catch(e){
     banner.classList.remove('hidden');
     banner.classList.add('err');
@@ -970,11 +978,11 @@ function comboboxInit(inputId, resultsId, listaFn, crearAction, onElegir){
 }
 
 // ============================================================
-//  ACTUALIZACIÓN AUTOMÁTICA — cada 20s pregunta al worker si algo
-//  cambió (venta, ajuste, webhook de Loyverse, etc.) mediante una
-//  consulta liviana; solo si cambió de verdad se vuelve a pedir el
-//  catálogo completo. Así la app se mantiene al día sin que el
-//  usuario tenga que recargarla a mano.
+//  ACTUALIZACIÓN AUTOMÁTICA — cada 6s pregunta al worker (una
+//  consulta liviana a D1, no a Loyverse) si algo cambió (venta,
+//  ajuste, webhook, etc.); solo si cambió de verdad se vuelve a
+//  pedir el catálogo completo. Así la app se mantiene al día sin
+//  que el usuario tenga que recargarla ni tocar "Sincronizar".
 // ============================================================
 let ultimaActualizacionConocida=null;
 async function revisarActualizacionCatalogo(){
@@ -992,7 +1000,7 @@ async function revisarActualizacionCatalogo(){
     }
   }catch(e){ /* silencioso: si falla, se reintenta en el próximo ciclo */ }
 }
-setInterval(revisarActualizacionCatalogo, 20000);
+setInterval(revisarActualizacionCatalogo, 6000);
 
 (function init(){
   restoreCart();
@@ -1114,7 +1122,7 @@ document.querySelectorAll('#bottom-nav .nav-item').forEach(btn=>{
 //  Con IVA/Sin IVA, margen % objetivo, cálculo automático de
 //  precio, resumen explicativo, por unidad/por caja).
 // ============================================================
-const rcState={ item:null, modo:'unidad', ivaModo:'con', precioTocado:false, margenTocado:false, accion:'recibir', provNuevo:null, sectorNuevo:null };
+const rcState={ item:null, modo:'unidad', ivaModo:'con', precioTocado:false, margenTocado:false, accion:'recibir', provNuevo:null, sectorNuevo:null, codigoEscaneado:null };
 
 function rcSetAccion(accion){
   rcState.accion=accion;
@@ -1178,7 +1186,7 @@ document.getElementById('rc-ver-historial').onclick=async()=>{
 
 function rcReset(){
   rcState.item=null; rcState.modo='unidad'; rcState.precioTocado=false; rcState.margenTocado=false;
-  rcState.provNuevo=null; rcState.sectorNuevo=null;
+  rcState.provNuevo=null; rcState.sectorNuevo=null; rcState.codigoEscaneado=null;
   document.getElementById('rc-search').value='';
   document.getElementById('rc-results').innerHTML='';
   document.getElementById('rc-picked').classList.remove('on');
@@ -1394,14 +1402,17 @@ document.getElementById('rc-search').oninput=e=>{
     box.innerHTML=lista.map(it=>`<div class="result-item" data-ref="${it.ref}"><div class="n">${it.nombre}</div><div class="s">${it.prov}${it.barcode?' · '+it.barcode:''}</div></div>`).join('');
     box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>rcPick(el.dataset.ref));
   }else if(q.trim().length>=3){
-    // Redirección automática: no se ofrece "crear producto" como link secundario — se
-    // pasa directo al módulo de creación con el nombre ya escrito, para no perder un
-    // toque extra en el flujo más frecuente (producto nuevo que llegó y hay que recibir).
-    box.innerHTML='<div class="result-item" style="color:var(--muted)">Sin coincidencias, abriendo creación de producto…</div>';
-    clearTimeout(rcState._autoCrearT);
-    rcState._autoCrearT=setTimeout(()=>{
-      if(document.getElementById('rc-search').value.trim()===q.trim()) openCrearProducto(q.trim());
-    },600);
+    // Ya no se redirige solo a "crear producto": se muestra un resultado tocable
+    // y recién si el usuario confirma que sí quiere crearlo se abre ese módulo.
+    const esCodigo=rcState.codigoEscaneado===q.trim();
+    const etiqueta=esCodigo?('el código '+q.trim()):('"'+q.trim()+'"');
+    box.innerHTML=`<div class="result-item" data-crear-nuevo="1"><div class="n crear">➕ Crear producto nuevo</div><div class="s">No se encontró ${etiqueta} — toca para crearlo</div></div>`;
+    box.querySelector('[data-crear-nuevo]').onclick=()=>{
+      if(confirm('¿Deseas crear un producto nuevo para '+etiqueta+'?')){
+        if(esCodigo) openCrearProducto('', q.trim());
+        else openCrearProducto(q.trim());
+      }
+    };
   }else{
     box.innerHTML='';
   }
@@ -1604,7 +1615,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
   }
 };
 
-function openRecibir(){ rcReset(); abrirModal('rc-ov'); document.getElementById('rc-search').focus(); }
+function openRecibir(){ rcReset(); abrirModal('rc-ov'); document.getElementById('rc-search').focus(); revisarActualizacionCatalogo(); }
 function closeRecibir(){ cerrarModal('rc-ov'); }
 document.getElementById('rc-close').onclick=closeRecibir;
 
@@ -1666,10 +1677,13 @@ document.getElementById('rc-scan').onclick=()=>{
     const lista=buscarProductos(code);
     if(lista.length===1){ abrirModal('rc-ov'); rcPick(lista[0].ref); }
     else if(lista.length===0){
-      // Redirección automática también al escanear: código no encontrado → directo a
-      // crear producto, con el código ya cargado en el campo de barcode.
-      showToast('⚠️ Código no encontrado, creando producto nuevo…');
-      openCrearProducto('', code);
+      // Ya no crea el producto directo: deja el código cargado en la búsqueda,
+      // que muestra el mismo resultado tocable "➕ Crear producto nuevo" con
+      // confirmación (mismo flujo que al escribir un código a mano).
+      abrirModal('rc-ov');
+      rcState.codigoEscaneado=code;
+      document.getElementById('rc-search').value=code;
+      document.getElementById('rc-search').dispatchEvent(new Event('input',{bubbles:true}));
     }else{
       abrirModal('rc-ov');
       document.getElementById('rc-search').value=code;
@@ -2120,6 +2134,7 @@ function openArmarPedido(){
   apRenderLista();
   abrirModal('ap-ov');
   if(esPantallaAncha()){ renderCarrito(); abrirModal('cart-ov'); } // panel fijo estilo tablet/POS
+  revisarActualizacionCatalogo();
 }
 document.getElementById('ap-close').onclick=()=>irASeccion('inicio');
 document.getElementById('ap-cart-fab').onclick=openCarrito;
