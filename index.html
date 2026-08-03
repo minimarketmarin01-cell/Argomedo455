@@ -978,11 +978,13 @@ function comboboxInit(inputId, resultsId, listaFn, crearAction, onElegir){
 }
 
 // ============================================================
-//  ACTUALIZACIÓN AUTOMÁTICA — cada 6s pregunta al worker (una
-//  consulta liviana a D1, no a Loyverse) si algo cambió (venta,
-//  ajuste, webhook, etc.); solo si cambió de verdad se vuelve a
-//  pedir el catálogo completo. Así la app se mantiene al día sin
-//  que el usuario tenga que recargarla ni tocar "Sincronizar".
+//  ACTUALIZACIÓN EN TIEMPO REAL — dos capas:
+//  1) SSE (EventSource): el servidor le avisa al celular apenas algo
+//     cambia en D1 (webhook de Loyverse, ajuste, vencimiento, etc.),
+//     sin que el celular tenga que preguntar. Instantáneo.
+//  2) Sondeo de respaldo cada 30s: por si la conexión SSE se cae
+//     (celular sin señal, app en segundo plano, Durable Object
+//     todavía no desplegado) — así nunca se queda sin actualizar.
 // ============================================================
 let ultimaActualizacionConocida=null;
 async function revisarActualizacionCatalogo(){
@@ -1000,7 +1002,36 @@ async function revisarActualizacionCatalogo(){
     }
   }catch(e){ /* silencioso: si falla, se reintenta en el próximo ciclo */ }
 }
-setInterval(revisarActualizacionCatalogo, 6000);
+setInterval(revisarActualizacionCatalogo, 30000);
+
+let sseConexion=null;
+function conectarTiempoReal(){
+  if(!('EventSource' in window)) return; // navegador viejo: se queda solo con el sondeo de respaldo
+  if(sseConexion) sseConexion.close();
+  sseConexion=new EventSource(SYNC_URL+'?action=stream');
+  sseConexion.onmessage=(e)=>{
+    try{
+      const data=JSON.parse(e.data);
+      if(data.actualizadoEn && data.actualizadoEn!==ultimaActualizacionConocida){
+        ultimaActualizacionConocida=data.actualizadoEn;
+        cargarCatalogo(true);
+      }
+    }catch(err){ /* mensaje raro, se ignora */ }
+  };
+  sseConexion.onerror=()=>{
+    // EventSource reintenta la conexión solo; mientras tanto el sondeo de 30s
+    // sigue funcionando como respaldo, así que no hay que hacer nada acá.
+  };
+}
+conectarTiempoReal();
+
+// Si el celular vuelve a primer plano (usuario cambió de app y volvió), la
+// conexión SSE puede haberse cortado en segundo plano — se reconecta sola.
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible' && sseConexion && sseConexion.readyState===EventSource.CLOSED){
+    conectarTiempoReal();
+  }
+});
 
 (function init(){
   restoreCart();

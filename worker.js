@@ -501,7 +501,23 @@ async function sincronizarCatalogo(env) {
 // consulta esto cada cierto tiempo (polling liviano) para saber si debe refrescar
 // su copia local del catálogo, sin tener que revisar producto por producto.
 async function marcarCatalogoActualizado(env) {
-  await run(env, "INSERT INTO config (clave, valor) VALUES ('catalogo_actualizado_en', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor", new Date().toISOString());
+  const ahora = new Date().toISOString();
+  await run(env, "INSERT INTO config (clave, valor) VALUES ('catalogo_actualizado_en', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor", ahora);
+
+  // Avisa en el momento (SSE) a todos los celulares conectados — sin esto igual se
+  // enterarían en el próximo sondeo de respaldo, pero así queda instantáneo. Si el
+  // binding del Durable Object todavía no está desplegado, no rompe nada: el sondeo
+  // de respaldo sigue funcionando igual.
+  if (env.REALTIME_HUB) {
+    try {
+      const id = env.REALTIME_HUB.idFromName("global");
+      const stub = env.REALTIME_HUB.get(id);
+      await stub.fetch("https://internal/broadcast", {
+        method: "POST",
+        body: JSON.stringify({ actualizadoEn: ahora })
+      });
+    } catch (e) { /* silencioso: el sondeo de respaldo cubre este caso igual */ }
+  }
 }
 
 // ============================================================
@@ -1290,6 +1306,21 @@ export default {
     }
 
     try {
+      // GET /?action=stream  →  conexión SSE en tiempo real: el celular queda "escuchando"
+      // y el servidor le avisa apenas cambia algo en D1 (webhook, sync manual, ajuste,
+      // vencimiento, etc.), sin que el celular tenga que preguntar. Requiere el binding
+      // de Durable Object REALTIME_HUB desplegado (ver wrangler.toml / dashboard).
+      if (action === "stream") {
+        if (!env.REALTIME_HUB) {
+          return json({ ok: false, error: "REALTIME_HUB no está configurado todavía (falta el binding del Durable Object)." }, 503);
+        }
+        const id = env.REALTIME_HUB.idFromName("global");
+        const stub = env.REALTIME_HUB.get(id);
+        const subscribeUrl = new URL(request.url);
+        subscribeUrl.pathname = "/subscribe";
+        return stub.fetch(new Request(subscribeUrl.toString(), { headers: request.headers }));
+      }
+
       // GET /?action=setup  →  crea las tablas D1 si no existen
       if (action === "setup") {
         await asegurarTablas(env);
@@ -1452,3 +1483,69 @@ export default {
     }
   }
 };
+
+// ============================================================
+//  DURABLE OBJECT: RealtimeHub
+//  Mantiene abierta una conexión SSE (Server-Sent Events) por cada
+//  celular conectado y les avisa al instante cuando algo cambia en
+//  D1 — así el celular no tiene que preguntar cada X segundos.
+//  Se usa UNA sola instancia para toda la app (idFromName("global")),
+//  correcto para un solo local/tienda.
+//  Requiere plan Cloudflare Workers Paid + el binding configurado
+//  (ver wrangler.toml o Settings → Bindings en el dashboard):
+//    [[durable_objects.bindings]]
+//    name = "REALTIME_HUB"
+//    class_name = "RealtimeHub"
+//    [[migrations]]
+//    tag = "v1"
+//    new_classes = ["RealtimeHub"]
+// ============================================================
+export class RealtimeHub {
+  constructor(state, env) {
+    this.state = state;
+    this.sessions = new Set(); // WritableStreamDefaultWriter de cada celular conectado
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    // El celular se conecta acá y se queda escuchando (no se cierra la respuesta).
+    if (url.pathname === "/subscribe") {
+      const { readable, writable } = new TransformStream();
+      const writer = writable.getWriter();
+      const encoder = new TextEncoder();
+      await writer.write(encoder.encode(": conectado\n\n")); // comentario SSE: confirma la conexión
+      this.sessions.add(writer);
+
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          "Access-Control-Allow-Origin": "*"
+        }
+      });
+    }
+
+    // El Worker principal llama acá cada vez que algo cambió en D1
+    // (marcarCatalogoActualizado) — se reparte a todos los celulares conectados.
+    if (url.pathname === "/broadcast" && request.method === "POST") {
+      const body = await request.text();
+      const encoder = new TextEncoder();
+      const mensaje = encoder.encode("data: " + body + "\n\n");
+      const muertos = [];
+      for (const writer of this.sessions) {
+        try {
+          await writer.write(mensaje);
+        } catch (e) {
+          muertos.push(writer); // conexión cerrada del otro lado (celular sin señal, app cerrada, etc.)
+        }
+      }
+      muertos.forEach(w => this.sessions.delete(w));
+      return new Response("ok");
+    }
+
+    return new Response("not found", { status: 404 });
+  }
+}
+
