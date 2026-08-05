@@ -1798,9 +1798,81 @@ function closeScanner(){
 }
 document.getElementById('scanner-close').onclick=closeScanner;
 
+// ---- Duplicados detectados al escanear en Recepción: mismo código de barras en
+// 2+ productos. Se listan todos, con opción de elegir cuál usar para recibir, o
+// eliminar cualquiera de ellos directamente desde ahí (reutiliza eliminar_producto). ----
+function rcMostrarDuplicadosEscaneo(code,items){
+  document.getElementById('rc-picked').classList.remove('on');
+  document.getElementById('rc-activar-inv').classList.add('hidden');
+  document.getElementById('rc-cantidad-field').style.display='none';
+  document.getElementById('rc-costo-field').style.display='none';
+  document.getElementById('rc-fecha-field').style.display='none';
+  document.getElementById('rc-guardar').disabled=true;
+  document.getElementById('rc-search').value=code;
+
+  const box=document.getElementById('rc-results');
+  const render=()=>{
+    box.innerHTML=`<div class="field" style="margin-bottom:8px">
+      <div style="padding:10px 12px;background:var(--ambar-bg);border:1.5px solid var(--ambar);border-radius:12px;color:var(--ambar);font-size:12.5px;font-weight:600">
+        ⚠️ Este código está repetido en ${items.length} productos. Elige el correcto o elimina los que sobren.
+      </div>
+    </div>`+items.map(it=>{
+      const stockTxt=it.stock==null?'sin control':(it.stock+(it.peso?' kg':' u'));
+      return `<div class="result-item" data-ref="${it.ref}" style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1;cursor:pointer" data-elegir="${it.ref}">
+          <div class="n">${it.nombre}</div>
+          <div class="s">SKU ${it.ref} · ${it.prov||'sin proveedor'} · Stock: ${stockTxt}</div>
+        </div>
+        <button type="button" class="del" data-eliminar="${it.ref}" title="Eliminar este duplicado" style="width:34px;height:34px;flex:none;border-radius:9px;background:var(--rojo-bg);color:var(--rojo);border:none;font-size:16px;cursor:pointer">🗑</button>
+      </div>`;
+    }).join('');
+
+    box.querySelectorAll('[data-elegir]').forEach(el=>{
+      el.onclick=()=>rcPick(el.dataset.elegir);
+    });
+    box.querySelectorAll('[data-eliminar]').forEach(btn=>{
+      btn.onclick=async()=>{
+        const it=items.find(i=>i.ref===btn.dataset.eliminar);
+        if(!it)return;
+        const ok=confirm('¿Eliminar "'+it.nombre+'" (SKU '+it.ref+') definitivamente?\n\nEsto lo borra de Loyverse y no se puede deshacer.');
+        if(!ok)return;
+        btn.disabled=true; btn.textContent='…';
+        try{
+          const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'eliminar_producto',payload:{sku:it.ref}})});
+          const j=await res.json();
+          if(j&&j.ok){
+            DB.items=(DB.items||[]).filter(i=>i.ref!==it.ref);
+            persist();
+            items=items.filter(i=>i.ref!==it.ref);
+            showToast('🗑️ Eliminado: '+j.nombre);
+            if(items.length===1){ rcPick(items[0].ref); }
+            else if(items.length===0){ document.getElementById('rc-results').innerHTML=''; showToast('Ya no quedan productos con ese código'); }
+            else{ render(); }
+          }else{
+            showToast('❌ Error: '+((j&&j.error)||'no se pudo eliminar'));
+            btn.disabled=false; btn.textContent='🗑';
+          }
+        }catch(e){
+          showToast('❌ Error de conexión al eliminar');
+          btn.disabled=false; btn.textContent='🗑';
+        }
+      };
+    });
+  };
+  render();
+}
+
 document.getElementById('rc-scan').onclick=()=>{
   closeRecibir();
   openScanner(code=>{
+    // Coincidencia EXACTA de barcode (no "contiene"), para detectar duplicados reales
+    // sin mezclar falsos positivos de SKU o nombre que solo contengan esos dígitos.
+    const exactos=(DB.items||[]).filter(it=>String(it.barcode||'')===String(code));
+    if(exactos.length>=2){
+      abrirModal('rc-ov');
+      rcMostrarDuplicadosEscaneo(code,exactos);
+      return;
+    }
     const lista=buscarProductos(code);
     if(lista.length===1){ abrirModal('rc-ov'); rcPick(lista[0].ref); }
     else if(lista.length===0){
@@ -2602,10 +2674,7 @@ document.getElementById('btn-vencimientos').onclick = () => irASeccion('vencimie
 document.getElementById('btn-reportes').onclick = () => showToast('📊 Reportes — próximamente');
 
 document.getElementById('qa-nuevo').onclick = () => openCrearProducto();
-document.getElementById('qa-buscar').onclick = () => {
-  irASeccion('pedidos');
-  setTimeout(() => document.getElementById('ap-search').focus(), 150);
-};
+document.getElementById('qa-buscar').onclick = openFichaBuscar;
 document.getElementById('qa-escanear').onclick = () => {
   irASeccion('recepcion');
   setTimeout(() => document.getElementById('rc-scan').click(), 150);
