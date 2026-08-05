@@ -319,6 +319,11 @@ async function actualizarPrecioCostoLoyverse(env, idLoyverse, variantId, precioN
     const copia = Object.assign({}, v);
     if (costoNuevo != null) copia.cost = costoNuevo;
     if (precioNuevo != null) {
+      // Loyverse rechaza default_price si default_pricing_type es "VARIABLE" (precio
+      // libre en caja). Si el usuario está fijando un precio desde la app, eso implica
+      // que quiere un precio fijo — se cambia el tipo a FIXED junto con el valor, para
+      // no mandar una combinación que la API considera inválida.
+      copia.default_pricing_type = "FIXED";
       copia.default_price = precioNuevo;
       // Loyverse usa el precio a nivel de TIENDA (stores[].price) para vender, no
       // default_price, cuando existe un override "FIXED" para esa tienda — que es
@@ -1167,11 +1172,23 @@ async function accionEditarProducto(env, payload) {
   const precio = payload.precio != null && payload.precio !== "" ? Number(payload.precio) : it.precio;
   const costo = payload.costo != null && payload.costo !== "" ? Number(payload.costo) : it.costo;
   const soldByWeight = payload.soldByWeight != null ? !!payload.soldByWeight : !!it.sold_by_weight;
+  const { storeId } = await obtenerStoreId(env);
 
   const variantes = (item.variants || []).map(v => {
     if (v.variant_id !== it.variant_id) return v;
-    const copia = Object.assign({}, v, { barcode: nuevoBarcode, cost: costo, default_price: precio });
-    if (copia.stores && copia.stores[0]) copia.stores[0].price = precio;
+    const copia = Object.assign({}, v, { barcode: nuevoBarcode, cost: costo });
+    // Igual que en actualizarPrecioCostoLoyverse: Loyverse rechaza default_price si
+    // default_pricing_type sigue en "VARIABLE" — al editar desde la ficha se asume
+    // que el usuario quiere un precio fijo, así que se ajusta el tipo junto al valor.
+    copia.default_pricing_type = "FIXED";
+    copia.default_price = precio;
+    const stores = (v.stores || []).map(s =>
+      s.store_id === storeId ? Object.assign({}, s, { price: precio, pricing_type: "FIXED" }) : s
+    );
+    if (!stores.some(s => s.store_id === storeId)) {
+      stores.push({ store_id: storeId, price: precio, pricing_type: "FIXED", available_for_sale: true });
+    }
+    copia.stores = stores;
     return copia;
   });
   await loyversePost(env, "/items", Object.assign({}, item, { item_name: nombre, sold_by_weight: soldByWeight, variants: variantes }));

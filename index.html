@@ -122,7 +122,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .sync-last{font-size:10.5px;color:var(--muted);text-align:center}
 
 /* ===== Toast simple de confirmación ===== */
-#toast{position:fixed;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));background:var(--ink);border:1px solid var(--marino-hi);color:#fff;padding:12px 16px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:var(--sh-float);z-index:500;transform:translateY(120%);opacity:0;transition:transform .25s ease,opacity .25s ease;max-width:520px;margin:0 auto}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));background:var(--ink);border:1px solid var(--marino-hi);color:#fff;padding:12px 16px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:var(--sh-float);z-index:500;transform:translateY(120%);opacity:0;transition:transform .25s ease,opacity .25s ease;max-width:520px;margin:0 auto;pointer-events:none;max-height:120px;overflow-y:auto}
 #toast.on{transform:translateY(0);opacity:1}
 
 /* ===== Overlay de módulo (pantalla completa) ===== */
@@ -892,6 +892,10 @@ function fmtPeso(n){ return '$'+Math.round(n||0).toLocaleString('es-CL'); }
 
 function showToast(msg){
   const t=document.getElementById('toast');
+  // Los errores crudos de Loyverse a veces traen un JSON largo (detalles técnicos) —
+  // se acorta a una línea legible en vez de tapar la pantalla con texto técnico.
+  msg=String(msg||'');
+  if(msg.length>140) msg=msg.slice(0,140)+'…';
   t.textContent=msg;
   t.classList.add('on');
   clearTimeout(showToast._t);
@@ -1369,10 +1373,20 @@ document.getElementById('rc-modo-caja').onclick=()=>rcSetModo('caja');
 document.getElementById('rc-unidades-caja').oninput=rcRenderResumen;
 
 function rcSetIva(modo){
+  if(modo===rcState.ivaModo){
+    // Mismo modo (click repetido): no hay nada que recalcular, solo refresca vista.
+    rcRenderExplicaCosto(); rcRenderResumen(); return;
+  }
   rcState.ivaModo=modo;
   document.getElementById('rc-iva-con').classList.toggle('active',modo==='con');
   document.getElementById('rc-iva-sin').classList.toggle('active',modo==='sin');
-  if(!rcState.precioTocado)rcRecalcularPrecioAuto();
+  // El campo Costo NO cambia de número — es el mismo valor que el usuario escribió
+  // (ej. el que viene en la factura). Lo que cambia es cómo se interpreta: en modo
+  // "Sin IVA" ese número se trata como neto y se le suma 19% para obtener la base
+  // real de cálculo; en "Con IVA" se usa tal cual. Cambiar el selector siempre
+  // recalcula el precio desde cero, aunque el usuario lo haya editado a mano antes.
+  rcState.precioTocado=false;
+  rcRecalcularPrecioAuto();
   rcRenderExplicaCosto();
   rcRenderResumen();
 }
@@ -2032,10 +2046,14 @@ document.getElementById('cp-modo-caja').onclick=()=>cpSetModo('caja');
 document.getElementById('cp-unidades-caja').oninput=cpRenderResumen;
 
 function cpSetIva(modo){
+  if(modo===cpState.ivaModo){ cpRenderExplicaCosto(); cpRenderResumen(); return; }
+  // El campo Costo no cambia de número (mismo criterio que en Recepción) — solo
+  // cambia cómo se interpreta ese valor y, con eso, el precio recalculado.
   cpState.ivaModo=modo;
   document.getElementById('cp-iva-con').classList.toggle('active',modo==='con');
   document.getElementById('cp-iva-sin').classList.toggle('active',modo==='sin');
-  if(!cpState.precioTocado)cpRecalcularPrecioAuto();
+  cpState.precioTocado=false;
+  cpRecalcularPrecioAuto();
   cpRenderExplicaCosto();
   cpRenderResumen();
 }
