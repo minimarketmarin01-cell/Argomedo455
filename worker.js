@@ -1051,6 +1051,24 @@ async function accionCrearProveedor(env, payload) {
   return { nombre };
 }
 
+// ============================================================
+//  ELIMINAR PROVEEDOR — solo permitido si no tiene productos
+//  asignados (evita dejar productos huérfanos apuntando a un
+//  proveedor que ya no existe en el catálogo).
+// ============================================================
+async function accionEliminarProveedor(env, payload) {
+  const nombre = String((payload || {}).nombre || "").trim();
+  if (!nombre) throw new Error("Falta el nombre del proveedor");
+  if (nombre === "SIN PROVEEDOR") throw new Error("SIN PROVEEDOR no es un proveedor real, no se puede eliminar");
+
+  const enUso = await get(env, "SELECT COUNT(*) as total FROM productos WHERE proveedor = ?", nombre);
+  if (enUso && enUso.total > 0) {
+    throw new Error("No se puede eliminar: tiene " + enUso.total + " producto(s) asignado(s)");
+  }
+  await run(env, "DELETE FROM proveedores WHERE nombre = ?", nombre);
+  return { nombre };
+}
+
 async function accionCrearSector(env, payload) {
   const nombre = String((payload || {}).nombre || "").trim();
   if (!nombre) throw new Error("Falta el nombre del sector");
@@ -1244,11 +1262,20 @@ async function accionEliminarProducto(env, payload) {
 //  MÓDULO PROVEEDORES — listado con conteo, y productos de uno
 // ============================================================
 async function listaProveedoresConConteo(env) {
+  // LEFT JOIN desde la tabla `proveedores` (catálogo de nombres) hacia `productos`:
+  // así aparecen también los proveedores creados pero sin ningún producto asignado
+  // todavía (total=0) — son justo los candidatos a eliminar desde la app.
   const { results } = await env.DB.prepare(
-    `SELECT COALESCE(NULLIF(proveedor,''), 'SIN PROVEEDOR') as proveedor, COUNT(*) as total
-     FROM productos GROUP BY proveedor
-     ORDER BY CASE WHEN COALESCE(NULLIF(proveedor,''),'SIN PROVEEDOR')='SIN PROVEEDOR' THEN 1 ELSE 0 END,
-              proveedor COLLATE NOCASE`
+    `SELECT proveedor, total FROM (
+       SELECT pr.nombre as proveedor, COUNT(p.sku) as total
+       FROM proveedores pr
+       LEFT JOIN productos p ON p.proveedor = pr.nombre
+       GROUP BY pr.nombre
+       UNION ALL
+       SELECT 'SIN PROVEEDOR' as proveedor, COUNT(*) as total
+       FROM productos WHERE proveedor IS NULL OR proveedor = ''
+     )
+     ORDER BY CASE WHEN proveedor='SIN PROVEEDOR' THEN 1 ELSE 0 END, proveedor COLLATE NOCASE`
   ).all();
   return results;
 }
@@ -1662,10 +1689,17 @@ export default {
         return json({ ok: true, lista });
       }
 
+      // POST { action:'eliminar_proveedor', payload:{nombre} }  →  borra un proveedor
+      // del catálogo, solo si no tiene productos asignados.
+      if (action === "eliminar_proveedor") {
+        const resultado = await accionEliminarProveedor(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
