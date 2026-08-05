@@ -929,6 +929,148 @@ function restoreCart(){
 }
 
 // ============================================================
+//  SNAPSHOT DE SESIÓN — recuerda en qué módulo, con qué producto
+//  y qué campos estaba el usuario, para que al refrescar la página
+//  (F5, o Chrome recargando la pestaña en segundo plano) todo
+//  vuelva exactamente a donde estaba, sin perder nada sin guardar.
+//  Cada módulo llama guardarSnapshot() cuando algo relevante cambia
+//  (con debounce para no escribir en cada tecla); al arrancar la
+//  app, restaurarSnapshot() lee lo guardado y repone la pantalla.
+// ============================================================
+let snapshotDebounce=null;
+function guardarSnapshot(){
+  clearTimeout(snapshotDebounce);
+  snapshotDebounce=setTimeout(()=>{
+    try{
+      const snap={ seccion:seccionActual, ts:Date.now() };
+      if(seccionActual==='recepcion'){
+        snap.rc={
+          sku:rcState.item?rcState.item.ref:null,
+          accion:rcState.accion, modo:rcState.modo, ivaModo:rcState.ivaModo,
+          search:document.getElementById('rc-search').value,
+          cantidad:document.getElementById('rc-cantidad').value,
+          unidadesCaja:document.getElementById('rc-unidades-caja').value,
+          costo:document.getElementById('rc-costo').value,
+          precio:document.getElementById('rc-precio').value,
+          margenObj:document.getElementById('rc-margen-obj').value,
+          fechaDd:document.getElementById('rc-fecha-dd').value,
+          fechaMm:document.getElementById('rc-fecha-mm').value,
+          fechaAaaa:document.getElementById('rc-fecha-aaaa').value,
+          proveedor:document.getElementById('rc-proveedor')?document.getElementById('rc-proveedor').value:'',
+          sector:document.getElementById('rc-sector')?document.getElementById('rc-sector').value:''
+        };
+      }else if(seccionActual==='crear'){
+        snap.cp={
+          nombre:document.getElementById('cp-nombre').value,
+          barcode:document.getElementById('cp-barcode').value,
+          proveedor:document.getElementById('cp-proveedor').value,
+          sector:document.getElementById('cp-sector').value,
+          peso:cpState.peso, modo:cpState.modo, ivaModo:cpState.ivaModo,
+          costo:document.getElementById('cp-costo').value,
+          precio:document.getElementById('cp-precio').value,
+          margenObj:document.getElementById('cp-margen-obj').value,
+          stock:document.getElementById('cp-stock').value,
+          unidadesCaja:document.getElementById('cp-unidades-caja').value,
+          fechaDd:document.getElementById('cp-fecha-dd').value,
+          fechaMm:document.getElementById('cp-fecha-mm').value,
+          fechaAaaa:document.getElementById('cp-fecha-aaaa').value,
+          origen:cpState.origen
+        };
+      }else if(seccionActual==='buscar'){
+        snap.fp={ sku:fpState.sku, search:document.getElementById('fp-search').value };
+      }else if(seccionActual==='pedidos'){
+        snap.ap={ prov:apState.prov, search:document.getElementById('ap-search')?document.getElementById('ap-search').value:'' };
+      }else if(seccionActual==='proveedores'){
+        snap.pv={ search:document.getElementById('pv-search')?document.getElementById('pv-search').value:'' };
+      }
+      localStorage.setItem('cumpas_snapshot', JSON.stringify(snap));
+    }catch(e){}
+  },400);
+}
+
+function limpiarSnapshot(){
+  try{ localStorage.removeItem('cumpas_snapshot'); }catch(e){}
+}
+
+function leerSnapshot(){
+  try{
+    const raw=localStorage.getItem('cumpas_snapshot');
+    if(!raw)return null;
+    const snap=JSON.parse(raw);
+    // Se descarta si es muy vieja (más de 24h) — evita reabrir un formulario a medio
+    // llenar de hace días, que probablemente ya no tiene sentido retomar.
+    if(!snap||!snap.ts||(Date.now()-snap.ts)>24*60*60*1000) return null;
+    return snap;
+  }catch(e){ return null; }
+}
+
+// Restaura la pantalla exacta guardada. Se llama una vez, después de que el catálogo
+// ya esté cargado en memoria (para poder repoblar el producto seleccionado, si había).
+function restaurarSnapshot(){
+  const snap=leerSnapshot();
+  if(!snap||!snap.seccion||snap.seccion==='inicio')return;
+
+  irASeccion(snap.seccion);
+
+  if(snap.seccion==='recepcion' && snap.rc){
+    const r=snap.rc;
+    if(r.search) document.getElementById('rc-search').value=r.search;
+    if(r.sku){
+      rcPick(r.sku);
+      if(r.accion==='ajustar') rcSetAccion('ajustar');
+      if(r.modo==='caja') rcSetModo('caja');
+      if(r.ivaModo==='sin') rcSetIva('sin');
+      document.getElementById('rc-cantidad').value=r.cantidad||'';
+      document.getElementById('rc-unidades-caja').value=r.unidadesCaja||'';
+      document.getElementById('rc-costo').value=r.costo||'';
+      document.getElementById('rc-margen-obj').value=r.margenObj||'30';
+      if(r.precio){ document.getElementById('rc-precio').value=r.precio; rcState.precioTocado=true; }
+      document.getElementById('rc-fecha-dd').value=r.fechaDd||'';
+      document.getElementById('rc-fecha-mm').value=r.fechaMm||'';
+      document.getElementById('rc-fecha-aaaa').value=r.fechaAaaa||'';
+      if(document.getElementById('rc-proveedor')&&r.proveedor) document.getElementById('rc-proveedor').value=r.proveedor;
+      if(document.getElementById('rc-sector')&&r.sector) document.getElementById('rc-sector').value=r.sector;
+      rcValidar(); rcRenderResumen();
+    }
+  }else if(snap.seccion==='crear' && snap.cp){
+    const c=snap.cp;
+    document.getElementById('cp-nombre').value=c.nombre||'';
+    document.getElementById('cp-barcode').value=c.barcode||'';
+    document.getElementById('cp-proveedor').value=c.proveedor||'';
+    document.getElementById('cp-sector').value=c.sector||'';
+    if(c.peso) cpSetPeso(true);
+    if(c.modo==='caja') cpSetModo('caja');
+    if(c.ivaModo==='sin') cpSetIva('sin');
+    document.getElementById('cp-costo').value=c.costo||'';
+    document.getElementById('cp-margen-obj').value=c.margenObj||'30';
+    if(c.precio){ document.getElementById('cp-precio').value=c.precio; cpState.precioTocado=true; }
+    document.getElementById('cp-stock').value=c.stock||'';
+    document.getElementById('cp-unidades-caja').value=c.unidadesCaja||'';
+    document.getElementById('cp-fecha-dd').value=c.fechaDd||'';
+    document.getElementById('cp-fecha-mm').value=c.fechaMm||'';
+    document.getElementById('cp-fecha-aaaa').value=c.fechaAaaa||'';
+    cpState.origen=c.origen||null;
+    cpRenderResumen();
+  }else if(snap.seccion==='buscar' && snap.fp){
+    if(snap.fp.sku) abrirFichaProducto(snap.fp.sku);
+    else if(snap.fp.search){
+      document.getElementById('fp-search').value=snap.fp.search;
+      document.getElementById('fp-search').dispatchEvent(new Event('input',{bubbles:true}));
+    }
+  }else if(snap.seccion==='pedidos' && snap.ap){
+    if(snap.ap.prov){ apState.prov=snap.ap.prov; apRenderProvChips(); }
+    if(snap.ap.search){
+      const el=document.getElementById('ap-search');
+      if(el){ el.value=snap.ap.search; apState.search=snap.ap.search; }
+    }
+    apRenderLista();
+  }else if(snap.seccion==='proveedores' && snap.pv && snap.pv.search){
+    document.getElementById('pv-search').value=snap.pv.search;
+    pvRenderLista(snap.pv.search);
+  }
+}
+
+// ============================================================
 //  CARGA DEL CATÁLOGO
 // ============================================================
 function actualizarStats(){
@@ -1143,8 +1285,14 @@ document.addEventListener('visibilitychange', ()=>{
     actualizarStats();
     document.getElementById('load-banner').classList.add('hidden');
     cargarCatalogo(true);
+    // El catálogo local ya está en memoria (DB.items poblado) — se puede restaurar
+    // la sesión de inmediato, sin esperar la actualización silenciosa en segundo plano.
+    restaurarSnapshot();
   }else{
-    cargarCatalogo(false);
+    // No había catálogo guardado: hay que esperar a que termine de bajar de la red
+    // antes de restaurar (si el snapshot dependía de un producto, buscarProductos()
+    // necesita DB.items ya poblado o no encontraría nada).
+    cargarCatalogo(false).then(restaurarSnapshot);
   }
   cargarProveedoresSectores();
   revisarActualizacionCatalogo();
@@ -1227,6 +1375,7 @@ function irASeccion(seccion){
   cerrarSeccionActual();
   if(seccion==='inicio'){
     history.back(); // consume la entrada del módulo que se está cerrando
+    limpiarSnapshot();
   } else if(seccionActual==='inicio'){
     abrirSeccionVisual(seccion);
     history.pushState({ cumpasSeccion:seccion }, '', '#'+seccion);
@@ -1236,6 +1385,7 @@ function irASeccion(seccion){
   }
   seccionActual=seccion;
   actualizarNavActiva();
+  if(seccion!=='inicio') guardarSnapshot();
 }
 
 window.addEventListener('popstate', (e)=>{
@@ -1244,6 +1394,7 @@ window.addEventListener('popstate', (e)=>{
   if(destino!=='inicio') abrirSeccionVisual(destino);
   seccionActual=destino;
   actualizarNavActiva();
+  if(destino==='inicio') limpiarSnapshot(); else guardarSnapshot();
 });
 
 document.querySelectorAll('#bottom-nav .nav-item').forEach(btn=>{
@@ -1460,6 +1611,7 @@ function rcPick(ref){
     btnActivar.disabled=false;
     btnActivar.textContent='🔓 Activar inventario para recibir stock de este producto';
     rcValidar();
+    guardarSnapshot();
     return;
   }
   document.getElementById('rc-activar-inv').classList.add('hidden');
@@ -1470,6 +1622,7 @@ function rcPick(ref){
   cIn.disabled=false; cIn.value=''; cIn.placeholder=it.peso?'0.000':'0';
   rcSetAccion(rcState.accion);
   rcValidar();
+  guardarSnapshot();
 }
 
 document.getElementById('rc-activar-inv').onclick=async()=>{
@@ -1688,6 +1841,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
         if(itLocal){ itLocal.stock=j.stockFinal; persist(); }
         showToast('✓ Ajuste guardado: '+it.nombre+' · '+j.stockAnterior+' → '+j.stockFinal);
         rcReset();
+        limpiarSnapshot();
         document.getElementById('rc-search').focus();
       }else{
         showToast('❌ Error: '+((j&&j.error)||'no se pudo guardar el ajuste'));
@@ -1750,6 +1904,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
       showToast(msg);
       if(j.avisoStock) setTimeout(()=>showToast(j.avisoStock),2800);
       rcReset();
+      limpiarSnapshot();
       document.getElementById('rc-search').focus();
     }else{
       showToast('❌ Error: '+((j&&j.error)||'no se pudo guardar'));
@@ -2234,6 +2389,7 @@ document.getElementById('cp-guardar').onclick=async()=>{
       showToast('✅ Producto creado: '+j.nombre+' (SKU '+j.sku+')');
       if(j.avisoStockMinimo) setTimeout(()=>showToast(j.avisoStockMinimo),2600);
       cerrarModal('cp-ov');
+      limpiarSnapshot();
       if(cpState.origen==='rc'){ openRecibir(); rcPick(j.sku); }
       else if(cpState.origen==='fp'){ abrirFichaProducto(j.sku); }
       // Si el IVA no quedó activado (ni siquiera tras el reintento automático del
@@ -2794,6 +2950,7 @@ function abrirFichaProducto(ref){
   }else{
     abrirModal('fp-ov');
   }
+  guardarSnapshot();
 }
 
 function fpSetPeso(esPeso){
@@ -2833,6 +2990,7 @@ document.getElementById('fp-guardar').onclick=async()=>{
       }
       showToast('✅ Cambios guardados: '+j.nombre);
       cerrarModal('fp-ov');
+      limpiarSnapshot();
     }else{
       showToast('❌ Error: '+((j&&j.error)||'no se pudo guardar'));
     }
@@ -2858,6 +3016,7 @@ document.getElementById('fp-eliminar').onclick=async()=>{
       persist();
       showToast('🗑️ Producto eliminado: '+j.nombre);
       cerrarModal('fp-ov');
+      limpiarSnapshot();
     }else{
       showToast('❌ Error: '+((j&&j.error)||'no se pudo eliminar'));
     }
@@ -2937,6 +3096,18 @@ function pvRenderLista(filtro){
   });
 }
 document.getElementById('pv-search').oninput=e=>pvRenderLista(e.target.value);
+
+// ---- Snapshot automático: cualquier tecla o cambio dentro de los módulos que
+// guardan estado dispara guardarSnapshot() (con debounce ya incluido ahí dentro).
+// Un solo listener delegado, en vez de tocar cada input individual — así ningún
+// campo nuevo que se agregue en el futuro queda fuera del guardado. ----
+['rc-ov','cp-ov','fp-ov','ap-ov','pv-ov'].forEach(modId=>{
+  const el=document.getElementById(modId);
+  if(!el)return;
+  el.addEventListener('input', guardarSnapshot);
+  el.addEventListener('change', guardarSnapshot);
+});
+
 // Wrapper público: entra al historial como sección propia.
 function openProveedores(){ irASeccion('proveedores'); }
 document.getElementById('pv-close').onclick=()=>irASeccion('inicio');
