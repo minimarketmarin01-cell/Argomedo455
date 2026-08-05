@@ -1117,15 +1117,141 @@ async function accionActivarIva(env, payload) {
 //  El SKU se asigna automáticamente (numérico correlativo de 5
 //  dígitos) para que el usuario no tenga que inventar uno.
 // ============================================================
+// ============================================================
+//  DUPLICADOS POR CÓDIGO DE BARRAS
+//  Devuelve todos los productos que comparten el mismo barcode —
+//  puede pasar si se creó el mismo producto más de una vez, en
+//  Loyverse directo o desde la app antes de tener este chequeo.
+// ============================================================
+async function buscarPorBarcode(env, barcode) {
+  barcode = String(barcode || "").trim();
+  if (!barcode) return [];
+  const { results } = await env.DB.prepare(
+    "SELECT sku, nombre, categoria, proveedor, sector, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva FROM productos WHERE barcode = ?"
+  ).bind(barcode).all();
+  return results;
+}
+
+// ============================================================
+//  FICHA COMPLETA DE UN PRODUCTO (para editar todo, tipo Loyverse)
+// ============================================================
+async function fichaProducto(env, sku) {
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("Producto no encontrado: " + sku);
+  return it;
+}
+
+// ============================================================
+//  EDITAR PRODUCTO (ficha completa) — reenvía el ítem completo a
+//  Loyverse con los campos que vinieron en el payload, igual que
+//  actualizarPrecioCostoLoyverse pero para todos los campos editables
+//  de golpe (nombre, barcode, precio, costo, categoría no se toca
+//  porque Loyverse la controla por category_id, no por texto).
+// ============================================================
+async function accionEditarProducto(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("Producto no encontrado: " + sku);
+  if (!it.id_loyverse || !it.variant_id) throw new Error("Falta id de Loyverse (vuelve a sincronizar el catálogo)");
+
+  const nuevoBarcode = payload.barcode != null ? String(payload.barcode).trim() : it.barcode;
+  if (nuevoBarcode && nuevoBarcode !== it.barcode) {
+    const dup = await get(env, "SELECT sku FROM productos WHERE barcode = ? AND sku != ?", nuevoBarcode, sku);
+    if (dup) throw new Error("Ese código de barras ya lo usa el SKU " + dup.sku);
+  }
+
+  const item = await loyverseGet(env, "/items/" + it.id_loyverse, {});
+  const nombre = payload.nombre != null ? String(payload.nombre).trim() : it.nombre;
+  const precio = payload.precio != null && payload.precio !== "" ? Number(payload.precio) : it.precio;
+  const costo = payload.costo != null && payload.costo !== "" ? Number(payload.costo) : it.costo;
+  const soldByWeight = payload.soldByWeight != null ? !!payload.soldByWeight : !!it.sold_by_weight;
+
+  const variantes = (item.variants || []).map(v => {
+    if (v.variant_id !== it.variant_id) return v;
+    const copia = Object.assign({}, v, { barcode: nuevoBarcode, cost: costo, default_price: precio });
+    if (copia.stores && copia.stores[0]) copia.stores[0].price = precio;
+    return copia;
+  });
+  await loyversePost(env, "/items", Object.assign({}, item, { item_name: nombre, sold_by_weight: soldByWeight, variants: variantes }));
+
+  const proveedor = payload.proveedor != null ? String(payload.proveedor).trim() : it.proveedor;
+  const sector = payload.sector != null ? String(payload.sector).trim() : it.sector;
+  await run(env,
+    "UPDATE productos SET nombre=?, barcode=?, precio=?, costo=?, sold_by_weight=?, proveedor=?, sector=? WHERE sku=?",
+    nombre, nuevoBarcode, precio, costo, soldByWeight ? 1 : 0, proveedor || null, sector || null, sku);
+  if (proveedor) await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedor);
+  if (sector) await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sector);
+
+  await run(env,
+    `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    fechaHoraDDMMAAAA(), "editar_producto", sku, nombre, it.categoria, it.id_loyverse, it.stock, "Ficha editada desde la app", payload.responsable || "");
+
+  return { sku, nombre, precio, costo, barcode: nuevoBarcode, proveedor, sector, peso: soldByWeight };
+}
+
+// ============================================================
+//  ELIMINAR PRODUCTO — borrado real en Loyverse (irreversible).
+//  Se pide confirmación en el frontend antes de llamar esto.
+// ============================================================
+async function accionEliminarProducto(env, payload) {
+  const sku = String((payload || {}).sku || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("Producto no encontrado: " + sku);
+
+  if (it.id_loyverse) {
+    const res = await fetch(LOYVERSE_API + "/items/" + it.id_loyverse, {
+      method: "DELETE",
+      headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN }
+    });
+    // 404 = ya no existe en Loyverse (igual se limpia de D1 abajo); cualquier otro
+    // error sí se reporta, porque puede ser una falla real que conviene saber.
+    if (!res.ok && res.status !== 404) {
+      throw new Error("Loyverse HTTP " + res.status + ": " + (await res.text()).slice(0, 200));
+    }
+  }
+
+  await run(env, "DELETE FROM productos WHERE sku = ?", sku);
+  await run(env,
+    `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    fechaHoraDDMMAAAA(), "eliminar_producto", sku, it.nombre, it.categoria, it.id_loyverse, it.stock, "Eliminado desde la app", (payload || {}).responsable || "");
+
+  return { sku, nombre: it.nombre };
+}
+
+// ============================================================
+//  MÓDULO PROVEEDORES — listado con conteo, y productos de uno
+// ============================================================
+async function listaProveedoresConConteo(env) {
+  const { results } = await env.DB.prepare(
+    `SELECT COALESCE(NULLIF(proveedor,''), 'SIN PROVEEDOR') as proveedor, COUNT(*) as total
+     FROM productos GROUP BY proveedor ORDER BY proveedor = 'SIN PROVEEDOR', proveedor COLLATE NOCASE`
+  ).all();
+  return results;
+}
+
+async function productosDeProveedor(env, proveedor) {
+  proveedor = String(proveedor || "").trim();
+  const esSinProveedor = !proveedor || proveedor === "SIN PROVEEDOR";
+  const { results } = esSinProveedor
+    ? await env.DB.prepare("SELECT sku, nombre, barcode, precio, costo, stock, sold_by_weight, track_stock FROM productos WHERE proveedor IS NULL OR proveedor = '' ORDER BY nombre").all()
+    : await env.DB.prepare("SELECT sku, nombre, barcode, precio, costo, stock, sold_by_weight, track_stock FROM productos WHERE proveedor = ? ORDER BY nombre").bind(proveedor).all();
+  return results;
+}
+
 async function accionCrearProducto(env, payload) {
   payload = payload || {};
   const nombre = String(payload.nombre || "").trim();
   if (!nombre) throw new Error("Falta el nombre del producto");
 
   const barcode = String(payload.barcode || "").trim();
-  if (barcode) {
+  if (barcode && !payload.forzarDuplicado) {
     const dup = await get(env, "SELECT sku, nombre FROM productos WHERE barcode = ?", barcode);
-    if (dup) throw new Error("Ese código de barras ya está en uso por '" + dup.nombre + "' (SKU " + dup.sku + ")");
+    if (dup) throw new Error("DUPLICADO: Ese código de barras ya está en uso por '" + dup.nombre + "' (SKU " + dup.sku + ")");
   }
 
   // Siguiente SKU numérico de 5 dígitos disponible, siguiendo la secuencia ya usada
@@ -1473,10 +1599,54 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // GET /?action=buscar_barcode&barcode=XXXX  →  todos los productos con ese código
+      // (para detectar y listar duplicados).
+      if (action === "buscar_barcode") {
+        const barcode = url.searchParams.get("barcode") || "";
+        const lista = await buscarPorBarcode(env, barcode);
+        return json({ ok: true, lista });
+      }
+
+      // GET /?action=ficha_producto&sku=XXXX  →  ficha completa de un producto.
+      if (action === "ficha_producto") {
+        const sku = url.searchParams.get("sku") || "";
+        const it = await fichaProducto(env, sku);
+        return json({ ok: true, item: it });
+      }
+
+      // POST { action:'editar_producto', payload:{sku,...} }  →  edita nombre, barcode,
+      // precio, costo, proveedor, sector, peso — reenvía a Loyverse y actualiza D1.
+      if (action === "editar_producto") {
+        const resultado = await accionEditarProducto(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'eliminar_producto', payload:{sku} }  →  borra el producto en
+      // Loyverse (irreversible) y lo quita de D1.
+      if (action === "eliminar_producto") {
+        const resultado = await accionEliminarProducto(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=proveedores_conteo  →  lista de proveedores con cantidad de productos.
+      if (action === "proveedores_conteo") {
+        const lista = await listaProveedoresConConteo(env);
+        return json({ ok: true, lista });
+      }
+
+      // GET /?action=productos_proveedor&proveedor=XXXX  →  productos de un proveedor.
+      if (action === "productos_proveedor") {
+        const proveedor = url.searchParams.get("proveedor") || "";
+        const lista = await productosDeProveedor(env, proveedor);
+        return json({ ok: true, lista });
+      }
+
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
