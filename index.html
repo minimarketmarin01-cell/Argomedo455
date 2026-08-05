@@ -390,6 +390,24 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 
+  <button class="menu-card pedido" id="btn-proveedores">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
+    <div class="txt">
+      <div class="t">Proveedores</div>
+      <div class="s">Ver cada proveedor con sus productos y editar desde ahí</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+  </button>
+
+  <button class="menu-card recibir" id="btn-ficha-producto">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
+    <div class="txt">
+      <div class="t">Buscar producto</div>
+      <div class="s">Escanear o buscar para editar todos los datos o eliminar</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+  </button>
+
   <button class="menu-card reportes" id="btn-reportes">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-4"/></svg></div>
     <div class="txt">
@@ -581,6 +599,24 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <div class="field" id="cp-aviso-field" style="display:none">
       <div style="padding:10px 12px;background:var(--ambar-bg);border:1.5px solid var(--ambar);border-radius:12px;color:var(--ambar);font-size:12.5px;font-weight:600;line-height:1.4" id="cp-aviso-txt"></div>
     </div>
+
+    <!-- Alerta de duplicados: aparece si el código escaneado ya existe en 1+ productos.
+         Se muestra ANTES del resto del formulario para decidir de entrada qué hacer. -->
+    <div class="field" id="cp-dup-field" style="display:none">
+      <div style="padding:12px;background:var(--rojo-bg);border:1.5px solid var(--rojo);border-radius:12px">
+        <div style="font-weight:800;color:var(--rojo);font-size:13px;margin-bottom:8px">⚠️ Este código ya existe</div>
+        <div id="cp-dup-lista"></div>
+        <button type="button" class="btn-secondary" id="cp-dup-crear-igual" style="color:var(--rojo);border-color:var(--rojo);margin-top:4px">Crear de todas formas (duplicado)</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Código de barras <span style="text-transform:none;font-weight:400">(opcional — escanea o escribe)</span></label>
+      <div class="search-row">
+        <input id="cp-barcode" inputmode="numeric" placeholder="Ej: 7804673910023">
+        <button class="scan-btn" id="cp-scan" type="button" aria-label="Escanear código">📷</button>
+      </div>
+    </div>
     <div class="field">
       <label>Nombre del producto</label>
       <input id="cp-nombre" placeholder="Ej: Coca Cola 1.5L" autocomplete="off">
@@ -594,13 +630,6 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
       <label>Sector <span style="text-transform:none;font-weight:400">(góndola, bodega, refrigerador…)</span></label>
       <input id="cp-sector" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
       <div class="results" id="cp-sector-results"></div>
-    </div>
-    <div class="field">
-      <label>Código de barras <span style="text-transform:none;font-weight:400">(opcional)</span></label>
-      <div class="search-row">
-        <input id="cp-barcode" inputmode="numeric" placeholder="Ej: 7804673910023">
-        <button class="scan-btn" id="cp-scan" type="button" aria-label="Escanear código">📷</button>
-      </div>
     </div>
 
     <div class="field">
@@ -659,12 +688,6 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     </div>
 
     <div class="field">
-      <label>Inventario bajo / stock mínimo <span style="text-transform:none;font-weight:400">(opcional)</span></label>
-      <input id="cp-stock-minimo" inputmode="numeric" placeholder="Ej: 5">
-      <div class="iva-info">Cuando el stock llegue a este número o menos, Loyverse genera la alerta de inventario bajo.</div>
-    </div>
-
-    <div class="field">
       <label>Fecha de vencimiento <span style="text-transform:none;font-weight:400">(opcional)</span></label>
       <div class="fecha-row" style="display:flex;gap:8px;align-items:center">
         <input id="cp-fecha-dd" inputmode="numeric" placeholder="DD" maxlength="2" style="width:56px;text-align:center;height:44px;border:1.5px solid var(--line);border-radius:10px">
@@ -674,16 +697,6 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
         <input id="cp-fecha-aaaa" inputmode="numeric" placeholder="AAAA" maxlength="4" style="width:76px;text-align:center;height:44px;border:1.5px solid var(--line);border-radius:10px">
       </div>
       <div class="iva-info">Si la pones, el stock inicial queda registrado como lote y aparece en Vencimientos.</div>
-    </div>
-
-    <div class="field" style="display:flex;align-items:center;justify-content:space-between">
-      <label style="margin:0">IVA 19%</label>
-      <input type="checkbox" id="cp-activar-iva" checked style="width:22px;height:22px;accent-color:var(--verde)">
-    </div>
-
-    <div class="field" style="display:flex;align-items:center;justify-content:space-between">
-      <label style="margin:0">Producto activo (a la venta)</label>
-      <input type="checkbox" id="cp-activo" checked style="width:22px;height:22px;accent-color:var(--verde)">
     </div>
   </div>
   <div class="ov-foot">
@@ -778,6 +791,89 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
       <input id="venc-responsable" placeholder="Tu nombre" autocomplete="off">
     </div>
   </div>
+</div>
+
+<!-- ===== MODAL: FICHA DE PRODUCTO (buscar, editar todo, eliminar) ===== -->
+<div class="ov hidden" id="fp-ov">
+  <div class="ov-head">
+    <h3>🔎 Buscar producto</h3>
+    <button class="ov-close" id="fp-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="field" id="fp-buscar-field">
+      <label>Producto</label>
+      <div class="search-row">
+        <input id="fp-search" placeholder="Nombre, SKU o código…" autocomplete="off">
+        <button class="scan-btn" id="fp-scan" type="button" aria-label="Escanear código">📷</button>
+      </div>
+      <div class="results" id="fp-results"></div>
+    </div>
+
+    <div id="fp-ficha" class="hidden">
+      <div class="field">
+        <label>Código de barras</label>
+        <div class="search-row">
+          <input id="fp-barcode" inputmode="numeric">
+          <button class="scan-btn" id="fp-scan2" type="button" aria-label="Escanear código">📷</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Nombre</label>
+        <input id="fp-nombre">
+      </div>
+      <div class="field">
+        <label>Proveedor</label>
+        <input id="fp-proveedor" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
+        <div class="results" id="fp-proveedor-results"></div>
+      </div>
+      <div class="field">
+        <label>Sector</label>
+        <input id="fp-sector" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
+        <div class="results" id="fp-sector-results"></div>
+      </div>
+      <div class="field">
+        <label>Se vende por peso (kg)</label>
+        <div class="toggle-row">
+          <button type="button" class="toggle-btn" id="fp-peso-no" data-v="0">No, por unidad</button>
+          <button type="button" class="toggle-btn" id="fp-peso-si" data-v="1">Sí, por kg</button>
+        </div>
+      </div>
+      <div class="field">
+        <div style="display:flex;gap:8px">
+          <div style="flex:1">
+            <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">COSTO</div>
+            <input id="fp-costo" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
+          </div>
+          <div style="flex:1">
+            <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">PRECIO VENTA</div>
+            <input id="fp-precio" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
+          </div>
+        </div>
+      </div>
+      <div class="field" style="font-size:12px;color:var(--muted)" id="fp-stock-txt"></div>
+
+      <button class="btn-primary" id="fp-guardar" style="margin-bottom:10px">Guardar cambios</button>
+      <button class="btn-secondary" id="fp-eliminar" style="color:var(--rojo);border-color:var(--rojo)">🗑️ Eliminar producto</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: PROVEEDORES (listado con conteo) ===== -->
+<div class="ov hidden" id="pv-ov">
+  <div class="ov-head">
+    <h3>🏢 Proveedores</h3>
+    <button class="ov-close" id="pv-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body" id="pv-lista"></div>
+</div>
+
+<!-- ===== MODAL: PRODUCTOS DE UN PROVEEDOR ===== -->
+<div class="ov hidden" id="pvp-ov">
+  <div class="ov-head">
+    <h3 id="pvp-titulo">🏢 Proveedor</h3>
+    <button class="ov-close" id="pvp-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body" id="pvp-lista"></div>
 </div>
 
 <script>
@@ -1731,16 +1827,19 @@ document.getElementById('rc-scan').onclick=()=>{
 // ============================================================
 const cpState={ peso:false, origen:null, modo:'unidad', ivaModo:'con', precioTocado:false, margenTocado:false };
 
-function openCrearProducto(nombreSugerido, barcodeSugerido){
-  cpState.origen='rc';
+function openCrearProducto(nombreSugerido, barcodeSugerido, origen){
+  cpState.origen=origen||null;
   cpState.precioTocado=false; cpState.margenTocado=false;
+  cpState.forzarDuplicado=false;
   const aviso=document.getElementById('cp-aviso-field');
-  if(nombreSugerido||barcodeSugerido){
+  if(nombreSugerido){
     aviso.style.display='block';
     document.getElementById('cp-aviso-txt').textContent='⚠️ No se encontró ningún producto que coincida — completa los datos para crearlo en Loyverse.';
   }else{
     aviso.style.display='none';
   }
+  document.getElementById('cp-dup-field').style.display='none';
+  document.getElementById('cp-dup-lista').innerHTML='';
   document.getElementById('cp-nombre').value=nombreSugerido||'';
   document.getElementById('cp-barcode').value=barcodeSugerido||'';
   document.getElementById('cp-costo').value='';
@@ -1750,25 +1849,61 @@ function openCrearProducto(nombreSugerido, barcodeSugerido){
   document.getElementById('cp-stock').value='';
   document.getElementById('cp-unidades-caja').value='';
   document.getElementById('cp-stock-total-hint').textContent='';
-  document.getElementById('cp-stock-minimo').value='';
   document.getElementById('cp-fecha-dd').value='';
   document.getElementById('cp-fecha-mm').value='';
   document.getElementById('cp-fecha-aaaa').value='';
-  document.getElementById('cp-activar-iva').checked=true;
-  document.getElementById('cp-activo').checked=true;
   cpSetPeso(false);
   cpSetIva('con');
   cpSetModo('unidad');
-  cerrarModal('rc-ov');
+  if(cpState.origen==='rc') cerrarModal('rc-ov');
   abrirModal('cp-ov');
-  if(!nombreSugerido) document.getElementById('cp-nombre').focus();
-  else document.getElementById('cp-costo').focus();
+  // Foco automático: código de barras primero (para escanear de inmediato), salvo que
+  // ya venga un código sugerido — ahí conviene ir directo al nombre.
+  if(barcodeSugerido){
+    document.getElementById('cp-nombre').focus();
+    cpChequearDuplicado(barcodeSugerido);
+  }else{
+    document.getElementById('cp-barcode').focus();
+  }
 }
 function closeCrearProducto(){
   cerrarModal('cp-ov');
   if(cpState.origen==='rc') openRecibir();
 }
 document.getElementById('cp-close').onclick=closeCrearProducto;
+
+// ---- Duplicados: consulta al servidor (fuente de verdad, no solo la copia local)
+// apenas se completa un código de barras válido. Si hay coincidencias, se muestran
+// con opción de editar cada una o de crear el producto igual (duplicado a propósito). ----
+async function cpChequearDuplicado(code){
+  code=(code||'').trim();
+  const campo=document.getElementById('cp-dup-field');
+  if(!/^\d{6,14}$/.test(code)){ campo.style.display='none'; cpState.forzarDuplicado=false; return; }
+  try{
+    const res=await fetch(SYNC_URL+'?action=buscar_barcode&barcode='+encodeURIComponent(code));
+    const j=await res.json();
+    const lista=(j&&j.ok)?(j.lista||[]):[];
+    if(!lista.length){ campo.style.display='none'; cpState.forzarDuplicado=false; return; }
+    cpState.forzarDuplicado=false;
+    document.getElementById('cp-dup-lista').innerHTML=lista.map(p=>
+      `<div class="result-item" data-editar="${p.sku}" style="cursor:pointer">
+        <div class="n">${p.nombre}</div>
+        <div class="s">SKU ${p.sku} · ${p.proveedor||'sin proveedor'} · Editar →</div>
+      </div>`
+    ).join('');
+    document.getElementById('cp-dup-lista').querySelectorAll('[data-editar]').forEach(el=>{
+      el.onclick=()=>{ cerrarModal('cp-ov'); abrirFichaProducto(el.dataset.editar); };
+    });
+    campo.style.display='block';
+  }catch(e){ /* si falla la consulta, no bloquea: se valida igual en el servidor al guardar */ }
+}
+document.getElementById('cp-barcode').addEventListener('change',()=>cpChequearDuplicado(document.getElementById('cp-barcode').value));
+document.getElementById('cp-dup-crear-igual').onclick=()=>{
+  cpState.forzarDuplicado=true;
+  document.getElementById('cp-dup-field').style.display='none';
+  showToast('Se creará como producto nuevo aunque el código se repita');
+  document.getElementById('cp-nombre').focus();
+};
 
 function cpSetPeso(esPeso){
   cpState.peso=esPeso;
@@ -1779,6 +1914,12 @@ function cpSetPeso(esPeso){
 }
 document.getElementById('cp-peso-no').onclick=()=>cpSetPeso(false);
 document.getElementById('cp-peso-si').onclick=()=>cpSetPeso(true);
+
+// Foco automático: menos toques para completar el formulario. Al terminar el nombre,
+// salta a Proveedor; si el proveedor ya existe se completa solo y salta a Costo.
+document.getElementById('cp-nombre').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){ e.preventDefault(); document.getElementById('cp-proveedor').focus(); }
+});
 
 function cpSetModo(modo){
   cpState.modo=modo;
@@ -1810,6 +1951,34 @@ function cpRenderExplicaCosto(){
     ?'Este valor ya incluye IVA — se usará tal cual para calcular el precio y para guardar en Loyverse.'
     :'Se le sumará 19% de IVA automáticamente. Ese valor con IVA es el que se usa para calcular el precio y el que se guarda en Loyverse.';
 }
+
+// ---- Autocompletado por código de barras (Open Food Facts, base pública
+// gratuita) — solo intenta rellenar el nombre si el usuario no escribió uno
+// todavía. Cobertura parcial (más fuerte en marcas internacionales/envasadas);
+// si no encuentra nada, no pasa nada y sigue el ingreso manual normal. ----
+async function cpAutocompletarPorCodigo(code){
+  if(!/^\d{6,14}$/.test(code))return; // no parece un EAN/UPC válido, no intenta
+  const nombreInput=document.getElementById('cp-nombre');
+  if(nombreInput.value.trim())return; // el usuario ya escribió algo, no se lo pisa
+  try{
+    const ctrl=new AbortController();
+    const to=setTimeout(()=>ctrl.abort(),3500); // no bloquear el flujo si la API externa está lenta
+    const res=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields=product_name,brands',{signal:ctrl.signal});
+    clearTimeout(to);
+    const j=await res.json();
+    if(j&&j.status===1&&j.product&&j.product.product_name){
+      const marca=j.product.brands?(j.product.brands.split(',')[0].trim()+' — '):'';
+      nombreInput.value=(marca+j.product.product_name).slice(0,120);
+      showToast('✓ Nombre autocompletado — revísalo antes de guardar');
+    }
+  }catch(e){ /* sin coincidencia o sin conexión — sigue el ingreso manual, no es un error para el usuario */ }
+}
+
+// Autocompletado por código de barras (solo si no hubo duplicado, ya filtrado arriba).
+document.getElementById('cp-barcode').addEventListener('change',()=>{
+  const code=document.getElementById('cp-barcode').value.trim();
+  if(code) cpAutocompletarPorCodigo(code);
+});
 
 document.getElementById('cp-qty-menos').onclick=()=>{
   const i=document.getElementById('cp-stock');
@@ -1897,6 +2066,9 @@ document.getElementById('cp-scan').onclick=()=>{
   openScanner(code=>{
     abrirModal('cp-ov');
     document.getElementById('cp-barcode').value=code;
+    if(navigator.vibrate)navigator.vibrate(80);
+    cpChequearDuplicado(code);
+    cpAutocompletarPorCodigo(code);
   });
 };
 
@@ -1917,25 +2089,26 @@ document.getElementById('cp-guardar').onclick=async()=>{
     const mm=document.getElementById('cp-fecha-mm').value.trim();
     const aaaa=document.getElementById('cp-fecha-aaaa').value.trim();
     const fechaVencimiento=(dd&&mm&&aaaa)?(dd.padStart(2,'0')+'/'+mm.padStart(2,'0')+'/'+aaaa):null;
-    const stockMinimoVal=document.getElementById('cp-stock-minimo').value.trim();
     const payload={
       nombre,
       barcode:document.getElementById('cp-barcode').value.trim(),
+      proveedor:document.getElementById('cp-proveedor').value.trim(),
+      sector:document.getElementById('cp-sector').value.trim(),
       costo:costoBruto||'',
       precio:precio||'',
       stockInicial,
       soldByWeight:cpState.peso,
       trackStock:true,
-      activarIva:document.getElementById('cp-activar-iva').checked,
-      activo:document.getElementById('cp-activo').checked,
-      stockMinimo:stockMinimoVal||'',
+      activarIva:true,   // fijo: todo producto creado desde la app queda con IVA 19% activado
+      activo:true,       // fijo: todo producto creado desde la app queda disponible para la venta
+      forzarDuplicado:!!cpState.forzarDuplicado,
       fechaVencimiento
     };
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'crear_producto',payload})});
     const j=await res.json();
     if(j&&j.ok){
       (DB.items=DB.items||[]).push({
-        ref:j.sku, nombre:j.nombre, cat:'SIN CATEGORÍA', prov:'SIN PROVEEDOR',
+        ref:j.sku, nombre:j.nombre, cat:'SIN CATEGORÍA', prov:payload.proveedor||'SIN PROVEEDOR',
         barcode:j.barcode||'', precio:j.precio||0, coste:j.costo||0, stock:j.stock,
         peso:j.peso, track:j.track, iva:!!j.iva
       });
@@ -1944,6 +2117,7 @@ document.getElementById('cp-guardar').onclick=async()=>{
       if(j.avisoStockMinimo) setTimeout(()=>showToast(j.avisoStockMinimo),2600);
       cerrarModal('cp-ov');
       if(cpState.origen==='rc'){ openRecibir(); rcPick(j.sku); }
+      else if(cpState.origen==='fp'){ abrirFichaProducto(j.sku); }
       // Si el IVA no quedó activado (ni siquiera tras el reintento automático del
       // servidor), se ofrece activarlo aquí mismo con un toque, en vez de solo avisar
       // y obligar a ir a buscarlo después en "Recibir mercadería".
@@ -1968,6 +2142,9 @@ document.getElementById('cp-guardar').onclick=async()=>{
           }
         },350);
       }
+    }else if(j&&j.error&&j.error.indexOf('DUPLICADO:')===0){
+      showToast('⚠️ '+j.error.replace('DUPLICADO: ',''));
+      cpChequearDuplicado(document.getElementById('cp-barcode').value.trim());
     }else{
       showToast('❌ Error: '+((j&&j.error)||'no se pudo crear el producto'));
     }
@@ -2433,6 +2610,184 @@ document.getElementById('qa-escanear').onclick = () => {
   irASeccion('recepcion');
   setTimeout(() => document.getElementById('rc-scan').click(), 150);
 };
+
+// ============================================================
+//  MÓDULO: FICHA DE PRODUCTO (buscar → abrir directo → editar
+//  todo o eliminar). Al escanear un código, va directo a la ficha
+//  sin pasos intermedios: si hay 1 coincidencia la abre sola.
+// ============================================================
+const fpState={ sku:null, peso:false };
+
+function openFichaBuscar(){
+  document.getElementById('fp-search').value='';
+  document.getElementById('fp-results').innerHTML='';
+  document.getElementById('fp-buscar-field').style.display='block';
+  document.getElementById('fp-ficha').classList.add('hidden');
+  abrirModal('fp-ov');
+  document.getElementById('fp-search').focus();
+}
+document.getElementById('fp-close').onclick=()=>cerrarModal('fp-ov');
+
+document.getElementById('fp-search').oninput=e=>{
+  const lista=buscarProductos(e.target.value);
+  const box=document.getElementById('fp-results');
+  box.innerHTML=lista.map(it=>`<div class="result-item" data-ref="${it.ref}"><div class="n">${it.nombre}</div><div class="s">${it.prov||'sin proveedor'}${it.barcode?' · '+it.barcode:''}</div></div>`).join('');
+  box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>abrirFichaProducto(el.dataset.ref));
+};
+
+document.getElementById('fp-scan').onclick=()=>{
+  cerrarModal('fp-ov');
+  openScanner(code=>{
+    const lista=buscarProductos(code);
+    if(lista.length===1){ abrirFichaProducto(lista[0].ref); }
+    else if(lista.length===0){ abrirModal('fp-ov'); showToast('⚠️ Código no encontrado: '+code); openCrearProducto('',code,'fp'); }
+    else{ abrirModal('fp-ov'); document.getElementById('fp-search').value=code; document.getElementById('fp-search').dispatchEvent(new Event('input',{bubbles:true})); }
+  });
+};
+document.getElementById('fp-scan2').onclick=()=>{
+  openScanner(code=>{ document.getElementById('fp-barcode').value=code; });
+};
+
+function abrirFichaProducto(ref){
+  const it=(DB.items||[]).find(i=>i.ref===ref);
+  if(!it){ showToast('⚠️ Producto no encontrado localmente'); return; }
+  fpState.sku=ref; fpState.peso=!!it.peso;
+  document.getElementById('fp-buscar-field').style.display='none';
+  document.getElementById('fp-ficha').classList.remove('hidden');
+  document.getElementById('fp-barcode').value=it.barcode||'';
+  document.getElementById('fp-nombre').value=it.nombre||'';
+  document.getElementById('fp-proveedor').value=(it.prov&&it.prov!=='SIN PROVEEDOR')?it.prov:'';
+  document.getElementById('fp-sector').value=it.sector||'';
+  document.getElementById('fp-costo').value=it.coste||'';
+  document.getElementById('fp-precio').value=it.precio||'';
+  fpSetPeso(fpState.peso);
+  const stockTxt=it.stock==null?'Sin control de inventario':('Stock actual: '+it.stock+(it.peso?' kg':' u'));
+  document.getElementById('fp-stock-txt').textContent=stockTxt+' · SKU '+ref;
+  abrirModal('fp-ov');
+}
+
+function fpSetPeso(esPeso){
+  fpState.peso=esPeso;
+  document.getElementById('fp-peso-no').classList.toggle('active',!esPeso);
+  document.getElementById('fp-peso-si').classList.toggle('active',esPeso);
+}
+document.getElementById('fp-peso-no').onclick=()=>fpSetPeso(false);
+document.getElementById('fp-peso-si').onclick=()=>fpSetPeso(true);
+
+comboboxInit('fp-proveedor','fp-proveedor-results',()=>PROV_SEC.proveedores,'crear_proveedor',()=>{});
+comboboxInit('fp-sector','fp-sector-results',()=>PROV_SEC.sectores,'crear_sector',()=>{});
+
+document.getElementById('fp-guardar').onclick=async()=>{
+  const nombre=document.getElementById('fp-nombre').value.trim();
+  if(!nombre){ showToast('⚠️ El nombre no puede quedar vacío'); return; }
+  const btn=document.getElementById('fp-guardar');
+  btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    const payload={
+      sku:fpState.sku, nombre,
+      barcode:document.getElementById('fp-barcode').value.trim(),
+      proveedor:document.getElementById('fp-proveedor').value.trim(),
+      sector:document.getElementById('fp-sector').value.trim(),
+      costo:document.getElementById('fp-costo').value,
+      precio:document.getElementById('fp-precio').value,
+      soldByWeight:fpState.peso
+    };
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'editar_producto',payload})});
+    const j=await res.json();
+    if(j&&j.ok){
+      const it=(DB.items||[]).find(i=>i.ref===fpState.sku);
+      if(it){
+        it.nombre=j.nombre; it.barcode=j.barcode; it.precio=j.precio; it.coste=j.costo;
+        it.prov=j.proveedor||'SIN PROVEEDOR'; it.sector=j.sector; it.peso=j.peso;
+        persist();
+      }
+      showToast('✅ Cambios guardados: '+j.nombre);
+      cerrarModal('fp-ov');
+    }else{
+      showToast('❌ Error: '+((j&&j.error)||'no se pudo guardar'));
+    }
+  }catch(e){
+    showToast('❌ Error de conexión al guardar');
+  }finally{
+    btn.disabled=false; btn.textContent='Guardar cambios';
+  }
+};
+
+document.getElementById('fp-eliminar').onclick=async()=>{
+  const it=(DB.items||[]).find(i=>i.ref===fpState.sku);
+  if(!it)return;
+  const ok=confirm('¿Eliminar "'+it.nombre+'" definitivamente?\n\nEsto lo borra de Loyverse y no se puede deshacer.');
+  if(!ok)return;
+  const btn=document.getElementById('fp-eliminar');
+  btn.disabled=true; btn.textContent='Eliminando…';
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'eliminar_producto',payload:{sku:fpState.sku}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      DB.items=(DB.items||[]).filter(i=>i.ref!==fpState.sku);
+      persist();
+      showToast('🗑️ Producto eliminado: '+j.nombre);
+      cerrarModal('fp-ov');
+    }else{
+      showToast('❌ Error: '+((j&&j.error)||'no se pudo eliminar'));
+    }
+  }catch(e){
+    showToast('❌ Error de conexión al eliminar');
+  }finally{
+    btn.disabled=false; btn.textContent='🗑️ Eliminar producto';
+  }
+};
+
+// ============================================================
+//  MÓDULO: PROVEEDORES — lista con conteo → productos de uno →
+//  ficha completa del producto elegido (reutiliza abrirFichaProducto).
+// ============================================================
+async function openProveedores(){
+  const box=document.getElementById('pv-lista');
+  box.innerHTML='<div class="load-banner"><div class="spin"></div><span>Cargando proveedores…</span></div>';
+  abrirModal('pv-ov');
+  try{
+    const res=await fetch(SYNC_URL+'?action=proveedores_conteo');
+    const j=await res.json();
+    const lista=(j&&j.ok)?(j.lista||[]):[];
+    if(!lista.length){ box.innerHTML='<div class="ap-empty">No hay productos todavía.</div>'; return; }
+    box.innerHTML=lista.map(p=>`
+      <div class="ap-row" data-prov="${(p.proveedor||'').replace(/"/g,'&quot;')}" style="cursor:pointer">
+        <div class="info"><div class="n">${p.proveedor}</div><div class="s">${p.total} producto${p.total===1?'':'s'}</div></div>
+        <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </div>`).join('');
+    box.querySelectorAll('[data-prov]').forEach(el=>el.onclick=()=>openProductosProveedor(el.dataset.prov));
+  }catch(e){
+    box.innerHTML='<div class="ap-empty">⚠️ No se pudo cargar la lista de proveedores.</div>';
+  }
+}
+document.getElementById('pv-close').onclick=()=>cerrarModal('pv-ov');
+document.getElementById('btn-proveedores').onclick=openProveedores;
+
+async function openProductosProveedor(proveedor){
+  document.getElementById('pvp-titulo').textContent='🏢 '+proveedor;
+  const box=document.getElementById('pvp-lista');
+  box.innerHTML='<div class="load-banner"><div class="spin"></div><span>Cargando productos…</span></div>';
+  abrirModal('pvp-ov');
+  try{
+    const res=await fetch(SYNC_URL+'?action=productos_proveedor&proveedor='+encodeURIComponent(proveedor));
+    const j=await res.json();
+    const lista=(j&&j.ok)?(j.lista||[]):[];
+    if(!lista.length){ box.innerHTML='<div class="ap-empty">Este proveedor no tiene productos.</div>'; return; }
+    box.innerHTML=lista.map(p=>{
+      const stockTxt=p.stock==null?'sin control':(p.stock+(p.sold_by_weight?' kg':' u'));
+      return `<div class="ap-row" data-ref="${p.sku}" style="cursor:pointer">
+        <div class="info"><div class="n">${p.nombre}</div><div class="s">Stock: <b>${stockTxt}</b> · ${fmtPeso(p.precio)}</div></div>
+        <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </div>`;
+    }).join('');
+    box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>{ cerrarModal('pvp-ov'); cerrarModal('pv-ov'); abrirFichaProducto(el.dataset.ref); });
+  }catch(e){
+    box.innerHTML='<div class="ap-empty">⚠️ No se pudo cargar los productos.</div>';
+  }
+}
+document.getElementById('pvp-close').onclick=()=>cerrarModal('pvp-ov');
+document.getElementById('btn-ficha-producto').onclick=openFichaBuscar;
 
 </script>
 </body>
