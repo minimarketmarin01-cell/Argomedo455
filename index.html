@@ -881,6 +881,23 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 
 <script>
 // ============================================================
+//  RED DE SEGURIDAD: si algo revienta en cualquier punto del script
+//  (un error no capturado), se avisa con un toast en vez de dejar
+//  la app completamente muda con los botones sin responder — así
+//  el problema se nota de inmediato y no parece "todo bloqueado".
+// ============================================================
+window.addEventListener('error', (e)=>{
+  try{
+    const t=document.getElementById('toast');
+    if(t){
+      t.textContent='⚠️ Error interno: '+(e.message||'').slice(0,100);
+      t.classList.add('on');
+      setTimeout(()=>t.classList.remove('on'), 4000);
+    }
+  }catch(_){}
+});
+
+// ============================================================
 //  CONFIG
 // ============================================================
 const SYNC_URL = 'https://argomedo455.minimarketmarin01.workers.dev';
@@ -1278,25 +1295,9 @@ document.addEventListener('visibilitychange', ()=>{
   }
 });
 
-(function init(){
-  restoreCart();
-  const habiaLocal=restoreLocal();
-  if(habiaLocal){
-    actualizarStats();
-    document.getElementById('load-banner').classList.add('hidden');
-    cargarCatalogo(true);
-    // El catálogo local ya está en memoria (DB.items poblado) — se puede restaurar
-    // la sesión de inmediato, sin esperar la actualización silenciosa en segundo plano.
-    restaurarSnapshot();
-  }else{
-    // No había catálogo guardado: hay que esperar a que termine de bajar de la red
-    // antes de restaurar (si el snapshot dependía de un producto, buscarProductos()
-    // necesita DB.items ya poblado o no encontraría nada).
-    cargarCatalogo(false).then(restaurarSnapshot);
-  }
-  cargarProveedoresSectores();
-  revisarActualizacionCatalogo();
-})();
+// NOTA: init() se ejecuta al final del archivo (no aquí), para garantizar que todos
+// los módulos (Recepción, Crear producto, Ficha, Proveedores, etc.) ya estén
+// definidos antes de que restaurarSnapshot() intente llamarlos.
 
 // ============================================================
 //  BÚSQUEDA DE PRODUCTOS (en memoria) — igual que Marín.
@@ -3137,6 +3138,30 @@ async function openProductosProveedor(proveedor){
 }
 document.getElementById('pvp-close').onclick=()=>cerrarModal('pvp-ov');
 document.getElementById('btn-ficha-producto').onclick=openFichaBuscar;
+
+// ============================================================
+//  ARRANQUE DE LA APP
+//  Se ejecuta acá abajo — después de que TODOS los módulos (sus
+//  funciones y listeners de botones) ya quedaron definidos arriba.
+//  Si esto corriera antes, restaurarSnapshot() podría llamar a una
+//  función que todavía no existe (ej. rcPick, openArmarPedido) y
+//  lanzar un error que corta el resto del script — dejando todos
+//  los botones de la app sin su onclick registrado.
+// ============================================================
+(function init(){
+  restoreCart();
+  const habiaLocal=restoreLocal();
+  if(habiaLocal){
+    actualizarStats();
+    document.getElementById('load-banner').classList.add('hidden');
+    cargarCatalogo(true);
+    try{ restaurarSnapshot(); }catch(e){ limpiarSnapshot(); }
+  }else{
+    cargarCatalogo(false).then(()=>{ try{ restaurarSnapshot(); }catch(e){ limpiarSnapshot(); } });
+  }
+  cargarProveedoresSectores();
+  revisarActualizacionCatalogo();
+})();
 
 </script>
 </body>
