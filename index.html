@@ -1182,7 +1182,7 @@ function cerrarModal(id){ document.getElementById(id).classList.add('hidden'); }
 //  history.back() y pushState al encadenar aperturas/cierres).
 // ============================================================
 let seccionActual='inicio';
-const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov' };
+const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov' };
 history.replaceState({ cumpasSeccion:'inicio' }, '', location.pathname);
 
 function cerrarSeccionActual(){
@@ -1190,8 +1190,9 @@ function cerrarSeccionActual(){
   if(id) cerrarModal(id);
   if(seccionActual==='pedidos' && typeof esPantallaAncha==='function' && esPantallaAncha()) cerrarModal('cart-ov');
   // Por si quedó algo abierto dentro del módulo (detalle, carrito en celular,
-  // escáner, crear producto) — se cierra todo junto al salir del módulo.
-  ['venc-detalle-ov','cart-ov','scanner-ov','cp-ov'].forEach(childId=>{
+  // escáner, crear producto, productos de un proveedor) — se cierra todo junto
+  // al salir del módulo, para que Atrás nunca deje un sub-panel huérfano abierto.
+  ['venc-detalle-ov','cart-ov','scanner-ov','cp-ov','pvp-ov'].forEach(childId=>{
     const el=document.getElementById(childId);
     if(el && !el.classList.contains('hidden')){
       if(childId==='scanner-ov') closeScanner(); else cerrarModal(childId);
@@ -1203,6 +1204,9 @@ function abrirSeccionVisual(seccion){
   if(seccion==='pedidos') openArmarPedido();
   else if(seccion==='recepcion') openRecibir();
   else if(seccion==='vencimientos') openVencimientos();
+  else if(seccion==='buscar') openFichaBuscarVisual();
+  else if(seccion==='proveedores') openProveedoresVisual();
+  else if(seccion==='crear') openCrearProductoVisual();
 }
 
 function actualizarNavActiva(){
@@ -1536,8 +1540,8 @@ document.getElementById('rc-search').oninput=e=>{
     box.innerHTML=`<div class="result-item" data-crear-nuevo="1"><div class="n crear">➕ Crear producto nuevo</div><div class="s">No se encontró ${etiqueta} — toca para crearlo</div></div>`;
     box.querySelector('[data-crear-nuevo]').onclick=()=>{
       if(confirm('¿Deseas crear un producto nuevo para '+etiqueta+'?')){
-        if(esCodigo) openCrearProducto('', q.trim());
-        else openCrearProducto(q.trim());
+        if(esCodigo) openCrearProducto('', q.trim(), 'rc');
+        else openCrearProducto(q.trim(), '', 'rc');
       }
     };
   }else{
@@ -1927,7 +1931,16 @@ function openCrearProducto(nombreSugerido, barcodeSugerido, origen){
   cpSetPeso(false);
   cpSetIva('con');
   cpSetModo('unidad');
-  if(cpState.origen==='rc') cerrarModal('rc-ov');
+  if(cpState.origen==='rc'){
+    cerrarModal('rc-ov');
+  }else if(seccionActual!=='crear'){
+    // Standalone (desde el menú, Ficha, o duplicados): entra al historial como su
+    // propia sección, para que el botón Atrás del celular la cierre correctamente
+    // en vez de salir de la app. Si seccionActual YA es 'crear' (llamada disparada
+    // por popstate), no se vuelve a empujar una entrada — el historial ya lo maneja.
+    history.pushState({ cumpasSeccion:'crear' }, '', '#crear');
+    seccionActual='crear';
+  }
   abrirModal('cp-ov');
   // Foco automático: código de barras primero (para escanear de inmediato), salvo que
   // ya venga un código sugerido — ahí conviene ir directo al nombre.
@@ -1939,10 +1952,22 @@ function openCrearProducto(nombreSugerido, barcodeSugerido, origen){
   }
 }
 function closeCrearProducto(){
-  cerrarModal('cp-ov');
-  if(cpState.origen==='rc') openRecibir();
+  if(cpState.origen==='rc'){
+    cerrarModal('cp-ov');
+    openRecibir();
+  }else if(seccionActual==='crear'){
+    irASeccion('inicio');
+  }else{
+    cerrarModal('cp-ov');
+  }
 }
 document.getElementById('cp-close').onclick=closeCrearProducto;
+
+// Se usa solo cuando popstate navega DE VUELTA a 'crear' (ej. el usuario abrió Crear
+// producto standalone, siguió a otra pantalla vía forward, y retrocede). Reabre el
+// formulario vacío — no hay estado previo que restaurar de forma segura entre saltos
+// de historial, así que un formulario limpio es el comportamiento correcto y esperado.
+function openCrearProductoVisual(){ openCrearProducto(); }
 
 // ---- Duplicados: consulta al servidor (fuente de verdad, no solo la copia local)
 // apenas se completa un código de barras válido. Si hay coincidencias, se muestran
@@ -2687,7 +2712,7 @@ document.getElementById('qa-escanear').onclick = () => {
 // ============================================================
 const fpState={ sku:null, peso:false };
 
-function openFichaBuscar(){
+function openFichaBuscarVisual(){
   document.getElementById('fp-search').value='';
   document.getElementById('fp-results').innerHTML='';
   document.getElementById('fp-buscar-field').style.display='block';
@@ -2695,7 +2720,10 @@ function openFichaBuscar(){
   abrirModal('fp-ov');
   document.getElementById('fp-search').focus();
 }
-document.getElementById('fp-close').onclick=()=>cerrarModal('fp-ov');
+// Wrapper público: entra al historial como sección propia, así el botón Atrás
+// del celular vuelve a Inicio en vez de cerrar la PWA.
+function openFichaBuscar(){ irASeccion('buscar'); }
+document.getElementById('fp-close').onclick=()=>irASeccion('inicio');
 
 document.getElementById('fp-search').oninput=e=>{
   const lista=buscarProductos(e.target.value);
@@ -2732,7 +2760,19 @@ function abrirFichaProducto(ref){
   fpSetPeso(fpState.peso);
   const stockTxt=it.stock==null?'Sin control de inventario':('Stock actual: '+it.stock+(it.peso?' kg':' u'));
   document.getElementById('fp-stock-txt').textContent=stockTxt+' · SKU '+ref;
-  abrirModal('fp-ov');
+  // Si se llega desde otra sección (Proveedores, Crear producto por duplicado), hay
+  // que cerrar esa sección anterior y registrar 'buscar' en su lugar — así el botón
+  // Atrás vuelve a Inicio, no a la sección de origen ya cerrada.
+  if(seccionActual!=='buscar'){
+    if(seccionActual!=='inicio') cerrarSeccionActual();
+    abrirModal('fp-ov');
+    if(seccionActual==='inicio') history.pushState({ cumpasSeccion:'buscar' }, '', '#buscar');
+    else history.replaceState({ cumpasSeccion:'buscar' }, '', '#buscar');
+    seccionActual='buscar';
+    actualizarNavActiva();
+  }else{
+    abrirModal('fp-ov');
+  }
 }
 
 function fpSetPeso(esPeso){
@@ -2811,7 +2851,7 @@ document.getElementById('fp-eliminar').onclick=async()=>{
 //  MÓDULO: PROVEEDORES — lista con conteo → productos de uno →
 //  ficha completa del producto elegido (reutiliza abrirFichaProducto).
 // ============================================================
-async function openProveedores(){
+async function openProveedoresVisual(){
   const box=document.getElementById('pv-lista');
   box.innerHTML='<div class="load-banner"><div class="spin"></div><span>Cargando proveedores…</span></div>';
   abrirModal('pv-ov');
@@ -2831,7 +2871,9 @@ async function openProveedores(){
     box.innerHTML='<div class="ap-empty">⚠️ No se pudo cargar la lista de proveedores.</div>';
   }
 }
-document.getElementById('pv-close').onclick=()=>cerrarModal('pv-ov');
+// Wrapper público: entra al historial como sección propia.
+function openProveedores(){ irASeccion('proveedores'); }
+document.getElementById('pv-close').onclick=()=>irASeccion('inicio');
 document.getElementById('btn-proveedores').onclick=openProveedores;
 
 async function openProductosProveedor(proveedor){
@@ -2851,7 +2893,7 @@ async function openProductosProveedor(proveedor){
         <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><polyline points="9 18 15 12 9 6"/></svg></div>
       </div>`;
     }).join('');
-    box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>{ cerrarModal('pvp-ov'); cerrarModal('pv-ov'); abrirFichaProducto(el.dataset.ref); });
+    box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>{ cerrarModal('pvp-ov'); abrirFichaProducto(el.dataset.ref); });
   }catch(e){
     box.innerHTML='<div class="ap-empty">⚠️ No se pudo cargar los productos.</div>';
   }
