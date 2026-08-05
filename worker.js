@@ -1229,7 +1229,9 @@ async function accionEliminarProducto(env, payload) {
 async function listaProveedoresConConteo(env) {
   const { results } = await env.DB.prepare(
     `SELECT COALESCE(NULLIF(proveedor,''), 'SIN PROVEEDOR') as proveedor, COUNT(*) as total
-     FROM productos GROUP BY proveedor ORDER BY proveedor = 'SIN PROVEEDOR', proveedor COLLATE NOCASE`
+     FROM productos GROUP BY proveedor
+     ORDER BY CASE WHEN COALESCE(NULLIF(proveedor,''),'SIN PROVEEDOR')='SIN PROVEEDOR' THEN 1 ELSE 0 END,
+              proveedor COLLATE NOCASE`
   ).all();
   return results;
 }

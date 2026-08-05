@@ -2818,7 +2818,8 @@ async function openProveedores(){
   try{
     const res=await fetch(SYNC_URL+'?action=proveedores_conteo');
     const j=await res.json();
-    const lista=(j&&j.ok)?(j.lista||[]):[];
+    if(!j||!j.ok){ box.innerHTML='<div class="ap-empty">⚠️ '+((j&&j.error)||'No se pudo cargar la lista de proveedores')+'</div>'; return; }
+    const lista=j.lista||[];
     if(!lista.length){ box.innerHTML='<div class="ap-empty">No hay productos todavía.</div>'; return; }
     box.innerHTML=lista.map(p=>`
       <div class="ap-row" data-prov="${(p.proveedor||'').replace(/"/g,'&quot;')}" style="cursor:pointer">
