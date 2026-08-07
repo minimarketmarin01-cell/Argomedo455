@@ -49,7 +49,7 @@ button{font-family:inherit}
 
 /* ===== Encabezado ===== */
 .top{background:#fff;border-bottom:1px solid var(--line);padding:10px 16px;padding-top:max(10px,env(safe-area-inset-top));display:flex;align-items:center;gap:10px}
-.brand-mark{width:34px;height:34px;border-radius:10px;flex:none;box-shadow:var(--sh-card);object-fit:cover}
+.brand-mark{width:34px;height:34px;border-radius:10px;flex:none;box-shadow:var(--sh-card);object-fit:cover;object-position:center;display:block}
 .brand-txt .mk{font-family:'Manrope';font-weight:800;font-size:15.5px;letter-spacing:-.01em;color:var(--ink)}
 .brand-txt .loc{color:var(--muted);font-size:11px;font-weight:600;margin-top:1px}
 .brand-txt .sync-state{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);font-weight:600;margin-top:2px}
@@ -852,7 +852,23 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
       </div>
       <div class="field" style="font-size:12px;color:var(--muted)" id="fp-stock-txt"></div>
 
-      <button class="btn-primary" id="fp-guardar" style="margin-bottom:10px">Guardar cambios</button>
+      <div class="field" style="background:var(--cielo-tint);border:1.5px solid var(--cielo);border-radius:12px;padding:12px">
+        <label style="color:var(--cielo-d)">🧮 Calculadora de precio</label>
+        <div class="resumen-box" id="fp-calc-actual" style="margin-top:6px"></div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <div style="flex:1">
+            <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">NUEVO MARGEN %</div>
+            <input id="fp-calc-margen" inputmode="numeric" placeholder="Ej: 30" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
+          </div>
+          <div style="flex:1">
+            <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">NUEVO PRECIO</div>
+            <input id="fp-calc-precio" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
+          </div>
+        </div>
+        <button type="button" class="btn-secondary" id="fp-calc-aplicar" style="color:var(--cielo-d);border-color:var(--cielo);margin-top:10px">Aplicar precio al producto</button>
+      </div>
+
+      <button class="btn-primary" id="fp-guardar" style="margin-bottom:10px;margin-top:14px">Guardar cambios</button>
       <button class="btn-secondary" id="fp-eliminar" style="color:var(--rojo);border-color:var(--rojo)">🗑️ Eliminar producto</button>
     </div>
   </div>
@@ -1621,6 +1637,15 @@ function rcPick(ref){
   document.getElementById('rc-fecha-field').style.display='block';
   const cIn=document.getElementById('rc-cantidad');
   cIn.disabled=false; cIn.value=''; cIn.placeholder=it.peso?'0.000':'0';
+  // Limpieza completa de campos que no dependen del producto en sí (cantidad de la
+  // caja, fecha de vencimiento) — si quedaron con datos del producto anterior, no
+  // deben arrastrarse al nuevo producto escaneado/seleccionado.
+  document.getElementById('rc-unidades-caja').value='';
+  document.getElementById('rc-fecha-dd').value='';
+  document.getElementById('rc-fecha-mm').value='';
+  document.getElementById('rc-fecha-aaaa').value='';
+  document.getElementById('rc-fecha').value='';
+  rcSetModo('unidad');
   rcSetAccion(rcState.accion);
   rcValidar();
   guardarSnapshot();
@@ -2926,6 +2951,9 @@ document.getElementById('fp-scan2').onclick=()=>{
 function abrirFichaProducto(ref){
   const it=(DB.items||[]).find(i=>i.ref===ref);
   if(!it){ showToast('⚠️ Producto no encontrado localmente'); return; }
+  // Reset completo antes de cargar el nuevo producto: evita que quede cualquier
+  // residuo (valores, foco, estado de la calculadora) del producto anterior cuando
+  // se escanea o selecciona uno distinto sin cerrar la ficha.
   fpState.sku=ref; fpState.peso=!!it.peso;
   document.getElementById('fp-buscar-field').style.display='none';
   document.getElementById('fp-ficha').classList.remove('hidden');
@@ -2938,6 +2966,7 @@ function abrirFichaProducto(ref){
   fpSetPeso(fpState.peso);
   const stockTxt=it.stock==null?'Sin control de inventario':('Stock actual: '+it.stock+(it.peso?' kg':' u'));
   document.getElementById('fp-stock-txt').textContent=stockTxt+' · SKU '+ref;
+  fpCalcInit(it);
   // Si se llega desde otra sección (Proveedores, Crear producto por duplicado), hay
   // que cerrar esa sección anterior y registrar 'buscar' en su lugar — así el botón
   // Atrás vuelve a Inicio, no a la sección de origen ya cerrada.
@@ -2953,6 +2982,63 @@ function abrirFichaProducto(ref){
   }
   guardarSnapshot();
 }
+
+// ============================================================
+//  CALCULADORA DE PRECIO (dentro de la ficha de producto)
+//  Muestra costo/precio/margen actuales, y permite simular un
+//  margen o precio nuevo en tiempo real. "Aplicar" solo actualiza
+//  el campo Precio del formulario — el guardado real sigue
+//  siendo con el botón "Guardar cambios", nunca automático.
+//  Usa el mismo costo bruto (con IVA) que ya maneja el resto de
+//  la app — misma convención que Recepción y Crear producto.
+// ============================================================
+function fpCalcMargen(costo,precio){
+  if(!costo||!precio||precio<=0)return null;
+  return ((precio-costo)/precio)*100;
+}
+function fpCalcInit(it){
+  const costo=Number(it.coste)||0;
+  const precio=Number(it.precio)||0;
+  const margenActual=fpCalcMargen(costo,precio);
+  document.getElementById('fp-calc-margen').value=margenActual!=null?margenActual.toFixed(1):'';
+  document.getElementById('fp-calc-precio').value=precio||'';
+  fpCalcRenderActual();
+}
+function fpCalcRenderActual(){
+  const costo=Number(document.getElementById('fp-costo').value)||0;
+  const precio=Number(document.getElementById('fp-precio').value)||0;
+  const margen=fpCalcMargen(costo,precio);
+  document.getElementById('fp-calc-actual').innerHTML=
+    'Costo: <b>'+fmtPeso(costo)+'</b> · Precio actual: <b>'+fmtPeso(precio)+'</b> · Margen actual: <b>'+(margen!=null?margen.toFixed(1)+'%':'—')+'</b>';
+}
+function fpCalcRecalcular(origen){
+  const costo=Number(document.getElementById('fp-costo').value)||0;
+  if(!costo)return;
+  if(origen==='margen'){
+    const margenPct=Number(document.getElementById('fp-calc-margen').value);
+    if(!margenPct||margenPct<=0||margenPct>=100)return;
+    document.getElementById('fp-calc-precio').value=Math.round(costo/(1-margenPct/100));
+  }else{
+    const precioNuevo=Number(document.getElementById('fp-calc-precio').value);
+    if(!precioNuevo||precioNuevo<=0)return;
+    const margen=fpCalcMargen(costo,precioNuevo);
+    document.getElementById('fp-calc-margen').value=margen!=null?margen.toFixed(1):'';
+  }
+}
+document.getElementById('fp-calc-margen').oninput=()=>fpCalcRecalcular('margen');
+document.getElementById('fp-calc-precio').oninput=()=>fpCalcRecalcular('precio');
+document.getElementById('fp-costo').addEventListener('input', fpCalcRenderActual);
+document.getElementById('fp-precio').addEventListener('input', fpCalcRenderActual);
+document.getElementById('fp-calc-aplicar').onclick=()=>{
+  const nuevoPrecio=Number(document.getElementById('fp-calc-precio').value);
+  if(!nuevoPrecio||nuevoPrecio<=0){ showToast('⚠️ Ingresa un margen o precio válido primero'); return; }
+  // Solo actualiza el formulario (campo Precio) y recalcula el margen mostrado — no
+  // guarda nada en Loyverse todavía. El guardado real sigue siendo con "Guardar cambios".
+  document.getElementById('fp-precio').value=nuevoPrecio;
+  fpCalcRenderActual();
+  showToast('✓ Precio aplicado al formulario — recuerda tocar "Guardar cambios"');
+};
+
 
 function fpSetPeso(esPeso){
   fpState.peso=esPeso;
