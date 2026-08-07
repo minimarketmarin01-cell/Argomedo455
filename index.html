@@ -3027,7 +3027,13 @@ function fpCalcRecalcular(origen){
 }
 document.getElementById('fp-calc-margen').oninput=()=>fpCalcRecalcular('margen');
 document.getElementById('fp-calc-precio').oninput=()=>fpCalcRecalcular('precio');
-document.getElementById('fp-costo').addEventListener('input', fpCalcRenderActual);
+document.getElementById('fp-costo').addEventListener('input', ()=>{
+  fpCalcRenderActual();
+  // El Costo principal cambió: el "Nuevo precio" de la calculadora debe recalcularse
+  // de inmediato con el margen ya escrito, en vez de quedarse con un precio calculado
+  // sobre el costo anterior.
+  fpCalcRecalcular('margen');
+});
 document.getElementById('fp-precio').addEventListener('input', fpCalcRenderActual);
 document.getElementById('fp-calc-aplicar').onclick=()=>{
   const nuevoPrecio=Number(document.getElementById('fp-calc-precio').value);
