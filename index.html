@@ -3033,25 +3033,33 @@ function fpCalcMargen(costo,precio){
 // Redondeo psicológico chileno: aproxima a terminación .90 o .50, la que quede más
 // cerca del valor calculado — mismo criterio de precificación usado en el resto del
 // negocio (evita terminaciones .10/.20/.30/.40/.60/.70/.80).
-function fpRedondeoPsicologico(valor){
+// Redondeo psicológico cíclico: cada toque en "Redondear" avanza a la SIGUIENTE
+// terminación de la secuencia .50 → .90 → siguiente centena redonda → repite —
+// en vez de saltar una sola vez al valor más cercano. Permite ajustar con el dedo
+// hasta encontrar el precio que se ve mejor, sin escribirlo a mano.
+function fpRedondeoSiguientePaso(valor){
   valor=Math.round(valor);
   const base=Math.floor(valor/100)*100;
-  const candidatos=[base-10, base+50, base+90, base+150];
-  let mejor=candidatos[0], mejorDist=Math.abs(valor-candidatos[0]);
-  for(const c of candidatos){
-    const d=Math.abs(valor-c);
-    if(d<mejorDist){ mejor=c; mejorDist=d; }
+  // Secuencia ascendente dentro de la centena actual y el arranque de la siguiente.
+  const secuencia=[base+50, base+90, base+100];
+  // Encuentra el primer escalón de la secuencia que sea mayor al valor actual —
+  // así cada toque avanza hacia adelante, nunca se queda pegado en el mismo número.
+  for(const paso of secuencia){
+    if(paso>valor) return paso;
   }
-  return Math.max(mejor,0);
+  // Si el valor ya superó los 3 escalones de esta centena, reinicia el ciclo en la
+  // siguiente centena (equivalente a "repite" del patrón .50→.90→.00→.50…).
+  return base+150;
 }
 
 function fpCalcInit(it){
   fpCalcState.precioTocadoManual=false;
   const costo=Number(it.coste)||0;
   const precio=Number(it.precio)||0;
-  const margenActual=fpCalcMargen(costo,precio);
   document.getElementById('fp-calc-costo').value=costo||'';
-  document.getElementById('fp-calc-margen').value=margenActual!=null?margenActual.toFixed(1):'';
+  // "Nuevo margen %" siempre arranca en 30% por defecto (no en el margen real del
+  // producto) — el usuario puede editarlo después si quiere simular otro valor.
+  document.getElementById('fp-calc-margen').value='30';
   document.getElementById('fp-calc-precio').value=precio||'';
   fpCalcRenderActual();
   fpCalcRenderMargenResultante();
@@ -3094,7 +3102,7 @@ document.getElementById('fp-calc-margen').addEventListener('focus', ()=>{ fpCalc
 document.getElementById('fp-calc-redondear').onclick=()=>{
   const precioActual=Number(document.getElementById('fp-calc-precio').value);
   if(!precioActual||precioActual<=0){ showToast('⚠️ Ingresa un precio primero'); return; }
-  document.getElementById('fp-calc-precio').value=fpRedondeoPsicologico(precioActual);
+  document.getElementById('fp-calc-precio').value=fpRedondeoSiguientePaso(precioActual);
   fpCalcState.precioTocadoManual=true; // el redondeo es una elección explícita, no debe volver a pisarse solo
   fpCalcRenderMargenResultante();
 };
@@ -3154,8 +3162,10 @@ document.getElementById('fp-guardar').onclick=async()=>{
         persist();
       }
       showToast('✅ Cambios guardados: '+j.nombre);
-      cerrarModal('fp-ov');
       limpiarSnapshot();
+      // En vez de cerrar el módulo, vuelve a la pantalla de búsqueda lista para
+      // escanear el siguiente producto — mismo flujo en cadena que ya tiene Recepción.
+      openFichaBuscarVisual();
     }else{
       showToast('❌ Error: '+((j&&j.error)||'no se pudo guardar'));
     }
@@ -3180,8 +3190,8 @@ document.getElementById('fp-eliminar').onclick=async()=>{
       DB.items=(DB.items||[]).filter(i=>i.ref!==fpState.sku);
       persist();
       showToast('🗑️ Producto eliminado: '+j.nombre);
-      cerrarModal('fp-ov');
       limpiarSnapshot();
+      openFichaBuscarVisual();
     }else{
       showToast('❌ Error: '+((j&&j.error)||'no se pudo eliminar'));
     }
