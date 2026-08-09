@@ -1827,12 +1827,25 @@ function rcRecalcularPrecioAuto(){
 }
 document.getElementById('rc-precio').oninput=()=>{ rcState.precioTocado=true; rcRenderResumen(); };
 document.getElementById('rc-costo').oninput=()=>{
-  if(!rcState.precioTocado)rcRecalcularPrecioAuto();
+  // Cambiar el Costo SIEMPRE recalcula el Precio de venta, aunque el usuario lo haya
+  // editado a mano o redondeado antes — el costo manda sobre cualquier edición previa
+  // del precio (solo mientras el usuario está escribiendo el precio en sí se respeta
+  // su valor tal cual, para no pisarle la tecla que está tocando en ese momento).
+  rcState.precioTocado=false;
+  rcRecalcularPrecioAuto();
   rcRenderExplicaCosto(); rcRenderResumen();
 };
+document.getElementById('rc-unidades-caja').addEventListener('input', ()=>{
+  // "Por caja": cambiar las unidades por caja también cambia el costo unitario
+  // real, así que debe recalcular el precio igual que si se editara el Costo.
+  rcState.precioTocado=false;
+  rcRecalcularPrecioAuto();
+  rcRenderResumen();
+});
 document.getElementById('rc-margen-obj').oninput=()=>{
   rcState.margenTocado=true;
-  if(!rcState.precioTocado)rcRecalcularPrecioAuto();
+  rcState.precioTocado=false;
+  rcRecalcularPrecioAuto();
   rcRenderResumen();
 };
 
@@ -2390,12 +2403,19 @@ function cpRecalcularPrecioAuto(){
 }
 document.getElementById('cp-precio').oninput=()=>{ cpState.precioTocado=true; cpRenderResumen(); };
 document.getElementById('cp-costo').oninput=()=>{
-  if(!cpState.precioTocado)cpRecalcularPrecioAuto();
+  cpState.precioTocado=false;
+  cpRecalcularPrecioAuto();
   cpRenderExplicaCosto(); cpRenderResumen();
 };
+document.getElementById('cp-unidades-caja').addEventListener('input', ()=>{
+  cpState.precioTocado=false;
+  cpRecalcularPrecioAuto();
+  cpRenderResumen();
+});
 document.getElementById('cp-margen-obj').oninput=()=>{
   cpState.margenTocado=true;
-  if(!cpState.precioTocado)cpRecalcularPrecioAuto();
+  cpState.precioTocado=false;
+  cpRecalcularPrecioAuto();
   cpRenderResumen();
 };
 
@@ -3111,11 +3131,15 @@ function fpCalcSetModo(modo){
   document.getElementById('fp-calc-modo-caja').classList.toggle('active',modo==='caja');
   document.getElementById('fp-calc-caja-campos').classList.toggle('hidden',modo!=='caja');
   document.getElementById('fp-calc-costo-label').textContent=modo==='caja'?'NUEVO COSTO DE LA CAJA':'NUEVO COSTO';
-  fpCalcRecalcularPrecio();
+  fpCalcState.precioTocadoManual=false;
+  fpCalcRecalcularPrecio(true);
 }
 document.getElementById('fp-calc-modo-unidad').onclick=()=>fpCalcSetModo('unidad');
 document.getElementById('fp-calc-modo-caja').onclick=()=>fpCalcSetModo('caja');
-document.getElementById('fp-calc-unidades-caja').addEventListener('input', fpCalcRecalcularPrecio);
+document.getElementById('fp-calc-unidades-caja').addEventListener('input', ()=>{
+  fpCalcState.precioTocadoManual=false;
+  fpCalcRecalcularPrecio(true);
+});
 
 function fpCalcSetIva(modo){
   if(modo===fpCalcState.ivaModo){ fpCalcRenderIvaExplica(); return; }
@@ -3180,16 +3204,26 @@ function fpCalcRenderMargenResultante(){
 }
 // Recalcula el Nuevo precio a partir de Nuevo costo (bruto, según modo IVA/caja) +
 // Nuevo margen — solo si el usuario no está editando el precio a mano ahora mismo.
-function fpCalcRecalcularPrecio(){
-  if(fpCalcState.precioTocadoManual)return;
+// Recalcula el Nuevo precio a partir de Nuevo costo + Nuevo margen — se usa cuando
+// el usuario está editando el Precio directamente (para no sobreescribirlo mientras
+// escribe ahí), y se salta ese resguardo cuando el cambio viene de Costo/Margen/
+// Unidades por caja, que siempre deben ganar y recalcular el precio final.
+function fpCalcRecalcularPrecio(forzar){
+  if(fpCalcState.precioTocadoManual && !forzar)return;
   const costo=fpCalcCostoBruto();
   const margenPct=Number(document.getElementById('fp-calc-margen').value);
   if(!costo||!margenPct||margenPct<=0||margenPct>=100)return;
   document.getElementById('fp-calc-precio').value=Math.round(costo/(1-margenPct/100));
   fpCalcRenderMargenResultante();
 }
-document.getElementById('fp-calc-costo').addEventListener('input', fpCalcRecalcularPrecio);
-document.getElementById('fp-calc-margen').addEventListener('input', fpCalcRecalcularPrecio);
+document.getElementById('fp-calc-costo').addEventListener('input', ()=>{
+  fpCalcState.precioTocadoManual=false;
+  fpCalcRecalcularPrecio(true);
+});
+document.getElementById('fp-calc-margen').addEventListener('input', ()=>{
+  fpCalcState.precioTocadoManual=false;
+  fpCalcRecalcularPrecio(true);
+});
 document.getElementById('fp-calc-precio').addEventListener('input', ()=>{
   // El usuario está editando el precio directamente: deja de recalcularse solo hasta
   // que vuelva a tocar Costo o Margen (que sí deben poder recalcularlo de nuevo).
