@@ -1839,17 +1839,38 @@ function rcRenderResumen(){
 
 // ---- Fecha segmentada DD/MM/AAAA ----
 function wireFechaSegmentada(ddId,mmId,aaaaId,hiddenId,calId){
-  const dd=document.getElementById(ddId),mm=document.getElementById(mmId),aaaa=document.getElementById(aaaaId),hidden=document.getElementById(hiddenId),cal=document.getElementById(calId);
-  dd.oninput=()=>{ if(dd.value.length>=2)mm.focus(); };
-  mm.oninput=()=>{ if(mm.value.length>=2)aaaa.focus(); };
-  cal.onclick=()=>{ hidden.showPicker?hidden.showPicker():hidden.click(); };
-  hidden.onchange=()=>{
-    if(!hidden.value)return;
-    const [y,m,d]=hidden.value.split('-');
-    dd.value=d; mm.value=m; aaaa.value=y;
-  };
+  const dd=document.getElementById(ddId),mm=document.getElementById(mmId),aaaa=document.getElementById(aaaaId);
+  const hidden=hiddenId?document.getElementById(hiddenId):null;
+  const cal=calId?document.getElementById(calId):null;
+  // Escritura continua: apenas se completan los 2 dígitos de día (o los 2 de mes),
+  // el foco salta solo al siguiente campo — el usuario no necesita tocar cada
+  // casilla, solo sigue escribiendo números seguidos (ej: 0 1 1 1 2 0 2 6).
+  dd.addEventListener('input', ()=>{
+    dd.value=dd.value.replace(/\D/g,'').slice(0,2);
+    if(dd.value.length>=2) mm.focus();
+  });
+  mm.addEventListener('input', ()=>{
+    mm.value=mm.value.replace(/\D/g,'').slice(0,2);
+    if(mm.value.length>=2) aaaa.focus();
+  });
+  aaaa.addEventListener('input', ()=>{
+    aaaa.value=aaaa.value.replace(/\D/g,'').slice(0,4);
+  });
+  // Retroceder con backspace en un campo vacío también salta al campo anterior,
+  // para poder corregir sin tener que tocar la pantalla otra vez.
+  mm.addEventListener('keydown', (e)=>{ if(e.key==='Backspace' && !mm.value) dd.focus(); });
+  aaaa.addEventListener('keydown', (e)=>{ if(e.key==='Backspace' && !aaaa.value) mm.focus(); });
+  if(cal && hidden){
+    cal.onclick=()=>{ hidden.showPicker?hidden.showPicker():hidden.click(); };
+    hidden.onchange=()=>{
+      if(!hidden.value)return;
+      const [y,m,d]=hidden.value.split('-');
+      dd.value=d; mm.value=m; aaaa.value=y;
+    };
+  }
 }
 wireFechaSegmentada('rc-fecha-dd','rc-fecha-mm','rc-fecha-aaaa','rc-fecha','rc-fecha-cal');
+wireFechaSegmentada('cp-fecha-dd','cp-fecha-mm','cp-fecha-aaaa');
 function fechaSegmentadaTexto(ddId,mmId,aaaaId){
   const dd=document.getElementById(ddId).value.padStart(2,'0');
   const mm=document.getElementById(mmId).value.padStart(2,'0');
