@@ -216,6 +216,19 @@ async function asegurarTablas(env) {
     fecha_resolucion TEXT
   )`);
 
+  // Clasificación ABC (participación en ventas de los últimos N días, cortes
+  // 80/95/100) — se recalcula a pedido (?action=abc_calcular), esta tabla solo
+  // guarda el último resultado para no tener que recalcular en cada consulta.
+  await run(env, `CREATE TABLE IF NOT EXISTS clasificacion_abc (
+    sku TEXT PRIMARY KEY,
+    venta_total REAL,
+    pct_participacion REAL,
+    pct_acumulado REAL,
+    clase TEXT,
+    periodo_dias INTEGER,
+    calculado_en TEXT
+  )`);
+
   // Catálogos reutilizables de proveedores y sectores — permiten buscar y crear
   // nuevos registros desde el formulario sin salir de él, y que queden disponibles
   // para elegir la próxima vez (Módulo 3: Proveedores y sectores).
@@ -920,6 +933,130 @@ async function accionIgnorarLlegada(env, payload) {
   if (row.estado !== "pendiente") throw new Error("Esta llegada ya fue resuelta");
   await run(env, "UPDATE llegadas SET estado='ignorado', fecha_resolucion=? WHERE id=?", fechaDDMMAAAA(), fi);
   return { ok: true, filaIndex: fi };
+}
+
+// ============================================================
+//  CLASIFICACIÓN ABC + PRECIO SUGERIDO
+//  Participación de cada producto en las ventas de los últimos N días
+//  (cortes 80/95/100: A = primer 80% acumulado, B = hasta 95%, C = resto).
+//  Argomedo455 solo guarda CANTIDAD vendida por línea (no el monto — a
+//  diferencia de Marín, que agrega venta en pesos en `ventas_diarias`),
+//  así que la venta en pesos se aproxima con cantidad × precio ACTUAL
+//  del producto. No es exacto si el precio cambió a mitad del período,
+//  pero alcanza para priorizar qué productos mueven más plata.
+// ============================================================
+async function calcularABC(env, periodoDias) {
+  const dias = Number(periodoDias) || 30;
+  const desde = fechaISO(new Date(Date.now() - dias * 86400000));
+
+  const { results: rows } = await env.DB.prepare(
+    `SELECT v.sku AS sku, SUM(v.cantidad * p.precio) AS venta_total
+     FROM ventas v JOIN productos p ON p.sku = v.sku
+     WHERE v.fecha_venta >= ?
+     GROUP BY v.sku
+     HAVING venta_total > 0
+     ORDER BY venta_total DESC`
+  ).bind(desde).all();
+
+  await run(env, "DELETE FROM clasificacion_abc");
+  const totalGeneral = rows.reduce((s, r) => s + (Number(r.venta_total) || 0), 0);
+  if (totalGeneral <= 0) return { clasificados: 0, periodo_dias: dias };
+
+  const CORTE_A = 0.80, CORTE_B = 0.95;
+  let acumulado = 0;
+  const registros = rows.map(r => {
+    const venta = Number(r.venta_total) || 0;
+    acumulado += venta;
+    const pctAcum = acumulado / totalGeneral;
+    const clase = pctAcum <= CORTE_A ? "A" : (pctAcum <= CORTE_B ? "B" : "C");
+    return { sku: r.sku, venta_total: venta, pct_participacion: venta / totalGeneral, pct_acumulado: pctAcum, clase };
+  });
+
+  const calculadoEn = fechaHoraDDMMAAAA();
+  const stmts = registros.map(r => env.DB.prepare(
+    `INSERT INTO clasificacion_abc (sku, venta_total, pct_participacion, pct_acumulado, clase, periodo_dias, calculado_en)
+     VALUES (?,?,?,?,?,?,?)`
+  ).bind(r.sku, r.venta_total, r.pct_participacion, r.pct_acumulado, r.clase, dias, calculadoEn));
+  await batchRun(env, stmts);
+
+  return { clasificados: registros.length, periodo_dias: dias };
+}
+
+async function repABC(env) {
+  const { results } = await env.DB.prepare("SELECT sku, clase, pct_participacion, venta_total FROM clasificacion_abc ORDER BY pct_acumulado ASC").all();
+  return results;
+}
+
+// Redondeo psicológico: sube al .90 o .50 más cercano por arriba, preservando
+// la unidad de mil (nunca baja el precio calculado).
+function redondearPsicologico(precio) {
+  if (!precio || precio <= 0) return 0;
+  const base = Math.floor(precio / 100) * 100;
+  const candidatos = [base - 100 + 90, base - 100 + 50, base + 90, base + 50, base + 100 + 90];
+  const elegido = candidatos.find(c => c >= precio);
+  return elegido != null ? elegido : (Math.ceil(precio / 10) * 10 + 90);
+}
+
+// Margen sugerido por clase — retail minimarket, margen sobre venta (mismo
+// criterio que Marín).
+const MARGEN_SUGERIDO_ABC = {
+  A: { min: 0.25, max: 0.35 },
+  B: { min: 0.30, max: 0.40 },
+  C: { min: 0.40, max: 0.50 }
+};
+
+// Calcula el precio sugerido para un SKU según su clase ABC + margen deseado.
+// No escribe nada — el frontend siempre confirma antes de aplicar.
+async function accionSugerirPrecioABC(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("SKU no encontrado: " + sku);
+
+  const clasif = await get(env, "SELECT * FROM clasificacion_abc WHERE sku = ?", sku);
+  const clase = clasif ? clasif.clase : null;
+  const rango = clase ? MARGEN_SUGERIDO_ABC[clase] : null;
+
+  const margen = payload.margen != null && payload.margen !== ""
+    ? Number(payload.margen)
+    : (rango ? (rango.min + rango.max) / 2 : 0.30);
+  if (isNaN(margen) || margen <= 0 || margen >= 1) throw new Error("Margen inválido (debe ser 0-1, ej. 0.30)");
+
+  const costo = Number(it.costo || 0);
+  const precioCalculado = costo > 0 ? costo / (1 - margen) : 0;
+  const precioPsicologico = redondearPsicologico(precioCalculado);
+
+  return {
+    sku, nombre: it.nombre, costo, clase,
+    pct_participacion: clasif ? clasif.pct_participacion : null,
+    margen_usado: margen, margen_rango_sugerido: rango,
+    precio_calculado: Math.round(precioCalculado), precio_psicologico: precioPsicologico,
+    precio_actual: it.precio
+  };
+}
+
+// Aplica el precio sugerido: reutiliza accionEditarProducto (misma auditoría +
+// sincronización con Loyverse), no duplica la escritura de precio.
+async function accionAplicarPrecioABC(env, payload) {
+  const sugerencia = await accionSugerirPrecioABC(env, payload);
+  const precioFinal = (payload && payload.usar_psicologico === false) ? sugerencia.precio_calculado : sugerencia.precio_psicologico;
+  await accionEditarProducto(env, { sku: sugerencia.sku, precio: precioFinal, responsable: (payload && payload.responsable) || "ABC" });
+  return Object.assign({}, sugerencia, { precio_aplicado: precioFinal });
+}
+
+// ============================================================
+//  PRODUCTOS SIN COSTO — productos con seguimiento de inventario activo
+//  pero sin costo cargado en Loyverse (bloquea mermas exactas, reportes
+//  de utilidad, y el precio sugerido ABC de arriba).
+// ============================================================
+async function repSinCosto(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT sku, nombre, categoria, sold_by_weight FROM productos WHERE track_stock = 1 AND (costo IS NULL OR costo = 0)"
+  ).all();
+  const items = results.map(r => ({ sku: r.sku, nombre: r.nombre, categoria: r.categoria || "SIN CATEGORÍA", peso: !!r.sold_by_weight }));
+  items.sort((a, b) => (b.peso - a.peso) || String(a.nombre).localeCompare(String(b.nombre)));
+  return { total: items.length, porPeso: items.filter(x => x.peso).length, items };
 }
 
 // Aplica ventas recibidas por webhook (receipts.update): guarda una fila por
@@ -2402,6 +2539,37 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // GET /?action=abc  →  última clasificación ABC calculada (sku, clase, % de
+      // participación, venta total). Vacío hasta el primer "abc_calcular".
+      if (action === "abc") {
+        const lista = await repABC(env);
+        return json({ ok: true, abc: lista });
+      }
+
+      // GET /?action=abc_calcular[&periodo=30]  →  recalcula la clasificación ABC
+      // sobre las ventas de los últimos N días (por defecto 30) y la deja guardada.
+      if (action === "abc_calcular") {
+        const periodo = url.searchParams.get("periodo") || 30;
+        const resultado = await calcularABC(env, periodo);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'aplicar_precio_abc', payload:{sku,margen,usar_psicologico,responsable} }
+      // → calcula el precio sugerido (costo / (1 - margen), redondeado a .90/.50 si
+      //   corresponde) y lo aplica en Loyverse + D1.
+      if (action === "aplicar_precio_abc") {
+        const resultado = await accionAplicarPrecioABC(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=sincosto  →  productos con seguimiento de inventario activo
+      // pero sin costo cargado en Loyverse (usa 'editar_producto' para guardarlo).
+      if (action === "sincosto") {
+        const reporte = await repSinCosto(env);
+        return json({ ok: true, reporte });
+      }
+
       // GET /?action=descuentos_activos  →  lista de lotes con descuento aplicado
       // y todavía en gestión (sin cerrar).
       if (action === "descuentos_activos") {
@@ -2539,7 +2707,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);

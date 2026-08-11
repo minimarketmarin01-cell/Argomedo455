@@ -550,6 +550,24 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 
+  <button class="menu-card reportes" id="btn-abc">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="12"/><line x1="12" y1="20" x2="12" y2="6"/><line x1="18" y1="20" x2="18" y2="15"/></svg></div>
+    <div class="txt">
+      <div class="t">Precio sugerido (ABC)</div>
+      <div class="s">Clasificar por participación en ventas y sugerir precio por margen</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+  </button>
+
+  <button class="menu-card mermas" id="btn-sincosto">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 22 20H2Z"/><line x1="12" y1="9" x2="12" y2="14"/><circle cx="12" cy="17.3" r="0.2" fill="currentColor" stroke-width="0"/></svg></div>
+    <div class="txt">
+      <div class="t">Sin costo</div>
+      <div class="s">Productos con seguimiento de inventario pero sin costo en Loyverse</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+  </button>
+
   <button class="menu-card pedido" id="btn-proveedores">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
     <div class="txt">
@@ -818,6 +836,91 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   <div class="ov-body">
     <div class="ap-empty" style="text-align:left;color:var(--muted);font-size:12px;margin-bottom:10px;padding:0" id="ll-lbl">Cargando…</div>
     <div id="ll-list"></div>
+  </div>
+</div>
+
+<!-- ===== MODAL: CLASIFICACIÓN ABC (resumen) ===== -->
+<div class="ov hidden" id="abcr-ov">
+  <div class="ov-head">
+    <h3>📊 Clasificación ABC</h3>
+    <button class="ov-close" id="abcr-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="field">
+      <button class="btn-secondary" id="abcr-recalcular" type="button">🔄 Recalcular (30 días)</button>
+    </div>
+    <div class="field">
+      <div class="total-box"><span id="abcr-lbl">Sin clasificar todavía</span><b id="abcr-val"></b></div>
+    </div>
+    <div class="field">
+      <div class="search-row">
+        <input id="abcr-search" placeholder="Buscar producto…" autocomplete="off">
+      </div>
+      <div class="results" id="abcr-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: PRECIO SUGERIDO (ABC) ===== -->
+<div class="ov hidden" id="abc-ov">
+  <div class="ov-head">
+    <h3>💡 Precio sugerido</h3>
+    <button class="ov-close" id="abc-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="field">
+      <div id="abc-nombre" style="font-weight:800;font-size:14px">—</div>
+      <div id="abc-clase-line" style="color:var(--muted);font-size:12px;margin-top:2px">—</div>
+    </div>
+    <div class="field">
+      <label>Margen deseado (sobre venta)</label>
+      <div class="qty-row">
+        <button class="qty-btn" id="abc-margen-menos" type="button">−</button>
+        <input id="abc-margen" inputmode="numeric" placeholder="30" style="text-align:center">
+        <span style="min-width:24px;text-align:center;color:var(--muted);font-weight:700">%</span>
+        <button class="qty-btn" id="abc-margen-mas" type="button">+</button>
+      </div>
+      <div id="abc-rango-hint" style="color:var(--muted);font-size:11px;margin-top:6px">—</div>
+    </div>
+    <div class="field">
+      <div class="total-box" style="flex-direction:column;align-items:stretch;gap:6px">
+        <span style="display:flex;justify-content:space-between">Costo actual <b id="abc-costo">$0</b></span>
+        <span style="display:flex;justify-content:space-between">Precio actual <b id="abc-precio-actual">$0</b></span>
+        <span style="display:flex;justify-content:space-between">Precio calculado <b id="abc-precio-calc">$0</b></span>
+        <span style="display:flex;justify-content:space-between">Precio psicológico <b id="abc-precio-psi" style="color:var(--ambar)">$0</b></span>
+      </div>
+    </div>
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none">
+        <input type="checkbox" id="abc-usar-psi" checked style="width:16px;height:16px">
+        Usar precio psicológico (.90/.50)
+      </label>
+    </div>
+  </div>
+  <div class="ov-foot">
+    <button class="btn-primary" id="abc-aplicar" disabled>Aplicar precio y sincronizar con Loyverse</button>
+  </div>
+</div>
+
+<!-- ===== MODAL: PRODUCTOS SIN COSTO ===== -->
+<div class="ov hidden" id="sc-ov">
+  <div class="ov-head">
+    <h3>⚠️ Sin costo</h3>
+    <button class="ov-close" id="sc-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="field">
+      <div style="padding:10px 12px;background:var(--ambar-bg);border:1.5px solid var(--ambar);border-radius:12px;color:var(--ambar);font-size:12px;font-weight:600;line-height:1.4">Al guardar, el costo se escribe directo en Loyverse.</div>
+    </div>
+    <div class="field">
+      <select id="sc-filtro-cat" style="width:100%;height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-size:13px">
+        <option value="">Todas las categorías</option>
+      </select>
+    </div>
+    <div class="field">
+      <div class="total-box"><span id="sc-summary">Cargando…</span></div>
+    </div>
+    <div id="sc-list"></div>
   </div>
 </div>
 
@@ -1765,8 +1868,10 @@ async function cargarCatalogo(silencioso){
     DB.items.forEach(it=>{
       const t=tag(it.nombre, it.prov);
       it._fmt=t.fmt; it._scale=t.scale; it._role=t.role; it._word=t.word;
+      it.abc=ABC_BY_SKU[it.ref]||null;
     });
     persist();
+    cargarABC(); // no bloquea la carga del catálogo — se refresca aparte, en segundo plano
     // "Sincronizado hace X" refleja qué tan fresco es lo que se ve en pantalla, no
     // solo la última vez que se tocó el botón manual — así que se marca acá, en
     // TODA carga exitosa del catálogo (incluida la automática cada pocos segundos
@@ -1955,7 +2060,7 @@ function cerrarModal(id){ document.getElementById(id).classList.add('hidden'); }
 //  history.back() y pushState al encadenar aperturas/cierres).
 // ============================================================
 let seccionActual='inicio';
-const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov', mermas:'mm-ov', llegadas:'ll-ov' };
+const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov', mermas:'mm-ov', llegadas:'ll-ov', abc:'abcr-ov', sincosto:'sc-ov' };
 history.replaceState({ cumpasSeccion:'inicio' }, '', location.pathname);
 
 function cerrarSeccionActual(){
@@ -1965,7 +2070,7 @@ function cerrarSeccionActual(){
   // Por si quedó algo abierto dentro del módulo (detalle, carrito en celular,
   // escáner, crear producto, productos de un proveedor) — se cierra todo junto
   // al salir del módulo, para que Atrás nunca deje un sub-panel huérfano abierto.
-  ['venc-detalle-ov','cart-ov','scanner-ov','cp-ov','pvp-ov'].forEach(childId=>{
+  ['venc-detalle-ov','cart-ov','scanner-ov','cp-ov','pvp-ov','abc-ov'].forEach(childId=>{
     const el=document.getElementById(childId);
     if(el && !el.classList.contains('hidden')){
       if(childId==='scanner-ov') closeScanner(); else cerrarModal(childId);
@@ -1982,6 +2087,8 @@ function abrirSeccionVisual(seccion){
   else if(seccion==='crear') openCrearProductoVisual();
   else if(seccion==='mermas') openMermas();
   else if(seccion==='llegadas') openLlegadas();
+  else if(seccion==='abc') openABCResumen();
+  else if(seccion==='sincosto') openSinCosto();
 }
 
 function actualizarNavActiva(){
@@ -5036,6 +5143,219 @@ function llUpdateBadge(n){
 }
 
 document.getElementById('btn-llegadas').onclick=()=>irASeccion('llegadas');
+
+// ============================================================
+//  CLASIFICACIÓN ABC + PRECIO SUGERIDO
+//  it.abc={clase,pct,venta} se calcula en el servidor (participación en
+//  ventas de los últimos N días, cortes 80/95/100) y se combina acá con
+//  el catálogo ya cargado, igual que hace Marín con buildDBfromCloud.
+// ============================================================
+let ABC_BY_SKU={};
+async function cargarABC(){
+  try{
+    const res=await fetch(SYNC_URL+'?action=abc');
+    const j=await res.json();
+    if(j&&j.ok&&Array.isArray(j.abc)){
+      const map={};
+      j.abc.forEach(r=>{ map[r.sku]={ clase:r.clase, pct:r.pct_participacion, venta:r.venta_total }; });
+      ABC_BY_SKU=map;
+      (DB.items||[]).forEach(it=>{ it.abc=ABC_BY_SKU[it.ref]||null; });
+    }
+  }catch(e){ /* silencioso: no bloquea el resto de la app */ }
+}
+async function recalcularABC(periodoDias){
+  try{
+    showToast('Calculando clasificación ABC…');
+    const res=await fetch(SYNC_URL+'?action=abc_calcular&periodo='+(periodoDias||30));
+    const j=await res.json();
+    if(j&&j.ok){ showToast('✅ ABC recalculado · '+(j.clasificados||0)+' productos'); await cargarABC(); return true; }
+    showToast('❌ No se pudo recalcular el ABC');
+  }catch(e){ showToast('❌ Error al recalcular ABC'); }
+  return false;
+}
+
+function _abcListaFiltrada(){
+  const q=(document.getElementById('abcr-search').value||'').toLowerCase().trim();
+  const conClase=(DB.items||[]).filter(it=>it.abc);
+  const filtrada=q?conClase.filter(it=>it.nombre.toLowerCase().includes(q)):conClase;
+  return filtrada.sort((a,b)=>(b.abc.pct||0)-(a.abc.pct||0));
+}
+function renderABCResumen(){
+  const items=_abcListaFiltrada();
+  const total=(DB.items||[]).filter(it=>it.abc).length;
+  const porClase={A:0,B:0,C:0};
+  (DB.items||[]).forEach(it=>{ if(it.abc) porClase[it.abc.clase]=(porClase[it.abc.clase]||0)+1; });
+  document.getElementById('abcr-lbl').textContent=total?('Clase A: '+porClase.A+' · B: '+porClase.B+' · C: '+porClase.C):'Sin clasificar todavía';
+  document.getElementById('abcr-val').textContent=total?(total+' productos'):'';
+  const list=document.getElementById('abcr-list');
+  if(!items.length){
+    list.innerHTML='<div class="ap-empty">'+(total?'Sin resultados para tu búsqueda.':'Toca "Recalcular" para generar la clasificación.')+'</div>';
+    return;
+  }
+  list.innerHTML=items.slice(0,200).map(it=>
+    `<div class="result-item" data-ref="${it.ref}">
+      <div class="n" style="display:flex;align-items:center;gap:8px"><span style="background:var(--card2);border-radius:6px;padding:1px 7px;font-weight:800;font-size:11px">${it.abc.clase}</span>${it.nombre}</div>
+      <div class="s">${(it.abc.pct*100).toFixed(1)}% de venta · ${fmtPeso(it.abc.venta)}</div>
+    </div>`).join('');
+  list.querySelectorAll('.result-item').forEach(el=>{ el.onclick=()=>abrirModalPrecioABC(el.dataset.ref); });
+}
+function openABCResumen(){
+  renderABCResumen();
+  if(!(DB.items||[]).some(it=>it.abc)) cargarABC().then(renderABCResumen);
+}
+document.getElementById('abcr-close').onclick=()=>irASeccion('inicio');
+document.getElementById('abcr-search').addEventListener('input', renderABCResumen);
+document.getElementById('abcr-recalcular').onclick=async()=>{
+  const btn=document.getElementById('abcr-recalcular');
+  btn.disabled=true; btn.textContent='Calculando…';
+  await recalcularABC(30);
+  renderABCResumen();
+  btn.disabled=false; btn.textContent='🔄 Recalcular (30 días)';
+};
+
+let _abcRef=null, _abcUltimaSugerencia=null;
+const ABC_RANGOS_MARGEN={ A:[25,35], B:[30,40], C:[40,50] };
+function _redondeoPsicologicoLocal(precio){
+  if(!precio||precio<=0)return 0;
+  const base=Math.floor(precio/100)*100;
+  const candidatos=[base-100+90,base-100+50,base+90,base+50,base+100+90];
+  const elegido=candidatos.find(c=>c>=precio);
+  return elegido!=null?elegido:(Math.ceil(precio/10)*10+90);
+}
+function abrirModalPrecioABC(ref){
+  const it=(DB.items||[]).find(i=>i.ref===ref);
+  if(!it){ showToast('Producto no encontrado'); return; }
+  _abcRef=ref;
+  document.getElementById('abc-nombre').textContent=it.nombre;
+  const clase=it.abc?it.abc.clase:null;
+  const pctTxt=it.abc?((it.abc.pct*100).toFixed(1)+'% de la venta'):'sin datos de venta en el período';
+  document.getElementById('abc-clase-line').textContent=clase?('Clase '+clase+' · '+pctTxt):'Sin clasificar aún — corre "Recalcular" primero';
+  const r=clase?ABC_RANGOS_MARGEN[clase]:[25,35];
+  document.getElementById('abc-rango-hint').textContent='Sugerido para clase '+(clase||'—')+': '+r[0]+'%–'+r[1]+'%';
+  document.getElementById('abc-margen').value=Math.round((r[0]+r[1])/2);
+  document.getElementById('abc-usar-psi').checked=true;
+  document.getElementById('abc-costo').textContent=it.coste?fmtPeso(it.coste):'—';
+  document.getElementById('abc-precio-actual').textContent=it.precio?fmtPeso(it.precio):'—';
+  _abcRecalcularPreview();
+  abrirModal('abc-ov');
+}
+function _abcRecalcularPreview(){
+  const it=(DB.items||[]).find(i=>i.ref===_abcRef);
+  if(!it)return;
+  const margenPct=Math.max(1,Math.min(90,parseInt(document.getElementById('abc-margen').value)||30));
+  const margen=margenPct/100;
+  const costo=Number(it.coste||0);
+  const precioCalc=costo>0?costo/(1-margen):0;
+  const precioPsi=_redondeoPsicologicoLocal(precioCalc);
+  document.getElementById('abc-precio-calc').textContent=fmtPeso(Math.round(precioCalc));
+  document.getElementById('abc-precio-psi').textContent=fmtPeso(precioPsi);
+  _abcUltimaSugerencia={ margen, precioCalc:Math.round(precioCalc), precioPsi };
+  document.getElementById('abc-aplicar').disabled=costo<=0;
+}
+document.getElementById('abc-margen').addEventListener('input', _abcRecalcularPreview);
+document.getElementById('abc-margen-menos').onclick=()=>{
+  const inp=document.getElementById('abc-margen');
+  inp.value=Math.max(1,(parseInt(inp.value)||30)-1);
+  _abcRecalcularPreview();
+};
+document.getElementById('abc-margen-mas').onclick=()=>{
+  const inp=document.getElementById('abc-margen');
+  inp.value=Math.min(90,(parseInt(inp.value)||30)+1);
+  _abcRecalcularPreview();
+};
+document.getElementById('abc-usar-psi').addEventListener('change', _abcRecalcularPreview);
+document.getElementById('abc-close').onclick=()=>cerrarModal('abc-ov');
+document.getElementById('abc-aplicar').onclick=async()=>{
+  if(!_abcRef||!_abcUltimaSugerencia)return;
+  const btn=document.getElementById('abc-aplicar');
+  btn.disabled=true; btn.textContent='Aplicando…';
+  const usarPsi=document.getElementById('abc-usar-psi').checked;
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'aplicar_precio_abc',payload:{
+      sku:_abcRef, margen:_abcUltimaSugerencia.margen, usar_psicologico:usarPsi,
+      responsable:localStorage.getItem('cumpas_responsable')||'ABC'
+    }})});
+    const j=await res.json();
+    if(j&&j.ok){
+      showToast('✅ Precio actualizado y sincronizado con Loyverse');
+      const it=(DB.items||[]).find(i=>i.ref===_abcRef);
+      if(it&&j.precio_aplicado!=null){ it.precio=j.precio_aplicado; persist(); }
+      cerrarModal('abc-ov');
+      renderABCResumen();
+    }else{ showToast('❌ '+((j&&j.error)||'No se pudo aplicar')); }
+  }catch(e){ showToast('❌ Error de conexión al aplicar el precio'); }
+  finally{ btn.disabled=false; btn.textContent='Aplicar precio y sincronizar con Loyverse'; }
+};
+
+// ============================================================
+//  PRODUCTOS SIN COSTO
+// ============================================================
+let _scItemsAll=[];
+async function scLoad(){
+  const box=document.getElementById('sc-list'), sum=document.getElementById('sc-summary');
+  box.innerHTML=''; sum.textContent='Cargando…';
+  try{
+    const res=await fetch(SYNC_URL+'?action=sincosto');
+    const j=await res.json();
+    if(!j||!j.ok){ sum.textContent='⚠️ Error al cargar.'; return; }
+    _scItemsAll=j.reporte.items||[];
+    scPoblarFiltroCat();
+    if(!_scItemsAll.length){ box.innerHTML='<div class="ap-empty">Todos los productos tienen costo cargado 🎉</div>'; sum.textContent=''; return; }
+    scRenderList();
+  }catch(e){ sum.textContent='⚠️ Error de conexión.'; }
+}
+function scPoblarFiltroCat(){
+  const sel=document.getElementById('sc-filtro-cat');
+  const actual=sel.value;
+  const cats=[...new Set(_scItemsAll.map(it=>it.categoria||'SIN CATEGORÍA'))].sort((a,b)=>a.localeCompare(b,'es'));
+  sel.innerHTML='<option value="">Todas las categorías</option>'+cats.map(c=>`<option value="${c.replace(/"/g,'&quot;')}">${c}</option>`).join('');
+  if(cats.includes(actual)) sel.value=actual;
+}
+function scRenderList(){
+  const box=document.getElementById('sc-list'), sum=document.getElementById('sc-summary');
+  const filtroCat=document.getElementById('sc-filtro-cat').value;
+  const items=filtroCat?_scItemsAll.filter(it=>(it.categoria||'SIN CATEGORÍA')===filtroCat):_scItemsAll;
+  const nPeso=items.filter(it=>it.peso).length;
+  if(!items.length){
+    box.innerHTML='<div class="ap-empty">'+(filtroCat?'No hay productos sin costo en esta categoría.':'Todos los productos tienen costo cargado 🎉')+'</div>';
+    sum.textContent=filtroCat?('0 productos en "'+filtroCat+'"'):'';
+    return;
+  }
+  sum.textContent=items.length+' producto'+(items.length===1?'':'s')+' sin costo'+(filtroCat?(' en "'+filtroCat+'"'):'')+' · '+nPeso+' vendidos por peso';
+  box.innerHTML=items.map(it=>`
+    <div class="result-item" id="sc-row-${it.sku}" style="cursor:default">
+      <div class="n">${it.nombre}</div>
+      <div class="s">${it.categoria}${it.peso?' · ⚖️ vendido por kg':''}</div>
+      <div class="search-row" style="margin-top:8px">
+        <input type="text" inputmode="numeric" placeholder="Costo${it.peso?' por kg':''} ($)" id="sc-in-${it.sku}">
+        <button class="btn-secondary sc-guardar" data-sku="${it.sku}" style="width:auto;padding:0 14px">Guardar</button>
+      </div>
+    </div>`).join('');
+  box.querySelectorAll('.sc-guardar').forEach(b=>b.onclick=()=>scGuardar(b.dataset.sku));
+}
+document.getElementById('sc-filtro-cat').addEventListener('change', scRenderList);
+async function scGuardar(sku){
+  const inp=document.getElementById('sc-in-'+sku);
+  const btn=document.querySelector('#sc-row-'+sku+' .sc-guardar');
+  const costo=Number(inp.value);
+  if(!costo||costo<=0){ showToast('Escribe un costo válido'); return; }
+  btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'editar_producto',payload:{sku,costo,responsable:localStorage.getItem('cumpas_responsable')||'Sin costo'}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      const it=(DB.items||[]).find(i=>i.ref===sku);
+      if(it){ it.coste=j.costo; persist(); }
+      showToast('✅ Costo actualizado en Loyverse: '+fmtPeso(j.costo));
+      _scItemsAll=_scItemsAll.filter(x=>x.sku!==sku);
+      scRenderList();
+    }else{ showToast('❌ '+((j&&j.error)||'No se pudo guardar')); btn.disabled=false; btn.textContent='Guardar'; }
+  }catch(e){ showToast('❌ Error de conexión al guardar el costo'); btn.disabled=false; btn.textContent='Guardar'; }
+}
+function openSinCosto(){ scLoad(); }
+document.getElementById('sc-close').onclick=()=>irASeccion('inicio');
+document.getElementById('btn-abc').onclick=()=>irASeccion('abc');
+document.getElementById('btn-sincosto').onclick=()=>irASeccion('sincosto');
 
 // ============================================================
 //  NOTIFICACIONES PUSH
