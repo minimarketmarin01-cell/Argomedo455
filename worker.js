@@ -197,6 +197,47 @@ async function asegurarTablas(env) {
     origen TEXT
   )`);
 
+  // "Recién llegado": stock que subió directo en Loyverse (no por Recibir mercadería
+  // ni por un ajuste hecho desde la app) y todavía no tiene fecha de vencimiento
+  // asignada. Se llena sola desde el webhook inventory_levels.update (ver
+  // aplicarCambiosInventario) comparando el stock nuevo contra el que ya había en D1.
+  await run(env, `CREATE TABLE IF NOT EXISTS llegadas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_deteccion TEXT,
+    sku TEXT,
+    nombre TEXT,
+    categoria TEXT,
+    unidad TEXT,
+    stock_antes REAL,
+    stock_despues REAL,
+    aumento REAL,
+    estado TEXT DEFAULT 'pendiente',
+    fecha_vencimiento_asignada TEXT,
+    fecha_resolucion TEXT
+  )`);
+
+  // Clasificación ABC (participación en ventas de los últimos N días, cortes
+  // 80/95/100) — se recalcula a pedido (?action=abc_calcular), esta tabla solo
+  // guarda el último resultado para no tener que recalcular en cada consulta.
+  // Categorías marcadas para gestionarse por "cambio con proveedor" en vez de
+  // descuento/merma al vencer (ej. productos en consignación). Puramente
+  // informativo por ahora — no cambia el cálculo de prioridad de Vencimientos,
+  // que sigue siendo el mismo flujo manual ya en producción.
+  await run(env, `CREATE TABLE IF NOT EXISTS config_categorias (
+    categoria TEXT PRIMARY KEY,
+    tipo TEXT
+  )`);
+
+  await run(env, `CREATE TABLE IF NOT EXISTS clasificacion_abc (
+    sku TEXT PRIMARY KEY,
+    venta_total REAL,
+    pct_participacion REAL,
+    pct_acumulado REAL,
+    clase TEXT,
+    periodo_dias INTEGER,
+    calculado_en TEXT
+  )`);
+
   // Catálogos reutilizables de proveedores y sectores — permiten buscar y crear
   // nuevos registros desde el formulario sin salir de él, y que queden disponibles
   // para elegir la próxima vez (Módulo 3: Proveedores y sectores).
@@ -814,18 +855,259 @@ async function marcarEventoProcesado(env, eventId, tipo) {
 
 // Aplica cambios de stock recibidos por webhook (inventory_levels.update).
 // Solo toca `stock`, no vuelve a tocar precio/nombre/etc.
+//
+// De paso detecta "Recién llegado": si el stock SUBE y ese aumento no lo hizo la
+// app (Recibir mercadería, ajuste, etc. ya dejan el valor nuevo escrito en D1
+// ANTES de que llegue el eco del webhook — ver sumarStockLoyverse), entonces
+// alguien cargó stock directo en Loyverse sin pasar por la app, y por lo tanto
+// sin fecha de vencimiento. Se guarda en `llegadas` para que el módulo "Recién
+// llegado" lo muestre y se le pueda asignar fecha o ignorar.
 async function aplicarCambiosInventario(env, niveles) {
   if (!niveles || !niveles.length) return 0;
   const { storeId } = await obtenerStoreId(env);
   let actualizados = 0;
   for (const nivel of niveles) {
     if (nivel.store_id && nivel.store_id !== storeId) continue; // otra tienda, no nos afecta
-    const fila = await get(env, "SELECT sku FROM productos WHERE variant_id = ?", nivel.variant_id);
+    const fila = await get(env, "SELECT sku, nombre, categoria, sold_by_weight, stock FROM productos WHERE variant_id = ?", nivel.variant_id);
     if (!fila) continue; // producto no está en D1 todavía (ej. creado fuera de la app) — un sync completo lo traerá
-    await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", nivel.in_stock, fila.sku);
+    const stockAntes = Number(fila.stock) || 0;
+    const stockDespues = Number(nivel.in_stock) || 0;
+    await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", stockDespues, fila.sku);
     actualizados++;
+
+    if (stockDespues > stockAntes) {
+      const aumento = Math.round((stockDespues - stockAntes) * 1000) / 1000;
+      const unidad = fila.sold_by_weight ? "kg" : "un";
+      const pendiente = await get(env, "SELECT id, aumento FROM llegadas WHERE sku = ? AND estado = 'pendiente'", fila.sku);
+      if (pendiente) {
+        // Ya había una llegada sin resolver de este mismo producto — se acumula
+        // en vez de crear una fila nueva, para no duplicar el aviso.
+        await run(env,
+          "UPDATE llegadas SET aumento = ?, stock_despues = ?, fecha_deteccion = ? WHERE id = ?",
+          Math.round((Number(pendiente.aumento) + aumento) * 1000) / 1000, stockDespues, fechaDDMMAAAA(), pendiente.id);
+      } else {
+        await run(env,
+          `INSERT INTO llegadas (fecha_deteccion, sku, nombre, categoria, unidad, stock_antes, stock_despues, aumento, estado)
+           VALUES (?,?,?,?,?,?,?,?,'pendiente')`,
+          fechaDDMMAAAA(), fila.sku, fila.nombre, fila.categoria, unidad, stockAntes, stockDespues, aumento);
+      }
+    }
   }
   return actualizados;
+}
+
+// Lista de "llegadas" pendientes (stock que subió directo en Loyverse, sin fecha
+// de vencimiento todavía), más nuevas primero por tamaño de aumento.
+async function repLlegadasPendientes(env) {
+  const { results: rows } = await env.DB.prepare("SELECT * FROM llegadas WHERE estado = 'pendiente' ORDER BY aumento DESC").all();
+  return rows.map(r => ({
+    filaIndex: r.id, fecha: r.fecha_deteccion, sku: r.sku, nombre: r.nombre, categoria: r.categoria,
+    unidad: r.unidad, stockAntes: r.stock_antes, stockDespues: r.stock_despues, aumento: r.aumento
+  }));
+}
+
+// Le asigna fecha de vencimiento a una llegada: crea el lote en `vencimientos`
+// con la cantidad detectada. NO vuelve a tocar el stock en Loyverse — ese stock
+// ya está sumado desde que se detectó la llegada.
+async function accionAsignarLlegada(env, payload) {
+  payload = payload || {};
+  const fi = Number(payload.filaIndex);
+  if (!fi) throw new Error("Falta filaIndex");
+  const row = await get(env, "SELECT * FROM llegadas WHERE id = ?", fi);
+  if (!row) throw new Error("Llegada no encontrada");
+  if (row.estado !== "pendiente") throw new Error("Esta llegada ya fue resuelta");
+
+  const fechaTxt = String(payload.fechaVencimiento || "").trim();
+  if (!fechaTxt || !parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha de vencimiento inválida (usa DD/MM/AAAA)");
+
+  const insertRes = await run(env,
+    `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, fecha_revision, revisado_por)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    row.fecha_deteccion, row.sku, row.nombre, row.categoria, row.unidad, "", row.aumento, fechaTxt, "Pendiente", "", "");
+
+  await run(env, "UPDATE llegadas SET estado='asignado', fecha_vencimiento_asignada=?, fecha_resolucion=? WHERE id=?",
+    fechaTxt, fechaDDMMAAAA(), fi);
+
+  return { ok: true, filaIndex: fi, loteId: insertRes.meta.last_row_id };
+}
+
+// Descarta una llegada sin asignarle fecha (ej. producto que no requiere control
+// de vencimiento). No toca stock ni crea lote.
+async function accionIgnorarLlegada(env, payload) {
+  payload = payload || {};
+  const fi = Number(payload.filaIndex);
+  if (!fi) throw new Error("Falta filaIndex");
+  const row = await get(env, "SELECT id, estado FROM llegadas WHERE id = ?", fi);
+  if (!row) throw new Error("Llegada no encontrada");
+  if (row.estado !== "pendiente") throw new Error("Esta llegada ya fue resuelta");
+  await run(env, "UPDATE llegadas SET estado='ignorado', fecha_resolucion=? WHERE id=?", fechaDDMMAAAA(), fi);
+  return { ok: true, filaIndex: fi };
+}
+
+// ============================================================
+//  CLASIFICACIÓN ABC + PRECIO SUGERIDO
+//  Participación de cada producto en las ventas de los últimos N días
+//  (cortes 80/95/100: A = primer 80% acumulado, B = hasta 95%, C = resto).
+//  Argomedo455 solo guarda CANTIDAD vendida por línea (no el monto — a
+//  diferencia de Marín, que agrega venta en pesos en `ventas_diarias`),
+//  así que la venta en pesos se aproxima con cantidad × precio ACTUAL
+//  del producto. No es exacto si el precio cambió a mitad del período,
+//  pero alcanza para priorizar qué productos mueven más plata.
+// ============================================================
+async function calcularABC(env, periodoDias) {
+  const dias = Number(periodoDias) || 30;
+  const desde = fechaISO(new Date(Date.now() - dias * 86400000));
+
+  const { results: rows } = await env.DB.prepare(
+    `SELECT v.sku AS sku, SUM(v.cantidad * p.precio) AS venta_total
+     FROM ventas v JOIN productos p ON p.sku = v.sku
+     WHERE v.fecha_venta >= ?
+     GROUP BY v.sku
+     HAVING venta_total > 0
+     ORDER BY venta_total DESC`
+  ).bind(desde).all();
+
+  await run(env, "DELETE FROM clasificacion_abc");
+  const totalGeneral = rows.reduce((s, r) => s + (Number(r.venta_total) || 0), 0);
+  if (totalGeneral <= 0) return { clasificados: 0, periodo_dias: dias };
+
+  const CORTE_A = 0.80, CORTE_B = 0.95;
+  let acumulado = 0;
+  const registros = rows.map(r => {
+    const venta = Number(r.venta_total) || 0;
+    acumulado += venta;
+    const pctAcum = acumulado / totalGeneral;
+    const clase = pctAcum <= CORTE_A ? "A" : (pctAcum <= CORTE_B ? "B" : "C");
+    return { sku: r.sku, venta_total: venta, pct_participacion: venta / totalGeneral, pct_acumulado: pctAcum, clase };
+  });
+
+  const calculadoEn = fechaHoraDDMMAAAA();
+  const stmts = registros.map(r => env.DB.prepare(
+    `INSERT INTO clasificacion_abc (sku, venta_total, pct_participacion, pct_acumulado, clase, periodo_dias, calculado_en)
+     VALUES (?,?,?,?,?,?,?)`
+  ).bind(r.sku, r.venta_total, r.pct_participacion, r.pct_acumulado, r.clase, dias, calculadoEn));
+  await batchRun(env, stmts);
+
+  return { clasificados: registros.length, periodo_dias: dias };
+}
+
+async function repABC(env) {
+  const { results } = await env.DB.prepare("SELECT sku, clase, pct_participacion, venta_total FROM clasificacion_abc ORDER BY pct_acumulado ASC").all();
+  return results;
+}
+
+// Redondeo psicológico: sube al .90 o .50 más cercano por arriba, preservando
+// la unidad de mil (nunca baja el precio calculado).
+function redondearPsicologico(precio) {
+  if (!precio || precio <= 0) return 0;
+  const base = Math.floor(precio / 100) * 100;
+  const candidatos = [base - 100 + 90, base - 100 + 50, base + 90, base + 50, base + 100 + 90];
+  const elegido = candidatos.find(c => c >= precio);
+  return elegido != null ? elegido : (Math.ceil(precio / 10) * 10 + 90);
+}
+
+// Margen sugerido por clase — retail minimarket, margen sobre venta (mismo
+// criterio que Marín).
+const MARGEN_SUGERIDO_ABC = {
+  A: { min: 0.25, max: 0.35 },
+  B: { min: 0.30, max: 0.40 },
+  C: { min: 0.40, max: 0.50 }
+};
+
+// Calcula el precio sugerido para un SKU según su clase ABC + margen deseado.
+// No escribe nada — el frontend siempre confirma antes de aplicar.
+async function accionSugerirPrecioABC(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("SKU no encontrado: " + sku);
+
+  const clasif = await get(env, "SELECT * FROM clasificacion_abc WHERE sku = ?", sku);
+  const clase = clasif ? clasif.clase : null;
+  const rango = clase ? MARGEN_SUGERIDO_ABC[clase] : null;
+
+  const margen = payload.margen != null && payload.margen !== ""
+    ? Number(payload.margen)
+    : (rango ? (rango.min + rango.max) / 2 : 0.30);
+  if (isNaN(margen) || margen <= 0 || margen >= 1) throw new Error("Margen inválido (debe ser 0-1, ej. 0.30)");
+
+  const costo = Number(it.costo || 0);
+  const precioCalculado = costo > 0 ? costo / (1 - margen) : 0;
+  const precioPsicologico = redondearPsicologico(precioCalculado);
+
+  return {
+    sku, nombre: it.nombre, costo, clase,
+    pct_participacion: clasif ? clasif.pct_participacion : null,
+    margen_usado: margen, margen_rango_sugerido: rango,
+    precio_calculado: Math.round(precioCalculado), precio_psicologico: precioPsicologico,
+    precio_actual: it.precio
+  };
+}
+
+// Aplica el precio sugerido: reutiliza accionEditarProducto (misma auditoría +
+// sincronización con Loyverse), no duplica la escritura de precio.
+async function accionAplicarPrecioABC(env, payload) {
+  const sugerencia = await accionSugerirPrecioABC(env, payload);
+  const precioFinal = (payload && payload.usar_psicologico === false) ? sugerencia.precio_calculado : sugerencia.precio_psicologico;
+  await accionEditarProducto(env, { sku: sugerencia.sku, precio: precioFinal, responsable: (payload && payload.responsable) || "ABC" });
+  return Object.assign({}, sugerencia, { precio_aplicado: precioFinal });
+}
+
+// ============================================================
+//  PRODUCTOS SIN COSTO — productos con seguimiento de inventario activo
+//  pero sin costo cargado en Loyverse (bloquea mermas exactas, reportes
+//  de utilidad, y el precio sugerido ABC de arriba).
+// ============================================================
+async function repSinCosto(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT sku, nombre, categoria, sold_by_weight FROM productos WHERE track_stock = 1 AND (costo IS NULL OR costo = 0)"
+  ).all();
+  const items = results.map(r => ({ sku: r.sku, nombre: r.nombre, categoria: r.categoria || "SIN CATEGORÍA", peso: !!r.sold_by_weight }));
+  items.sort((a, b) => (b.peso - a.peso) || String(a.nombre).localeCompare(String(b.nombre)));
+  return { total: items.length, porPeso: items.filter(x => x.peso).length, items };
+}
+
+// ============================================================
+//  CONFIG CATEGORÍAS — categorías marcadas para gestionarse por "cambio
+//  con proveedor" al vencer, en vez de descuento/merma (ej. productos en
+//  consignación). Informativo: se muestra como aviso en Vencimientos,
+//  no cambia el flujo manual de estados ya en producción.
+// ============================================================
+async function repCategoriasCambio(env) {
+  const { results } = await env.DB.prepare("SELECT categoria FROM config_categorias WHERE tipo = 'cambio' ORDER BY categoria").all();
+  return results.map(r => r.categoria);
+}
+
+async function accionConfigCategoriaCambio(env, payload) {
+  payload = payload || {};
+  const categoria = String(payload.categoria || "").trim();
+  if (!categoria) throw new Error("Falta la categoría");
+  if (payload.activo) {
+    await run(env, "INSERT INTO config_categorias (categoria, tipo) VALUES (?, 'cambio') ON CONFLICT(categoria) DO UPDATE SET tipo='cambio'", categoria);
+  } else {
+    await run(env, "DELETE FROM config_categorias WHERE categoria = ?", categoria);
+  }
+  return { categoria, activo: !!payload.activo };
+}
+
+// Costo total de mermas por "consumo_interno" (ej. la familia dueña consume
+// stock) agrupado por categoría, en los últimos N días — usa la tabla
+// `mermas` que ya existe (Módulo Mermas), no crea nada nuevo.
+async function repConsumoCategoria(env, dias) {
+  const diasNum = Number(dias) || 30;
+  const { results } = await env.DB.prepare("SELECT categoria, fecha, costo_total FROM mermas WHERE motivo = 'consumo_interno'").all();
+  const corte = Date.now() - diasNum * 86400000;
+  const cats = {};
+  results.forEach(r => {
+    const f = parseFechaDDMMAAAA(r.fecha);
+    if (!f || f.getTime() < corte) return;
+    const cat = r.categoria || "SIN CATEGORÍA";
+    cats[cat] = (cats[cat] || 0) + (Number(r.costo_total) || 0);
+  });
+  const arr = Object.keys(cats).map(c => ({ categoria: c, total: Math.round(cats[c]) })).sort((a, b) => b.total - a.total);
+  const total = arr.reduce((s, x) => s + x.total, 0);
+  return { total, dias: diasNum, categorias: arr };
 }
 
 // Aplica ventas recibidas por webhook (receipts.update): guarda una fila por
@@ -1306,10 +1588,15 @@ async function accionVencimientoEstado(env, payload) {
 //  automático al agotarse la cantidad, o al vencer sin venderse).
 // ============================================================
 
-const MOTIVOS_MERMA_VALIDOS = ["vencido", "dañado", "robo", "otro"];
+// Mismos motivos que usa la app hermana (Marín 376) — "otro" se mantiene al final
+// solo como red de seguridad para datos viejos/llamadas internas que no manden uno
+// de la lista, el formulario de Mermas no lo ofrece como opción.
+const MOTIVOS_MERMA_VALIDOS = ["liquidado", "vencido", "dañado", "robo", "consumo_interno", "cambio_proveedor", "otro"];
 
-// Registro de merma mínimo — usado por el flujo de Descuentos activos para
-// contabilizar la parte de un lote que no se logra vender antes de vencer.
+// Registro de merma — usado tanto por el módulo "Mermas" (registro manual) como por
+// el flujo de Descuentos activos, para contabilizar la parte de un lote que no se
+// logra vender antes de vencer. El costo sale de Loyverse cuando el producto lo
+// tiene cargado; si no, se acepta costoManual (digitado a mano en el formulario).
 async function accionMerma(env, payload) {
   payload = payload || {};
   const it = await get(env, "SELECT * FROM productos WHERE sku = ?", String(payload.sku || "").trim());
@@ -1318,8 +1605,15 @@ async function accionMerma(env, payload) {
   const cantidad = Number(payload.cantidad);
   if (!cantidad || cantidad <= 0) throw new Error("Cantidad inválida para " + it.nombre);
 
+  const responsable = String(payload.responsable || "").trim();
+  if (!responsable) throw new Error("Indica el usuario responsable");
+
   const unidad = it.sold_by_weight ? "kg" : "un";
-  const costoUnit = it.costo || 0;
+  const costoLoyverse = Number(it.costo) || 0;
+  const costoManual = Number(payload.costoManual) || 0;
+  // El costo de Loyverse manda siempre que exista — el manual es solo un respaldo
+  // para productos que todavía no lo tienen cargado ahí.
+  const costoUnit = costoLoyverse > 0 ? costoLoyverse : costoManual;
   const costoTotal = Math.round(cantidad * costoUnit);
   const motivo = MOTIVOS_MERMA_VALIDOS.includes(payload.motivo) ? payload.motivo : "otro";
   const origen = payload.origen === "vencimiento" ? "vencimiento" : "manual";
@@ -1329,11 +1623,12 @@ async function accionMerma(env, payload) {
     `INSERT INTO mermas (fecha, sku, producto, categoria, unidad, lote, cantidad, costo_unitario, costo_total, motivo, estado_costo, responsable, origen)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     fecha, it.sku, it.nombre, it.categoria, unidad, payload.lote || "", cantidad,
-    costoUnit, costoTotal, motivo, costoUnit ? "OK" : "⚠️ SIN COSTO", payload.responsable || "", origen);
+    costoUnit, costoTotal, motivo, costoUnit ? "OK" : "⚠️ SIN COSTO", responsable, origen);
 
   const out = {
-    filaIndex: insertRes.meta.last_row_id, fecha, sku: it.sku, nombre: it.nombre,
-    cantidad, costoUnitario: costoUnit, costoTotal, motivo
+    id: insertRes.meta.last_row_id, filaIndex: insertRes.meta.last_row_id, fecha, sku: it.sku, nombre: it.nombre,
+    categoria: it.categoria, unidad, cantidad, costoUnitario: costoUnit, costoTotal, motivo,
+    costoDesdeLoyverse: costoLoyverse > 0, responsable
   };
 
   // Descuenta stock en Loyverse (con el mismo tope-en-0 que el resto de la app) —
@@ -1347,6 +1642,67 @@ async function accionMerma(env, payload) {
   }
 
   return out;
+}
+
+// GET /?action=historial_mermas[&sku=XXXX][&dias=30][&limit=200]  →  historial de
+// mermas registradas, más reciente primero. `dias` filtra en JS sobre el campo
+// `fecha` (texto DD/MM/AAAA, igual que vencimientos/auditoría — no se puede
+// comparar como texto en SQL, por eso se usa parseFechaDDMMAAAA aquí igual que en
+// diasRestantes()).
+async function historialMermas(env, { sku, dias, limit } = {}) {
+  let sql = "SELECT * FROM mermas WHERE 1=1";
+  const params = [];
+  const skuLimpio = String(sku || "").trim();
+  if (skuLimpio) { sql += " AND sku = ?"; params.push(skuLimpio); }
+  sql += " ORDER BY id DESC LIMIT ?";
+  const tope = Math.min(Number(limit) || 200, 500);
+  params.push(tope);
+  const { results } = await env.DB.prepare(sql).bind(...params).all();
+
+  let lista = results;
+  const diasNum = Number(dias) || 0;
+  if (diasNum > 0) {
+    const desde = new Date(Date.now() - diasNum * 86400000);
+    lista = lista.filter(r => {
+      const d = parseFechaDDMMAAAA(r.fecha);
+      return d && d >= desde;
+    });
+  }
+
+  const totalCosto = lista.reduce((s, r) => s + (Number(r.costo_total) || 0), 0);
+  const totalCantidad = lista.reduce((s, r) => s + (Number(r.cantidad) || 0), 0);
+  return { lista, totalCosto, totalCantidad, total: lista.length };
+}
+
+// POST { action:'merma_motivo', payload:{id,motivo,responsable} }  →  corrige el
+// motivo de una merma ya registrada (ej. se anotó "vencido" y en realidad fue
+// "dañado"). Mismo estilo que vencimiento_estado, pero acá NO se vuelve a tocar el
+// stock en Loyverse — eso ya se descontó al registrar la merma, esto solo corrige
+// la clasificación para los reportes. Queda registrado en `auditoria` para trazar
+// quién corrigió y cuándo.
+async function accionMermaMotivo(env, payload) {
+  payload = payload || {};
+  const id = Number(payload.id);
+  if (!id) throw new Error("Falta el id de la merma");
+
+  const motivo = String(payload.motivo || "").trim();
+  if (!MOTIVOS_MERMA_VALIDOS.includes(motivo)) throw new Error("Motivo inválido: " + motivo);
+
+  const responsable = String(payload.responsable || "").trim();
+  if (!responsable) throw new Error("Indica el usuario responsable");
+
+  const merma = await get(env, "SELECT * FROM mermas WHERE id = ?", id);
+  if (!merma) throw new Error("Merma no encontrada");
+
+  await run(env, "UPDATE mermas SET motivo = ? WHERE id = ?", motivo, id);
+
+  await run(env,
+    `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    fechaHoraDDMMAAAA(), "correccion_motivo_merma", merma.sku, merma.producto, merma.categoria, null, null,
+    "Corrección de motivo de merma #" + id + ": " + merma.motivo + " → " + motivo, responsable);
+
+  return { id, sku: merma.sku, nombre: merma.producto, motivoAnterior: merma.motivo, motivo };
 }
 
 // POST { action:'aplicar_descuento_vencimiento', payload:{id,precio,responsable} }
@@ -2183,6 +2539,110 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'registrar_merma', payload:{sku,cantidad,costoManual,motivo,responsable,lote} }
+      // → registra una merma (pérdida): guarda el registro en `mermas` con el costo
+      //   de Loyverse (o el digitado a mano si el producto no lo tiene cargado) y
+      //   descuenta el stock en Loyverse, igual que un ajuste negativo.
+      if (action === "registrar_merma") {
+        const resultado = await accionMerma(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=historial_mermas[&sku=XXXX][&dias=30][&limit=200]  →  historial
+      // de mermas registradas, más reciente primero, con total de costo y cantidad.
+      if (action === "historial_mermas") {
+        const sku = url.searchParams.get("sku") || "";
+        const dias = url.searchParams.get("dias") || "";
+        const limit = url.searchParams.get("limit") || "";
+        const resultado = await historialMermas(env, { sku, dias, limit });
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'merma_motivo', payload:{id,motivo,responsable} } → corrige el
+      // motivo de una merma ya registrada (no vuelve a tocar el stock).
+      if (action === "merma_motivo") {
+        const resultado = await accionMermaMotivo(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=llegadas → productos con stock que subió directo en Loyverse
+      // (sin pasar por Recibir mercadería ni un ajuste de la app) y todavía no
+      // tienen fecha de vencimiento asignada.
+      if (action === "llegadas") {
+        const lista = await repLlegadasPendientes(env);
+        return json({ ok: true, llegadas: lista });
+      }
+
+      // POST { action:'asignar_llegada', payload:{filaIndex,fechaVencimiento} } →
+      // crea el lote de vencimiento para esa llegada (el stock ya estaba sumado).
+      if (action === "asignar_llegada") {
+        const resultado = await accionAsignarLlegada(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'ignorar_llegada', payload:{filaIndex} } → descarta la
+      // llegada sin asignarle fecha.
+      if (action === "ignorar_llegada") {
+        const resultado = await accionIgnorarLlegada(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=abc  →  última clasificación ABC calculada (sku, clase, % de
+      // participación, venta total). Vacío hasta el primer "abc_calcular".
+      if (action === "abc") {
+        const lista = await repABC(env);
+        return json({ ok: true, abc: lista });
+      }
+
+      // GET /?action=abc_calcular[&periodo=30]  →  recalcula la clasificación ABC
+      // sobre las ventas de los últimos N días (por defecto 30) y la deja guardada.
+      if (action === "abc_calcular") {
+        const periodo = url.searchParams.get("periodo") || 30;
+        const resultado = await calcularABC(env, periodo);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'aplicar_precio_abc', payload:{sku,margen,usar_psicologico,responsable} }
+      // → calcula el precio sugerido (costo / (1 - margen), redondeado a .90/.50 si
+      //   corresponde) y lo aplica en Loyverse + D1.
+      if (action === "aplicar_precio_abc") {
+        const resultado = await accionAplicarPrecioABC(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=sincosto  →  productos con seguimiento de inventario activo
+      // pero sin costo cargado en Loyverse (usa 'editar_producto' para guardarlo).
+      if (action === "sincosto") {
+        const reporte = await repSinCosto(env);
+        return json({ ok: true, reporte });
+      }
+
+      // GET /?action=config_categorias  →  categorías marcadas para gestionarse
+      // por "cambio con proveedor" al vencer.
+      if (action === "config_categorias") {
+        const categoriasCambio = await repCategoriasCambio(env);
+        return json({ ok: true, categoriasCambio });
+      }
+
+      // POST { action:'config_categoria_cambio', payload:{categoria,activo} } →
+      // marca/desmarca una categoría como "cambio con proveedor".
+      if (action === "config_categoria_cambio") {
+        const resultado = await accionConfigCategoriaCambio(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=consumo_categoria[&dias=30]  →  costo total de mermas por
+      // "consumo_interno", agrupado por categoría, en los últimos N días.
+      if (action === "consumo_categoria") {
+        const dias = url.searchParams.get("dias") || 30;
+        const resumen = await repConsumoCategoria(env, dias);
+        return json({ ok: true, resumen });
+      }
+
       // GET /?action=descuentos_activos  →  lista de lotes con descuento aplicado
       // y todavía en gestión (sin cerrar).
       if (action === "descuentos_activos") {
@@ -2320,7 +2780,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
