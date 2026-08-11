@@ -50,15 +50,28 @@ button{font-family:inherit}
 /* ===== Encabezado ===== */
 .top{background:#fff;border-bottom:1px solid var(--line);padding:10px 16px;padding-top:max(10px,env(safe-area-inset-top));display:flex;align-items:center;gap:10px}
 .brand-mark{width:34px;height:34px;border-radius:10px;flex:none;box-shadow:var(--sh-card);object-fit:cover;object-position:center;display:block}
-.brand-txt .mk{font-family:'Manrope';font-weight:800;font-size:15.5px;letter-spacing:-.01em;color:var(--ink)}
+.brand-txt{flex:1;min-width:0}
+.brand-txt .mk{font-family:'Manrope';font-weight:800;font-size:15.5px;letter-spacing:-.01em;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brand-txt .loc{color:var(--muted);font-size:11px;font-weight:600;margin-top:1px}
 .brand-txt .sync-state{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);font-weight:600;margin-top:2px}
 .brand-txt .sync-state .dot{width:6px;height:6px;border-radius:50%;background:var(--verde);flex:none}
-.top-sync-btn{margin-left:auto;flex:none;width:38px;height:38px;border-radius:12px;background:var(--card2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--cielo-d);transition:transform .12s ease}
+/* Grupo de acciones a la derecha del header: indicador "En vivo" + íconos de
+   catálogo/sincronizar/avisos. Reemplaza el margin-left:auto que antes tenía
+   el botón de sync solo (ahora hay 3 botones + el indicador compartiendo el
+   mismo empuje hacia la derecha). */
+.top-actions{margin-left:auto;flex:none;display:flex;align-items:center;gap:6px}
+.top-live{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--verde);font-family:'JetBrains Mono',monospace;white-space:nowrap;flex:none}
+.top-live-dot{width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;animation:top-live-pulse 2s ease-in-out infinite}
+.top-live.stale{color:var(--rojo)}
+.top-live.stale .top-live-dot{animation:none}
+@keyframes top-live-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.top-sync-btn{flex:none;width:36px;height:36px;border-radius:12px;background:var(--card2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--cielo-d);transition:transform .12s ease;position:relative}
 .top-sync-btn:active{transform:scale(.9)}
-.top-sync-btn svg{width:18px;height:18px}
+.top-sync-btn svg{width:17px;height:17px}
 .top-sync-btn.spinning svg{animation:girar 1s linear infinite}
 @keyframes girar{to{transform:rotate(360deg)}}
+.top-notif-badge{position:absolute;top:-4px;right:-4px;background:var(--rojo);color:#fff;border-radius:9px;min-width:15px;height:15px;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 3px;font-family:'JetBrains Mono',monospace}
+@media (max-width:359px){.top-live span:last-child{display:none}}
 
 /* ===== Estado de carga del catálogo ===== */
 .load-banner{margin:14px 16px;padding:12px 14px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-card);display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted);box-shadow:var(--sh-card)}
@@ -93,6 +106,38 @@ button{font-family:inherit}
 .stat.c-ambar .stat-ico{background:var(--ambar-bg);color:var(--ambar)}
 .stat .n{font-family:'JetBrains Mono';font-weight:700;font-size:17px;color:var(--ink)}
 .stat .l{font-size:10px;color:var(--muted);font-weight:700;margin-top:1px}
+
+/* ===== "Requiere atención": alertas reales del catálogo (quiebres de stock,
+   vencimientos) — mismos datos que ya calculan Armar pedido y Vencimientos,
+   solo resumidos acá para verlos de un vistazo al abrir la app. ===== */
+.atencion-list{padding:0 16px;max-width:520px;margin:0 auto 16px;display:flex;flex-direction:column;gap:8px}
+.atencion-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--rojo);border-radius:14px;padding:11px 13px;cursor:pointer;box-shadow:var(--sh-card);transition:transform .12s ease}
+.atencion-row:active{transform:scale(.98)}
+.atencion-row .num{font-family:'JetBrains Mono';font-weight:800;font-size:18px;color:var(--rojo);min-width:28px;text-align:center;flex:none}
+.atencion-row .txt{flex:1;min-width:0}
+.atencion-row .txt .t{font-weight:700;font-size:13px;color:var(--ink)}
+.atencion-row .txt .s{font-size:11px;color:var(--muted);margin-top:1px}
+.atencion-row .chev{color:var(--muted);flex:none}
+.atencion-row.warn{border-left-color:var(--ambar)}
+.atencion-row.warn .num{color:var(--ambar)}
+
+/* ===== Acordeón "Proveedores": resumen de proveedores con productos
+   asignados (a partir de proveedores_conteo) — Argomedo455 no guarda un
+   calendario de pedido/entrega por día como Marín, así que en vez de
+   inventar ese dato se muestra un resumen real y se enlaza al módulo
+   completo de Proveedores para ver el detalle. ===== */
+.prov-acc-wrap{padding:0 16px;max-width:520px;margin:0 auto 16px}
+.prov-acc-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-family:'Manrope';font-weight:800;font-size:13px;color:var(--ink);cursor:pointer;box-shadow:var(--sh-card)}
+.prov-acc-toggle:active{background:var(--card2)}
+.prov-acc-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--ambar);color:#fff;font-size:10.5px;font-weight:800;font-family:'JetBrains Mono',monospace;margin-left:6px}
+.prov-acc-caret{transition:transform .2s ease;color:var(--muted);font-size:13px}
+.prov-acc-toggle[aria-expanded="true"] .prov-acc-caret{transform:rotate(180deg)}
+.prov-acc-body{margin-top:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;max-height:50vh;overflow-y:auto}
+.prov-acc-row{display:flex;align-items:center;gap:9px;background:var(--card2);border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:pointer}
+.prov-acc-row:last-child{margin-bottom:0}
+.prov-acc-row .nom{flex:1;min-width:0;font-size:12.5px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prov-acc-row .cant{font-size:11px;color:var(--muted);flex:none;font-family:'JetBrains Mono',monospace}
+.prov-acc-note{margin-top:8px;font-size:11px;color:var(--muted);border-top:1px dashed var(--line);padding-top:8px;line-height:1.5}
 
 /* ===== Acciones rápidas ===== */
 .quick-title{padding:2px 16px 8px;max-width:520px;margin:0 auto;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
@@ -364,9 +409,19 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <div class="loc">Mini Market</div>
     <div class="sync-state"><span class="dot" id="sync-dot"></span><span id="sync-last">Sin sincronizar aún</span></div>
   </div>
-  <button class="top-sync-btn" id="btn-sync-loyverse" type="button" aria-label="Sincronizar con Loyverse">
-    <svg id="sync-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-  </button>
+  <div class="top-actions">
+    <span class="top-live" id="top-live"><span class="top-live-dot"></span><span id="top-live-txt">En vivo</span></span>
+    <button class="top-sync-btn" id="btn-catalogo" type="button" aria-label="Actualizar catálogo" title="Recargar el catálogo guardado — respaldo manual, normalmente llega solo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.3"/><rect x="14" y="3" width="7" height="7" rx="1.3"/><rect x="3" y="14" width="7" height="7" rx="1.3"/><rect x="14" y="14" width="7" height="7" rx="1.3"/></svg>
+    </button>
+    <button class="top-sync-btn" id="btn-sync-loyverse" type="button" aria-label="Sincronizar con Loyverse" title="Sincronizar con Loyverse — respaldo manual, normalmente llega solo">
+      <svg id="sync-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+    </button>
+    <button class="top-sync-btn" id="btn-notif-header" type="button" aria-label="Avisos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      <span class="top-notif-badge hidden" id="top-notif-badge"></span>
+    </button>
+  </div>
 </div>
 
 <!-- Banner de estado: se muestra mientras carga el catálogo y si algo falla -->
@@ -391,6 +446,12 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   </div>
 </div>
 
+<!-- "Requiere atención": se rellena con renderAtencion() a partir de los mismos
+     cálculos que ya usan Armar pedido (quiebres) y Vencimientos (lotes urgentes/
+     vencidos) — queda oculta por completo si no hay nada que avisar. -->
+<div class="quick-title hidden" id="atencion-title">Requiere atención</div>
+<div class="atencion-list hidden" id="atencion-list"></div>
+
 <div class="quick-title">Acciones rápidas</div>
 <div class="quick-row">
   <button class="quick-btn" id="qa-escanear">
@@ -411,6 +472,17 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   </button>
 </div>
 
+<!-- Acordeón "Proveedores": resumen real desde proveedores_conteo (sin calendario
+     de días de pedido/entrega — ese dato no existe en Argomedo455). -->
+<div class="prov-acc-wrap">
+  <button type="button" class="prov-acc-toggle" id="prov-acc-toggle" aria-expanded="false">
+    <span>🏢 Proveedores<span class="prov-acc-badge hidden" id="prov-acc-badge"></span></span>
+    <span class="prov-acc-caret" id="prov-acc-caret">▾</span>
+  </button>
+  <div class="prov-acc-body hidden" id="prov-acc-body"></div>
+</div>
+
+<div class="quick-title">Accesos rápidos</div>
 <div class="menu">
   <button class="menu-card pedido" id="btn-armar-pedido">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
@@ -1347,18 +1419,133 @@ function actualizarStats(){
   document.getElementById('stats-row').classList.remove('hidden');
   actualizarUltimoSync();
   actualizarStatPorVencer();
+  renderAtencion();
+  renderProveedoresAcc();
+}
+
+// Cache corta (10s) de "?action=vencimientos" compartida entre la tarjeta
+// "Por vencer" y "Requiere atención" — ambas se disparan casi juntas desde
+// actualizarStats() y así no duplican la misma consulta a D1.
+let _vencResumenCache=null;
+async function obtenerVencimientosResumen(){
+  if(_vencResumenCache && (Date.now()-_vencResumenCache.ts)<10000) return _vencResumenCache;
+  try{
+    const res=await fetch(SYNC_URL+'?action=vencimientos');
+    const j=await res.json();
+    _vencResumenCache={ ts:Date.now(), ok:!!(j&&j.ok), lista:(j&&j.ok)?(j.lista||[]):[] };
+  }catch(e){
+    _vencResumenCache={ ts:Date.now(), ok:false, lista:(_vencResumenCache&&_vencResumenCache.lista)||[] };
+  }
+  return _vencResumenCache;
 }
 
 // "Por vencer" se trae aparte (vive en su propia tabla D1, no en el catálogo
 // compacto) — falla en silencio si no responde, no bloquea el resto del Inicio.
 async function actualizarStatPorVencer(){
   const el=document.getElementById('stat-porvencer');
-  try{
-    const res=await fetch(SYNC_URL+'?action=vencimientos');
-    const j=await res.json();
-    el.textContent=j.ok?j.lista.length:'—';
-  }catch(e){ el.textContent='—'; }
+  const r=await obtenerVencimientosResumen();
+  el.textContent=r.ok?String(r.lista.length):'—';
 }
+
+// ============================================================
+//  "REQUIERE ATENCIÓN" (pantalla Inicio) — mismos cálculos que ya usan
+//  Armar pedido (quiebre de stock vía apEstadoDe) y Vencimientos (lotes
+//  vencidos/urgentes vía ?action=vencimientos), solo resumidos acá arriba
+//  para verlos de un vistazo sin entrar a cada módulo. Sin datos inventados:
+//  si no hay nada que avisar, la sección entera queda oculta.
+// ============================================================
+async function renderAtencion(){
+  const titleEl=document.getElementById('atencion-title');
+  const listEl=document.getElementById('atencion-list');
+  if(!titleEl||!listEl) return;
+
+  let quiebres=0;
+  (DB.items||[]).forEach(it=>{ if(apEstadoDe(it).estado==='urgente') quiebres++; });
+
+  const r=await obtenerVencimientosResumen();
+  const lotes=r.lista||[];
+  const vencidos=lotes.filter(l=>l.urgencia==='vencido' && l.estado==='Pendiente').length;
+  const porVencer=lotes.filter(l=>(l.urgencia==='urgente'||l.urgencia==='proximo') && l.estado==='Pendiente').length;
+
+  const items=[];
+  if(quiebres>0) items.push({ n:quiebres, t:'Productos en quiebre', s:'Sin stock o menos de 3 días de cobertura', cls:'', go:()=>irASeccion('pedidos') });
+  if(vencidos>0) items.push({ n:vencidos, t:'Lotes vencidos', s:'Gestionar cambio, descuento o merma', cls:'', go:()=>irASeccion('vencimientos') });
+  if(porVencer>0) items.push({ n:porVencer, t:'Por vencer pronto', s:'Revisar en los próximos días', cls:'warn', go:()=>irASeccion('vencimientos') });
+
+  if(!items.length){
+    titleEl.classList.add('hidden');
+    listEl.classList.add('hidden');
+    listEl.innerHTML='';
+  }else{
+    titleEl.classList.remove('hidden');
+    listEl.classList.remove('hidden');
+    listEl.innerHTML=items.map((a,i)=>`<div class="atencion-row ${a.cls}" data-i="${i}"><span class="num">${a.n>99?'99+':a.n}</span><span class="txt"><span class="t">${a.t}</span><span class="s">${a.s}</span></span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></div>`).join('');
+    listEl.querySelectorAll('.atencion-row').forEach(el=>{ el.onclick=()=>items[+el.dataset.i].go(); });
+  }
+
+  // El mismo total alimenta el contador del botón de avisos del header — es un
+  // resumen de "cosas por revisar", no del estado de la suscripción push.
+  const badge=document.getElementById('top-notif-badge');
+  if(badge){
+    const total=quiebres+vencidos+porVencer;
+    if(total>0){ badge.textContent=total>99?'99+':String(total); badge.classList.remove('hidden'); }
+    else badge.classList.add('hidden');
+  }
+}
+// Vuelve a calcular cada minuto aunque no haya llegado ningún cambio de
+// catálogo por SSE/poll — un lote puede pasar de "próximo" a "vencido"
+// simplemente porque avanzó la fecha, sin que nada haya cambiado en D1.
+setInterval(()=>{ if((DB.items||[]).length) renderAtencion(); }, 60000);
+
+// ============================================================
+//  ACORDEÓN "PROVEEDORES" (pantalla Inicio) — resumen real desde
+//  proveedores_conteo (mismo endpoint que ya usa el módulo Proveedores).
+//  Argomedo455 no guarda un calendario de día de pedido/entrega por
+//  proveedor como Marín, así que en vez de inventar esa agenda se muestran
+//  los proveedores con más productos asignados y se enlaza al módulo
+//  completo para ver el detalle.
+// ============================================================
+async function renderProveedoresAcc(){
+  const badge=document.getElementById('prov-acc-badge');
+  const body=document.getElementById('prov-acc-body');
+  if(!badge||!body) return;
+  let lista=[];
+  try{
+    const res=await fetch(SYNC_URL+'?action=proveedores_conteo');
+    const j=await res.json();
+    if(j&&j.ok) lista=j.lista||[];
+  }catch(e){ /* silencioso: el acordeón queda vacío, no bloquea el resto del Inicio */ }
+
+  const conProductos=lista.filter(p=>p.proveedor!=='SIN PROVEEDOR' && p.total>0).sort((a,b)=>b.total-a.total);
+  if(conProductos.length){ badge.textContent=conProductos.length>99?'99+':String(conProductos.length); badge.classList.remove('hidden'); }
+  else badge.classList.add('hidden');
+
+  const top=conProductos.slice(0,6);
+  let html;
+  if(!top.length){
+    html='<div class="prov-acc-note">Todavía no hay proveedores con productos asignados.</div>';
+  }else{
+    html=top.map(p=>`<div class="prov-acc-row" data-prov="${(p.proveedor||'').replace(/"/g,'&quot;')}"><span class="nom">${p.proveedor}</span><span class="cant">${p.total} prod.</span></div>`).join('');
+    html+=`<div class="prov-acc-note">Toca un proveedor para ver o pedir sus productos · ${conProductos.length} proveedor${conProductos.length===1?'':'es'} en total.</div>`;
+  }
+  body.innerHTML=html;
+  body.querySelectorAll('[data-prov]').forEach(el=>{
+    el.onclick=()=>{
+      const nombre=el.dataset.prov;
+      irASeccion('proveedores');
+      // openProductosProveedor ya lo define el módulo Proveedores más abajo —
+      // se espera al próximo tick para que openProveedoresVisual (disparado
+      // por irASeccion) ya haya montado la lista antes de abrir el detalle.
+      setTimeout(()=>{ try{ if(typeof openProductosProveedor==='function') openProductosProveedor(nombre); }catch(e){} }, 100);
+    };
+  });
+}
+document.getElementById('prov-acc-toggle').onclick=()=>{
+  const t=document.getElementById('prov-acc-toggle'), body=document.getElementById('prov-acc-body');
+  const abrir=body.classList.contains('hidden');
+  body.classList.toggle('hidden', !abrir);
+  t.setAttribute('aria-expanded', abrir?'true':'false');
+};
 
 // ============================================================
 //  SINCRONIZAR CON LOYVERSE (manual, a demanda)
@@ -1407,6 +1594,25 @@ async function sincronizarConLoyverse(){
 document.getElementById('btn-sync-loyverse').onclick=sincronizarConLoyverse;
 document.getElementById('qa-sync').onclick=sincronizarConLoyverse;
 
+// Botón "Catálogo" del header — recarga lo que ya quedó guardado en D1 sin
+// disparar una sincronización completa con Loyverse (eso lo hace el botón de
+// sync). Mismo dato que ya trae solo cada 30s o por SSE, aquí al instante.
+document.getElementById('btn-catalogo').onclick=async()=>{
+  const btn=document.getElementById('btn-catalogo');
+  if(btn.classList.contains('spinning')) return;
+  btn.classList.add('spinning');
+  try{ await cargarCatalogo(true); }
+  finally{ btn.classList.remove('spinning'); }
+};
+
+// Botón de avisos del header — mismo interruptor de notificaciones push que
+// ya usa la tarjeta "Notificaciones" del menú principal (activarPush/
+// desactivarPush vía btn-notificaciones), solo que accesible desde arriba
+// con ícono + contador de "cosas por revisar" (ver renderAtencion).
+document.getElementById('btn-notif-header').onclick=()=>{
+  const card=document.getElementById('btn-notificaciones');
+  if(card) card.click();
+};
 
 async function cargarCatalogo(silencioso){
   const banner=document.getElementById('load-banner');
@@ -1432,6 +1638,7 @@ async function cargarCatalogo(silencioso){
     // TODA carga exitosa del catálogo (incluida la automática cada pocos segundos
     // que trae los cambios que llegaron por webhook desde Loyverse).
     localStorage.setItem('cumpas_last_sync', new Date().toISOString());
+    ultimoPollOk=Date.now();
     actualizarStats();
     banner.classList.add('hidden');
     if(silencioso) showToast('✓ Catálogo actualizado · '+DB.items.length+' productos');
@@ -1505,11 +1712,30 @@ function comboboxInit(inputId, resultsId, listaFn, crearAction, onElegir){
 //     todavía no desplegado) — así nunca se queda sin actualizar.
 // ============================================================
 let ultimaActualizacionConocida=null;
+
+// Indicador "En vivo" del header (pantalla Inicio) — no es un estado nuevo,
+// solo expone si el sondeo de 30s / SSE de abajo siguen respondiendo.
+// ultimoPollOk se actualiza en cada respuesta exitosa (haya o no cambios) de
+// revisarActualizacionCatalogo, cada mensaje SSE recibido, y cada carga de
+// catálogo (cargarCatalogo) — cualquiera de las tres confirma conectividad.
+let ultimoPollOk=Date.now();
+function actualizarIndicadorEnVivo(){
+  const el=document.getElementById('top-live');
+  const txt=document.getElementById('top-live-txt');
+  if(!el||!txt) return;
+  const segundos=Math.round((Date.now()-ultimoPollOk)/1000);
+  const desconectado=segundos>50;
+  el.classList.toggle('stale', desconectado);
+  txt.textContent=desconectado?'Sin conexión':'En vivo';
+}
+setInterval(actualizarIndicadorEnVivo, 5000);
+
 async function revisarActualizacionCatalogo(){
   try{
     const res=await fetch(SYNC_URL+'?action=ultima_actualizacion');
     const j=await res.json();
     if(!j||!j.ok||!j.actualizadoEn) return;
+    ultimoPollOk=Date.now();
     if(ultimaActualizacionConocida===null){
       ultimaActualizacionConocida=j.actualizadoEn; // primera vez: solo guarda la marca, no recarga
       return;
@@ -1528,6 +1754,7 @@ function conectarTiempoReal(){
   if(sseConexion) sseConexion.close();
   sseConexion=new EventSource(SYNC_URL+'?action=stream');
   sseConexion.onmessage=(e)=>{
+    ultimoPollOk=Date.now();
     try{
       const data=JSON.parse(e.data);
       if(data.actualizadoEn && data.actualizadoEn!==ultimaActualizacionConocida){
@@ -4540,6 +4767,7 @@ document.getElementById('btn-notificaciones').onclick=()=>{
   cargarProveedoresSectores();
   revisarActualizacionCatalogo();
   actualizarBotonPush();
+  actualizarIndicadorEnVivo();
 })();
 
 </script>
