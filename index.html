@@ -1143,6 +1143,12 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
         <input id="venc-search" placeholder="Buscar producto: nombre, código o SKU…" autocomplete="off">
         <button class="scan-btn" id="venc-scan" type="button" aria-label="Escanear código">📷</button>
       </div>
+      <div class="toggle-row" id="venc-dias-filtro" style="margin-top:8px">
+        <button type="button" class="toggle-btn" data-dias="7">7 días</button>
+        <button type="button" class="toggle-btn" data-dias="15">15 días</button>
+        <button type="button" class="toggle-btn" data-dias="30">1 mes</button>
+        <button type="button" class="toggle-btn active" data-dias="0">Todos</button>
+      </div>
       <select id="venc-prov-filtro" style="width:100%;height:44px;margin-top:8px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-size:13px">
         <option value="">🏢 Todos los proveedores</option>
       </select>
@@ -3637,13 +3643,18 @@ function apRenderLista(){
   box.innerHTML=items.map(it=>{
     const qty=CART[it.ref]||0;
     const stockTxt=it.stock==null?'sin control':(it.stock+(it.peso?' kg':' u'));
-    const badge=it._estado?`<span class="estado-badge ${it._estado}">${it._estado}</span>`:'';
+    const estadoTxt=it._estado==='pedir'?'a pedir':it._estado;
+    const badge=it._estado?`<span class="estado-badge ${it._estado}">${estadoTxt}</span>`:'';
     const empaque=it._fmt>1?(' · '+it._fmt+' u/'+(it._word||'pack')):'';
     const sugTxt=it._fmt>1?(it._sugerido+' u ('+Math.ceil(it._sugerido/it._fmt)+' '+(it._word||'pack')+(Math.ceil(it._sugerido/it._fmt)===1?'':'s')+')'):it._sugerido;
+    const margen=(it.precio>0&&it.coste>0)?Math.round((1-it.coste/it.precio)*100)+'%':null;
+    const abcBadge=it.abc?`<span style="background:var(--card2);border-radius:6px;padding:1px 6px;font-weight:800;font-size:10px;margin-left:5px">${it.abc.clase}</span>`:'';
+    const costoTxt=it.coste>0?(' · C '+fmtPeso(it.coste)):'';
+    const margenTxt=margen?(' · '+margen):'';
     return `<div class="ap-row ${it._estado}" data-ref="${it.ref}">
       <div class="info">
-        <div class="n">${it.nombre}${badge}</div>
-        <div class="s">${it.prov} · Stock: <b>${stockTxt}</b> · ${fmtPeso(it.precio)}${empaque}</div>
+        <div class="n">${it.nombre}${badge}${abcBadge}</div>
+        <div class="s">${it.prov} · Stock: <b>${stockTxt}</b> · ${fmtPeso(it.precio)}${costoTxt}${margenTxt}${empaque}</div>
         <div class="datos">
           <span>Vta ${apState.basis}d: <b>${it._venta}</b> <span class="trend-${it._trend.k}">${it._trend.t}</span></span>
           <span>Cob: <b>${it._cob===Infinity?'∞':Math.round(it._cob)+'d'}</b></span>
@@ -3877,9 +3888,14 @@ document.getElementById('btn-clear-cart').onclick=()=>{
   showToast('✕ Carrito vaciado');
 };
 
+// Copiar a WhatsApp cuenta como "confirmar" el pedido: al copiar con éxito se
+// vacía TODO el carrito (de todos los proveedores, no solo el que se está
+// viendo) — mismo criterio que Marín. Se pide confirmación antes porque es
+// una acción que no se puede deshacer.
 document.getElementById('btn-copy-wa').onclick=()=>{
   const lineas=cartLineas();
   if(!lineas.length){ showToast('No hay productos en el carrito'); return; }
+  if(!confirm('Se copiará el mensaje para WhatsApp y se vaciará todo el carrito (de todos los proveedores). ¿Confirmar pedido?')) return;
 
   // Agrupa por proveedor — cada proveedor va en su propio bloque, ya que cada uno
   // tiene su propio contacto de WhatsApp y no conviene mezclarlos en un solo mensaje.
@@ -3907,9 +3923,14 @@ document.getElementById('btn-copy-wa').onclick=()=>{
 
   const btn=document.getElementById('btn-copy-wa');
   const ok=()=>{
-    showToast('✓ Pedido copiado — pégalo en WhatsApp');
+    showToast('✓ Pedido copiado — pégalo en WhatsApp · carrito vaciado');
     btn.classList.add('copied');
     setTimeout(()=>btn.classList.remove('copied'),1400);
+    CART={};
+    persistCart();
+    renderCarrito();
+    apRenderLista();
+    apUpdateFab();
   };
   if(navigator.clipboard&&navigator.clipboard.writeText){
     navigator.clipboard.writeText(txt).then(ok,()=>{
@@ -3931,7 +3952,7 @@ document.getElementById('btn-recibir').onclick=()=>irASeccion('recepcion');
 // ============================================================
 //  VENCIMIENTOS (Módulo 5)
 // ============================================================
-const vencState = { estado: '', vista: 'revision', busqueda: '', proveedorFiltro: '', lista: [], listaFiltrada: [], loteActual: null };
+const vencState = { estado: '', vista: 'revision', busqueda: '', proveedorFiltro: '', diasFiltro: 0, lista: [], listaFiltrada: [], loteActual: null };
 
 const VENC_ESTADOS_CIERRE = ['Cambiado', 'Descuento recibido', 'Desechado'];
 const VENC_LABELS = {
@@ -3984,6 +4005,11 @@ function vencAplicarFiltros(){
     if(vencState.proveedorFiltro){
       const it = (DB.items || []).find(i => i.ref === l.sku);
       if(!it || it.prov !== vencState.proveedorFiltro) return false;
+    }
+    // Filtro rápido por días para vencer — los vencidos y sin fecha SIEMPRE se
+    // muestran (son lo más urgente, nunca deberían quedar ocultos por accidente).
+    if(vencState.diasFiltro>0){
+      if(!(l.diasRestantes==null || l.diasRestantes<0 || l.diasRestantes<=vencState.diasFiltro)) return false;
     }
     if(!palabras.length) return true;
     const texto = (l.producto + ' ' + l.sku).toLowerCase();
@@ -4155,6 +4181,14 @@ document.getElementById('venc-search').oninput = e => {
   vencState.busqueda = e.target.value;
   vencAplicarFiltros();
 };
+document.querySelectorAll('#venc-dias-filtro .toggle-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('#venc-dias-filtro .toggle-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    vencState.diasFiltro = Number(btn.dataset.dias) || 0;
+    vencAplicarFiltros();
+  };
+});
 document.getElementById('venc-prov-filtro').onchange = e => {
   vencState.proveedorFiltro = e.target.value;
   vencAplicarFiltros();
@@ -4201,9 +4235,10 @@ async function vencCargarPendientes(){
 }
 
 function openVencimientos(){
-  vencState.estado = ''; vencState.vista = 'revision'; vencState.busqueda = ''; vencState.proveedorFiltro = '';
+  vencState.estado = ''; vencState.vista = 'revision'; vencState.busqueda = ''; vencState.proveedorFiltro = ''; vencState.diasFiltro = 0;
   document.getElementById('venc-search').value = '';
   document.querySelectorAll('#venc-view-revision .venc-tab').forEach(t => t.classList.toggle('active', t.dataset.estado === ''));
+  document.querySelectorAll('#venc-dias-filtro .toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.dias === '0'));
   vencSetVista('revision');
   abrirModal('venc-ov');
   vencCargar();
