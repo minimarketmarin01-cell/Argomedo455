@@ -223,6 +223,14 @@ async function asegurarTablas(env) {
   // descuento/merma al vencer (ej. productos en consignación). Puramente
   // informativo por ahora — no cambia el cálculo de prioridad de Vencimientos,
   // que sigue siendo el mismo flujo manual ya en producción.
+  // Productos excluidos a mano del módulo "Riesgo de quiebre" (ej. producto de
+  // temporada que ya no se va a reponer) — persistido en D1 para que la
+  // exclusión sea la misma en todos los celulares, no solo en el que la marcó.
+  await run(env, `CREATE TABLE IF NOT EXISTS riesgo_excluidos (
+    sku TEXT PRIMARY KEY,
+    agregado_en TEXT
+  )`);
+
   await run(env, `CREATE TABLE IF NOT EXISTS config_categorias (
     categoria TEXT PRIMARY KEY,
     tipo TEXT
@@ -1108,6 +1116,67 @@ async function repConsumoCategoria(env, dias) {
   const arr = Object.keys(cats).map(c => ({ categoria: c, total: Math.round(cats[c]) })).sort((a, b) => b.total - a.total);
   const total = arr.reduce((s, x) => s + x.total, 0);
   return { total, dias: diasNum, categorias: arr };
+}
+
+// ============================================================
+//  RIESGO DE QUIEBRE — productos de alta rotación (clase ABC A o B, ver
+//  módulo Precio sugerido) con cobertura urgente o sin stock, excluyendo
+//  los marcados a mano. Mismo criterio que ya usa Armar pedido
+//  (apEstadoDe: stock<=0 o cobertura<3 días) — el frontend calcula esto
+//  directo desde DB.items sin llamar al backend; acá solo se recalcula
+//  para el aviso automático del cron (scheduled), que no tiene DB.items.
+// ============================================================
+async function repRiesgoExcluidos(env) {
+  const { results } = await env.DB.prepare("SELECT sku FROM riesgo_excluidos").all();
+  return results.map(r => r.sku);
+}
+
+async function accionRiesgoExcluir(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  if (payload.excluido) {
+    await run(env, "INSERT OR IGNORE INTO riesgo_excluidos (sku, agregado_en) VALUES (?, ?)", sku, fechaHoraDDMMAAAA());
+  } else {
+    await run(env, "DELETE FROM riesgo_excluidos WHERE sku = ?", sku);
+  }
+  return { sku, excluido: !!payload.excluido };
+}
+
+async function calcularRiesgoQuiebre(env) {
+  const { results: productos } = await env.DB.prepare(
+    "SELECT sku, nombre, stock FROM productos WHERE track_stock = 1"
+  ).all();
+  const { results: abcRows } = await env.DB.prepare("SELECT sku, clase FROM clasificacion_abc WHERE clase IN ('A','B')").all();
+  const claseBySku = {}; abcRows.forEach(r => { claseBySku[r.sku] = r.clase; });
+  const excluidos = new Set(await repRiesgoExcluidos(env));
+  const v30 = await ventasPorSku(env, 30);
+
+  const riesgo = [];
+  for (const p of productos) {
+    if (!claseBySku[p.sku] || excluidos.has(p.sku)) continue;
+    const rate = (v30[p.sku] || 0) / 30;
+    const stock = Number(p.stock) || 0;
+    const cobertura = rate > 0 ? stock / rate : (stock > 0 ? Infinity : 0);
+    const enRiesgo = stock <= 0 || (rate > 0 && cobertura < 3);
+    if (enRiesgo) riesgo.push({ sku: p.sku, nombre: p.nombre, clase: claseBySku[p.sku] });
+  }
+  return riesgo;
+}
+
+// Llamado desde scheduled() (mismo cron de las 8:00/15:00) — reutiliza el
+// espacio ya reservado para esto ("cuando exista la clasificación ABC").
+async function chequearYNotificarRiesgoQuiebre(env) {
+  const riesgo = await calcularRiesgoQuiebre(env);
+  if (!riesgo.length) { await logMsg(env, "✓ Riesgo de quiebre: nada urgente, no se envía notificación"); return; }
+
+  const titulo = "📉 " + riesgo.length + " producto" + (riesgo.length === 1 ? "" : "s") + " en riesgo de quiebre";
+  const primeros = riesgo.slice(0, 3).map(r => r.nombre).join(", ");
+  const cuerpo = primeros + (riesgo.length > 3 ? " y " + (riesgo.length - 3) + " más" : "") + " · alta rotación, sin stock o cobertura crítica";
+
+  const resultado = await webPushEnviarATodos(env, titulo, cuerpo, "./");
+  await logMsg(env, "🔔 Riesgo de quiebre: " + riesgo.length + " productos · push enviados a " +
+    resultado.enviados + "/" + resultado.total + " celulares" + (resultado.expiradas ? " (" + resultado.expiradas + " expiradas, eliminadas)" : ""));
 }
 
 // Aplica ventas recibidas por webhook (receipts.update): guarda una fila por
@@ -2643,6 +2712,21 @@ export default {
         return json({ ok: true, resumen });
       }
 
+      // GET /?action=riesgo_excluidos  →  SKUs excluidos a mano del módulo
+      // "Riesgo de quiebre" (el resto del cálculo lo hace el frontend con
+      // DB.items, igual que Armar pedido).
+      if (action === "riesgo_excluidos") {
+        const skus = await repRiesgoExcluidos(env);
+        return json({ ok: true, skus });
+      }
+
+      // POST { action:'riesgo_excluir', payload:{sku,excluido} } → marca/
+      // desmarca un producto como excluido de "Riesgo de quiebre".
+      if (action === "riesgo_excluir") {
+        const resultado = await accionRiesgoExcluir(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
       // GET /?action=descuentos_activos  →  lista de lotes con descuento aplicado
       // y todavía en gestión (sin cerrar).
       if (action === "descuentos_activos") {
@@ -2780,7 +2864,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
@@ -2800,8 +2884,7 @@ export default {
       await asegurarTablas(env);
       await chequearYNotificarVencimientos(env);
       await chequearYRevertirDescuentosVencidos(env);
-      // Espacio reservado para futuros chequeos automáticos (ej. riesgo de quiebre
-      // de stock, cuando exista la clasificación ABC) — se agregan acá mismo.
+      await chequearYNotificarRiesgoQuiebre(env);
     } catch (e) {
       await logMsg(env, "❌ Error en scheduled(): " + e.message);
     }
