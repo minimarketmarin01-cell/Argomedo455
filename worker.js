@@ -177,13 +177,198 @@ async function asegurarTablas(env) {
     PRIMARY KEY (receipt_id, sku)
   )`);
   await run(env, `CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas (fecha_venta)`);
+
+  // Suscripciones Web Push (una fila por celular/navegador que aceptó recibir
+  // notificaciones). Se guarda/actualiza desde el frontend justo después de que el
+  // usuario acepta el permiso de notificaciones.
+  await run(env, `CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    p256dh TEXT,
+    auth TEXT,
+    creado TEXT
+  )`);
+
+  // Log simple de eventos automáticos (avisos push enviados, chequeos programados) —
+  // útil para depurar sin acceso directo a los logs de Cloudflare.
+  await run(env, `CREATE TABLE IF NOT EXISTS logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT,
+    mensaje TEXT
+  )`);
 }
 
 // ============================================================
-//  FECHA/HORA — Cloudflare Workers corre en UTC; estas funciones
-//  traducen a la hora real de Santiago para que fechas de ingreso
-//  y auditoría coincidan con lo que el equipo ve en la tienda.
+//  WEB PUSH (notificaciones aunque la app esté cerrada)
 // ============================================================
+// Implementación con Web Crypto API nativa del Worker (crypto.subtle) — sin
+// librerías npm, porque los paquetes de "web-push" están pensados para Node.js y
+// no corren tal cual en el runtime de Cloudflare Workers. Sigue el estándar
+// RFC 8291 (cifrado del mensaje) + RFC 8292 (VAPID, para que el navegador sepa
+// que el push viene de nuestro servidor).
+//
+// Requiere 2 Secrets en Cloudflare: VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY (el par
+// se genera UNA vez y no debe cambiar, o las suscripciones existentes dejan de
+// funcionar y cada celular tendría que volver a aceptar notificaciones).
+
+function base64UrlToUint8Array(base64url) {
+  const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = base64.length % 4 === 0 ? "" : "=".repeat(4 - (base64.length % 4));
+  const raw = atob(base64 + pad);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+function uint8ArrayToBase64Url(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// Firma un JWT ES256 (VAPID) para autenticar el envío ante el servicio push del
+// navegador (FCM para Chrome/Android, etc.) — válido por un tiempo corto, se
+// genera fresco en cada envío.
+async function vapidGenerarJWT(env, audience) {
+  const header = { typ: "JWT", alg: "ES256" };
+  const payload = {
+    aud: audience, // origen del servicio push (ej. https://fcm.googleapis.com)
+    exp: Math.floor(Date.now() / 1000) + 12 * 3600,
+    sub: "mailto:soporte@loscumpas.cl"
+  };
+  const encHeader = uint8ArrayToBase64Url(new TextEncoder().encode(JSON.stringify(header)));
+  const encPayload = uint8ArrayToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
+  const unsigned = encHeader + "." + encPayload;
+
+  const privKeyRaw = base64UrlToUint8Array(env.VAPID_PRIVATE_KEY);
+  const jwk = {
+    kty: "EC", crv: "P-256", d: uint8ArrayToBase64Url(privKeyRaw),
+    x: env.VAPID_PUBLIC_KEY ? uint8ArrayToBase64Url(base64UrlToUint8Array(env.VAPID_PUBLIC_KEY).slice(1, 33)) : undefined,
+    y: env.VAPID_PUBLIC_KEY ? uint8ArrayToBase64Url(base64UrlToUint8Array(env.VAPID_PUBLIC_KEY).slice(33, 65)) : undefined,
+    ext: true
+  };
+  const cryptoKey = await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, cryptoKey, new TextEncoder().encode(unsigned));
+  return unsigned + "." + uint8ArrayToBase64Url(new Uint8Array(sig));
+}
+
+// Cifra el mensaje según RFC 8291 (aes128gcm) usando la clave pública y el "auth
+// secret" que el navegador entregó al suscribirse (guardados en push_subscriptions).
+async function webPushCifrarPayload(mensajeTexto, p256dh, authSecret) {
+  const enc = new TextEncoder();
+  const mensajeBytes = enc.encode(mensajeTexto);
+
+  const userPublicKeyBytes = base64UrlToUint8Array(p256dh);
+  const authSecretBytes = base64UrlToUint8Array(authSecret);
+
+  const serverKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const serverPublicKeyRaw = new Uint8Array(await crypto.subtle.exportKey("raw", serverKeyPair.publicKey));
+
+  const userPublicKey = await crypto.subtle.importKey("raw", userPublicKeyBytes, { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const sharedSecretBits = await crypto.subtle.deriveBits({ name: "ECDH", public: userPublicKey }, serverKeyPair.privateKey, 256);
+  const sharedSecret = new Uint8Array(sharedSecretBits);
+
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+
+  // HKDF de dos pasos según RFC 8291 — deriva el "pseudo random key" (PRK)
+  // combinado con el auth secret, luego los parámetros finales de cifrado.
+  async function hkdf(saltBytes, ikm, infoBytes, length) {
+    const key = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits(
+      { name: "HKDF", hash: "SHA-256", salt: saltBytes, info: infoBytes }, key, length * 8
+    );
+    return new Uint8Array(bits);
+  }
+  const authInfo = enc.encode("WebPush: info\0");
+  const authInfoFull = new Uint8Array([...authInfo, ...userPublicKeyBytes, ...serverPublicKeyRaw]);
+  const prk = await hkdf(authSecretBytes, sharedSecret, authInfoFull, 32);
+
+  const cekInfo = enc.encode("Content-Encoding: aes128gcm\0");
+  const cek = await hkdf(salt, prk, cekInfo, 16);
+  const nonceInfo = enc.encode("Content-Encoding: nonce\0");
+  const nonce = await hkdf(salt, prk, nonceInfo, 12);
+
+  // Registro (record) según aes128gcm: 2 bytes de padding delimiter al final del
+  // texto plano — suficiente para mensajes cortos como los nuestros.
+  const paddedPlaintext = new Uint8Array([...mensajeBytes, 0x02]);
+  const aesKey = await crypto.subtle.importKey("raw", cek, "AES-GCM", false, ["encrypt"]);
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, aesKey, paddedPlaintext));
+
+  // Header binario aes128gcm: salt(16) + record size(4, big-endian) + keyid length(1) + keyid
+  const recordSize = 4096;
+  const header = new Uint8Array(16 + 4 + 1 + serverPublicKeyRaw.length);
+  header.set(salt, 0);
+  new DataView(header.buffer).setUint32(16, recordSize, false);
+  header[20] = serverPublicKeyRaw.length;
+  header.set(serverPublicKeyRaw, 21);
+
+  return new Uint8Array([...header, ...ciphertext]);
+}
+
+// Envía una notificación a UNA suscripción guardada. Devuelve { ok, status,
+// expirada } — expirada=true significa que el navegador invalidó esa suscripción
+// (celular desinstaló la app, borró datos, etc.) y conviene eliminarla.
+async function webPushEnviar(env, sub, titulo, cuerpo, urlDestino) {
+  try {
+    const mensaje = JSON.stringify({ title: titulo, body: cuerpo, url: urlDestino || "./" });
+    const payloadCifrado = await webPushCifrarPayload(mensaje, sub.p256dh, sub.auth);
+
+    const endpointUrl = new URL(sub.endpoint);
+    const audience = endpointUrl.protocol + "//" + endpointUrl.host;
+    const jwt = await vapidGenerarJWT(env, audience);
+
+    const res = await fetch(sub.endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": "vapid t=" + jwt + ", k=" + env.VAPID_PUBLIC_KEY,
+        "Content-Encoding": "aes128gcm",
+        "Content-Type": "application/octet-stream",
+        "TTL": "86400" // el servicio push puede guardar el mensaje hasta 24h si el celular está apagado/sin señal
+      },
+      body: payloadCifrado
+    });
+    if (res.status === 404 || res.status === 410) return { ok: false, status: res.status, expirada: true };
+    return { ok: res.ok, status: res.status, expirada: false };
+  } catch (e) {
+    return { ok: false, status: 0, expirada: false, error: e.message };
+  }
+}
+
+// Guarda o actualiza la suscripción push de este celular/navegador.
+async function accionGuardarSuscripcionPush(env, payload) {
+  const sub = payload && payload.subscription;
+  if (!sub || !sub.endpoint || !sub.keys) throw new Error("Suscripción inválida");
+  await run(env,
+    `INSERT INTO push_subscriptions (endpoint, p256dh, auth, creado)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth`,
+    sub.endpoint, sub.keys.p256dh, sub.keys.auth, fechaDDMMAAAA()
+  );
+  return { ok: true };
+}
+async function accionQuitarSuscripcionPush(env, payload) {
+  const endpoint = payload && payload.endpoint;
+  if (!endpoint) throw new Error("Falta el endpoint de la suscripción");
+  await run(env, "DELETE FROM push_subscriptions WHERE endpoint = ?", endpoint);
+  return { ok: true };
+}
+
+// Manda la misma notificación a TODOS los celulares suscritos — si alguna
+// suscripción resulta expirada, se borra de la tabla en el mismo paso.
+async function webPushEnviarATodos(env, titulo, cuerpo, urlDestino) {
+  const { results: subs } = await env.DB.prepare("SELECT * FROM push_subscriptions").all();
+  let enviados = 0, expiradas = 0;
+  for (const sub of subs) {
+    const r = await webPushEnviar(env, sub, titulo, cuerpo, urlDestino);
+    if (r.ok) enviados++;
+    if (r.expirada) { expiradas++; try { await run(env, "DELETE FROM push_subscriptions WHERE endpoint = ?", sub.endpoint); } catch (_) {} }
+  }
+  return { enviados, expiradas, total: subs.length };
+}
+
+async function logMsg(env, mensaje) {
+  try { await run(env, "INSERT INTO logs (fecha, mensaje) VALUES (?, ?)", fechaHoraDDMMAAAA(), mensaje); } catch (_) {}
+}
+
+
 function chileNowParts() {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "America/Santiago", day: "2-digit", month: "2-digit", year: "numeric",
@@ -300,7 +485,12 @@ async function sumarStockLoyverse(env, productoRow, cantidad) {
   const stockActual = await stockFrescoDeVariante(env, storeId, productoRow.variant_id);
   if (stockActual == null) return { ok: false, motivo: "Loyverse no devolvió inventario para este producto" };
 
-  const nuevoStock = Math.round((stockActual + cantidad) * 1000) / 1000;
+  // Si el stock de partida ya estaba negativo (por algún ajuste/error anterior), se
+  // trata como 0 antes de sumar/restar — igual criterio que la referencia (Marín).
+  // El RESULTADO de una resta grande sí puede seguir dando negativo (ej. stock=0 y
+  // se resta 5 → queda en -5); esto no se recorta, solo se corrige el punto de partida.
+  const base = Math.max(0, stockActual);
+  const nuevoStock = Math.round((base + cantidad) * 1000) / 1000;
   await loyversePost(env, "/inventory", {
     inventory_levels: [{ variant_id: productoRow.variant_id, store_id: storeId, stock_after: nuevoStock }]
   });
@@ -848,9 +1038,6 @@ async function accionAjustarStock(env, payload) {
   const sku = String(payload.sku || "").trim();
   if (!sku) throw new Error("Falta el SKU del producto");
 
-  const cantidad = Number(payload.cantidad);
-  if (!cantidad) throw new Error("Indica una cantidad de ajuste distinta de 0 (positiva para sumar, negativa para restar)");
-
   const motivo = String(payload.motivo || "").trim();
   if (!motivo) throw new Error("Indica el motivo del ajuste");
 
@@ -860,18 +1047,46 @@ async function accionAjustarStock(env, payload) {
   const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
   if (!it) throw new Error("Producto no encontrado en el catálogo local: " + sku);
 
-  const res = await sumarStockLoyverse(env, it, cantidad);
-  if (!res.ok) throw new Error("No se pudo ajustar el stock en Loyverse (" + res.motivo + ")");
+  let res, cantidadAjustada;
+  if (payload.modo === "exacto") {
+    // Conteo físico: el usuario escribe la cantidad REAL que contó (no un +/-). Se
+    // lee el stock fresco de Loyverse y se calcula el delta necesario para llegar
+    // exactamente a ese número — sin importar si el stock previo era negativo.
+    const cantidadExacta = Number(payload.cantidadExacta);
+    if (cantidadExacta == null || isNaN(cantidadExacta) || cantidadExacta < 0) {
+      throw new Error("Indica la cantidad exacta contada (0 o mayor)");
+    }
+    if (!it.track_stock) throw new Error("Este producto no tiene seguimiento de inventario activado");
+    if (!it.variant_id) throw new Error("Falta variant_id (vuelve a sincronizar el catálogo)");
+    const { storeId } = await obtenerStoreId(env);
+    const stockActual = await stockFrescoDeVariante(env, storeId, it.variant_id);
+    if (stockActual == null) throw new Error("Loyverse no devolvió inventario para este producto");
+    const delta = Math.round((cantidadExacta - stockActual) * 1000) / 1000;
+    if (delta === 0) {
+      res = { ok: true, antes: stockActual, despues: stockActual };
+    } else {
+      res = await sumarStockLoyverse(env, it, delta);
+      if (!res.ok) throw new Error("No se pudo ajustar el stock en Loyverse (" + res.motivo + ")");
+    }
+    cantidadAjustada = delta;
+  } else {
+    const cantidad = Number(payload.cantidad);
+    if (!cantidad) throw new Error("Indica una cantidad de ajuste distinta de 0 (positiva para sumar, negativa para restar)");
+    res = await sumarStockLoyverse(env, it, cantidad);
+    if (!res.ok) throw new Error("No se pudo ajustar el stock en Loyverse (" + res.motivo + ")");
+    cantidadAjustada = cantidad;
+  }
 
   const fecha = fechaHoraDDMMAAAA();
+  const detalleModo = payload.modo === "exacto" ? "Conteo físico: " + payload.cantidadExacta + " · " : "";
   await run(env,
     `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
      VALUES (?,?,?,?,?,?,?,?,?)`,
     fecha, "ajuste_stock", sku, it.nombre, it.categoria, it.id_loyverse, res.despues,
-    motivo + " · Stock anterior: " + res.antes + " · Ajuste: " + (cantidad > 0 ? "+" : "") + cantidad + " · Stock final: " + res.despues,
+    detalleModo + motivo + " · Stock anterior: " + res.antes + " · Ajuste: " + (cantidadAjustada > 0 ? "+" : "") + cantidadAjustada + " · Stock final: " + res.despues,
     responsable);
 
-  return { sku, nombre: it.nombre, fecha, stockAnterior: res.antes, cantidadAjustada: cantidad, stockFinal: res.despues, motivo, responsable };
+  return { sku, nombre: it.nombre, fecha, stockAnterior: res.antes, cantidadAjustada, stockFinal: res.despues, motivo, responsable };
 }
 
 // ============================================================
@@ -932,6 +1147,27 @@ async function listaVencimientos(env, { estado, sku } = {}) {
     return rank(a) - rank(b);
   });
 }
+
+// Arma y manda la notificación push con el resumen de productos por vencer — se
+// llama desde scheduled() a las 8:00 y 15:00 hora Chile. Si no hay nada urgente
+// (vencido o vence en 3 días o menos), no manda notificación — silencio significa
+// que todo está bien, evita interrumpir sin motivo.
+async function chequearYNotificarVencimientos(env) {
+  const lista = await listaVencimientos(env, {});
+  const urgentes = lista.filter(l => l.urgencia === "vencido" || l.urgencia === "urgente");
+  if (!urgentes.length) { await logMsg(env, "✓ Vencimientos: nada urgente, no se envía notificación"); return; }
+
+  const vencidos = urgentes.filter(l => l.urgencia === "vencido").length;
+  const titulo = "⏰ " + urgentes.length + " producto" + (urgentes.length === 1 ? "" : "s") + " por vencer";
+  const primeros = urgentes.slice(0, 3).map(l => l.producto).join(", ");
+  const cuerpo = primeros + (urgentes.length > 3 ? " y " + (urgentes.length - 3) + " más" : "") +
+    (vencidos ? " · " + vencidos + " ya vencido" + (vencidos === 1 ? "" : "s") : "");
+
+  const resultado = await webPushEnviarATodos(env, titulo, cuerpo, "./");
+  await logMsg(env, "🔔 Vencimientos: " + urgentes.length + " productos · push enviados a " +
+    resultado.enviados + "/" + resultado.total + " celulares" + (resultado.expiradas ? " (" + resultado.expiradas + " expiradas, eliminadas)" : ""));
+}
+
 
 // POST { action:'vencimiento_estado', payload:{ id, estado, responsable,
 //        retirarStock (bool), cantidadRetiro } }

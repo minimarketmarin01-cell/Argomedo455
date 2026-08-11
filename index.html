@@ -305,6 +305,45 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .btn-wa{width:100%;height:50px;border-radius:14px;background:#25D366;border:none;color:#fff;font-weight:800;font-size:15px;cursor:pointer;box-shadow:var(--sh-card);display:flex;align-items:center;justify-content:center;gap:8px}
 .btn-wa:active{transform:scale(.98)}
 .btn-wa.copied{background:var(--verde)}
+
+/* ===== PcWidget: calculadora de precio reutilizable (Costo/IVA/Margen/Redondeo/
+   Precio de venta) — se monta igual en Recepción, Crear producto y Buscar producto,
+   en vez de tener el mismo bloque de HTML duplicado en los 3 módulos. ===== */
+.pc-calc-box{background:var(--cielo-tint);border:1.5px solid var(--cielo);border-radius:14px;padding:14px}
+.pc-calc-box .mm-field label{color:var(--cielo-d);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;display:block;margin-bottom:5px}
+.pc-titlebar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-weight:800;font-size:13px;color:var(--cielo-d)}
+.pc-titlebar-note{font-weight:400;font-size:10.5px;color:var(--muted);text-transform:none}
+.pc-input{width:100%;padding:11px 14px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;font-family:'JetBrains Mono';box-sizing:border-box;background:#fff;color:var(--text)}
+.pc-input-lg{font-size:17px;font-weight:800}
+.pc-modo-btn{flex:1;padding:8px;border-radius:9px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12px;cursor:pointer}
+.pc-modo-btn.active{border-color:var(--cielo-d);background:#fff;color:var(--cielo-d)}
+.pc-iva-btn{flex:1;padding:9px 4px;border-radius:9px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12px;cursor:pointer}
+.pc-iva-btn.active{border-color:var(--verde);background:var(--verde-bg);color:var(--verde)}
+.pc-hint{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.4}
+.pc-calculado{margin-top:10px;padding:9px 12px;border:1px dashed var(--cielo-d);border-radius:10px;background:rgba(255,255,255,.5)}
+.pc-calculado-lbl{font-size:10.5px;font-weight:700;color:var(--cielo-d);text-transform:uppercase;letter-spacing:.02em}
+.pc-calculado-lbl span{font-weight:400;text-transform:none;color:var(--muted)}
+.pc-calculado-val{font-family:'JetBrains Mono';font-weight:800;font-size:19px;color:var(--ink);margin-top:2px}
+.pc-row2{display:flex;gap:8px}
+.pc-round-row{display:flex;gap:6px;flex-wrap:wrap}
+.pc-round-chip{padding:8px 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--ink);font-weight:700;font-size:12.5px;font-family:'JetBrains Mono';cursor:pointer;white-space:nowrap}
+.pc-round-chip.active{border-color:var(--verde);background:var(--verde-bg);color:var(--verde)}
+.pc-round-chip-sin{font-family:'Inter';font-weight:600;font-size:11.5px;color:var(--muted)}
+.pc-venta-box{background:var(--verde-bg);border:1.5px solid var(--verde);border-radius:12px;padding:11px 13px}
+.pc-venta-top{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.pc-venta-lbl{font-size:10.5px;font-weight:700;color:var(--verde);text-transform:uppercase;letter-spacing:.02em}
+.pc-venta-lbl span{font-weight:400;text-transform:none}
+.pc-venta-input{width:100%;min-width:110px;border:none;background:transparent;padding:0;font-size:23px;font-weight:800;font-family:'JetBrains Mono';color:var(--ink)}
+.pc-aplicar-btn{flex:none;background:var(--verde);border:none;color:#fff;font-weight:700;font-size:12.5px;padding:11px 16px;border-radius:10px;cursor:pointer;white-space:nowrap}
+.pc-aplicar-btn:active{opacity:.85}
+.pc-resumen-mini{display:flex;gap:16px;margin-top:10px;font-size:11.5px;color:var(--muted);flex-wrap:wrap}
+.pc-resumen-mini b{color:var(--ink);font-family:'JetBrains Mono'}
+
+/* ===== Recepción: vista en 2 etapas (solo buscador → detalle al elegir) ===== */
+.mm-picked{display:none;padding:12px;background:var(--cielo-tint);border:1.5px solid var(--cielo);border-radius:12px;margin-top:8px}
+.mm-picked.on{display:block}
+.mm-picked .nom{font-weight:800;font-size:14.5px;color:var(--ink)}
+.mm-picked .cat{color:var(--muted);font-size:12px;margin-top:2px}
 </style>
 </head>
 <body>
@@ -494,13 +533,33 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     </div>
 
     <div class="field" id="rc-ajuste-field" style="display:none">
-      <label>Ajuste de stock <span style="text-transform:none;font-weight:400">(+ para sumar, − para restar)</span></label>
-      <div class="qty-row">
-        <button class="qty-btn" id="rc-ajuste-menos" type="button">−</button>
-        <input id="rc-ajuste-cantidad" inputmode="decimal" placeholder="0">
-        <span id="rc-ajuste-unidad-lbl" style="min-width:34px;text-align:center;color:var(--muted);font-weight:700;font-size:12px">u</span>
-        <button class="qty-btn" id="rc-ajuste-mas" type="button">+</button>
+      <label>¿Cómo quieres ajustar?</label>
+      <div class="toggle-row">
+        <button type="button" class="toggle-btn active" id="rc-ajuste-modo-delta" data-modo="delta">+ / − Sumar o restar</button>
+        <button type="button" class="toggle-btn" id="rc-ajuste-modo-exacto" data-modo="exacto">🔢 Cantidad exacta (conteo)</button>
       </div>
+
+      <div id="rc-ajuste-delta-campos">
+        <label style="margin-top:10px">Ajuste de stock <span style="text-transform:none;font-weight:400">(+ para sumar, − para restar)</span></label>
+        <div class="qty-row">
+          <button class="qty-btn" id="rc-ajuste-menos" type="button">−</button>
+          <input id="rc-ajuste-cantidad" inputmode="decimal" placeholder="0">
+          <span id="rc-ajuste-unidad-lbl" style="min-width:34px;text-align:center;color:var(--muted);font-weight:700;font-size:12px">u</span>
+          <button class="qty-btn" id="rc-ajuste-mas" type="button">+</button>
+        </div>
+      </div>
+
+      <div id="rc-ajuste-exacto-campos" class="hidden">
+        <label style="margin-top:10px">Cantidad real contada <span style="text-transform:none;font-weight:400">(el número final, no un +/-)</span></label>
+        <div class="qty-row">
+          <button class="qty-btn" id="rc-ajuste-exacto-menos" type="button">−</button>
+          <input id="rc-ajuste-exacto-cantidad" inputmode="decimal" placeholder="0">
+          <span id="rc-ajuste-exacto-unidad-lbl" style="min-width:34px;text-align:center;color:var(--muted);font-weight:700;font-size:12px">u</span>
+          <button class="qty-btn" id="rc-ajuste-exacto-mas" type="button">+</button>
+        </div>
+        <div id="rc-ajuste-exacto-hint" style="margin-top:6px;font-size:11.5px;color:var(--muted)"></div>
+      </div>
+
       <label style="margin-top:10px">Motivo del ajuste</label>
       <select id="rc-ajuste-motivo" style="height:44px;border:1.5px solid var(--line);border-radius:10px;padding:0 10px;width:100%;background:#fff;color:var(--text)">
         <option value="">Elige un motivo…</option>
@@ -535,34 +594,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     </div>
 
     <div class="field" id="rc-costo-field" style="display:none">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <label style="margin:0">Costo y precio <span style="text-transform:none;font-weight:400">(opcional)</span></label>
-        <div class="iva-toggle" role="group" aria-label="¿El costo incluye IVA?">
-          <button type="button" class="iva-btn active" id="rc-iva-con" data-iva="con">Con IVA</button>
-          <button type="button" class="iva-btn" id="rc-iva-sin" data-iva="sin">Sin IVA</button>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px">
-        <div style="flex:1">
-          <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px" id="rc-costo-label">COSTO</div>
-          <input id="rc-costo" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
-        </div>
-        <div style="flex:1">
-          <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">MARGEN % OBJETIVO</div>
-          <input id="rc-margen-obj" inputmode="numeric" placeholder="Ej: 30" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
-        </div>
-      </div>
-      <div class="iva-info" id="rc-costo-explica"></div>
-
-      <div class="precio-box">
-        <label>Precio de venta</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="rc-precio" inputmode="numeric" placeholder="$" style="flex:1">
-          <button type="button" class="toggle-btn" id="rc-redondear" style="flex:none;width:auto;padding:0 14px;height:40px;color:var(--verde);border-color:var(--verde);background:#fff">Redondear</button>
-        </div>
-      </div>
-
-      <div class="resumen-box" id="rc-resumen"></div>
+      <div id="rc-pc-mount"></div>
     </div>
 
     <div class="field" id="rc-fecha-field" style="display:none">
@@ -1017,15 +1049,19 @@ function guardarSnapshot(){
     try{
       const snap={ seccion:seccionActual, ts:Date.now() };
       if(seccionActual==='recepcion'){
+        const elCosto=document.getElementById('rc-costo');
         snap.rc={
           sku:rcState.item?rcState.item.ref:null,
           accion:rcState.accion, modo:rcState.modo, ivaModo:rcState.ivaModo,
           search:document.getElementById('rc-search').value,
           cantidad:document.getElementById('rc-cantidad').value,
           unidadesCaja:document.getElementById('rc-unidades-caja').value,
-          costo:document.getElementById('rc-costo').value,
-          precio:document.getElementById('rc-precio').value,
-          margenObj:document.getElementById('rc-margen-obj').value,
+          // rc-costo/rc-precio/rc-margen-obj los genera el widget PcWidget solo
+          // cuando ya hay un producto elegido — si todavía no está montado, se
+          // guardan vacíos en vez de fallar.
+          costo:elCosto?elCosto.value:'',
+          precio:document.getElementById('rc-precio')?document.getElementById('rc-precio').value:'',
+          margenObj:document.getElementById('rc-margen-obj')?document.getElementById('rc-margen-obj').value:'',
           fechaDd:document.getElementById('rc-fecha-dd').value,
           fechaMm:document.getElementById('rc-fecha-mm').value,
           fechaAaaa:document.getElementById('rc-fecha-aaaa').value,
@@ -1089,21 +1125,26 @@ function restaurarSnapshot(){
     const r=snap.rc;
     if(r.search) document.getElementById('rc-search').value=r.search;
     if(r.sku){
-      rcPick(r.sku);
+      rcPick(r.sku); // ya monta el widget con costo/precio guardados del producto
       if(r.accion==='ajustar') rcSetAccion('ajustar');
       if(r.modo==='caja') rcSetModo('caja');
-      if(r.ivaModo==='sin') rcSetIva('sin');
       document.getElementById('rc-cantidad').value=r.cantidad||'';
       document.getElementById('rc-unidades-caja').value=r.unidadesCaja||'';
-      document.getElementById('rc-costo').value=r.costo||'';
-      document.getElementById('rc-margen-obj').value=r.margenObj||'30';
-      if(r.precio){ document.getElementById('rc-precio').value=r.precio; rcState.precioTocado=true; }
+      // Los campos rc-costo/rc-margen-obj/rc-precio/rc-iva-* ahora los genera el
+      // widget (mismo prefijo "rc-") — se sobreescriben con lo guardado en el
+      // snapshot y se dispara 'input' para que el widget recalcule con esos valores.
+      if(rcPcApi){
+        if(r.ivaModo==='sin') rcPcApi.setIva('sin');
+        if(r.costo){ const el=document.getElementById('rc-costo'); el.value=r.costo; el.dispatchEvent(new Event('input',{bubbles:true})); }
+        if(r.margenObj){ const el=document.getElementById('rc-margen-obj'); el.value=r.margenObj; el.dispatchEvent(new Event('input',{bubbles:true})); }
+        if(r.precio){ const el=document.getElementById('rc-precio'); el.value=r.precio; el.dispatchEvent(new Event('input',{bubbles:true})); rcState.precioTocado=true; }
+      }
       document.getElementById('rc-fecha-dd').value=r.fechaDd||'';
       document.getElementById('rc-fecha-mm').value=r.fechaMm||'';
       document.getElementById('rc-fecha-aaaa').value=r.fechaAaaa||'';
       if(document.getElementById('rc-proveedor')&&r.proveedor) document.getElementById('rc-proveedor').value=r.proveedor;
       if(document.getElementById('rc-sector')&&r.sector) document.getElementById('rc-sector').value=r.sector;
-      rcValidar(); rcRenderResumen();
+      rcValidar(); rcRenderStockHint();
     }
   }else if(snap.seccion==='crear' && snap.cp){
     const c=snap.cp;
@@ -1464,11 +1505,247 @@ document.querySelectorAll('#bottom-nav .nav-item').forEach(btn=>{
 
 
 // ============================================================
-//  MÓDULO: RECIBIR MERCADERÍA (campos idénticos a Marín:
-//  Con IVA/Sin IVA, margen % objetivo, cálculo automático de
-//  precio, resumen explicativo, por unidad/por caja).
+//  PriceCalc — utilidades puras de cálculo de costo/precio/margen,
+//  compartidas por todo el widget PcWidget de abajo.
 // ============================================================
-const rcState={ item:null, modo:'unidad', ivaModo:'con', precioTocado:false, margenTocado:false, accion:'recibir', provNuevo:null, sectorNuevo:null, codigoEscaneado:null };
+const PriceCalc=(function(){
+  // Costo por unidad real a partir de lo que el usuario escribió: si compró "por
+  // caja", el costo ingresado es el de la caja completa y hay que dividirlo por
+  // las unidades que trae.
+  function costoUnitario(costoIngresado,modo,unidadesCaja){
+    costoIngresado=Number(costoIngresado)||0;
+    if(modo!=='caja')return costoIngresado;
+    const uCaja=Number(unidadesCaja)||0;
+    return uCaja>0?(costoIngresado/uCaja):0;
+  }
+  // Costo BRUTO (con IVA) — es el único valor que después se usa tanto para
+  // calcular el precio de venta como para lo que efectivamente se guarda en Loyverse.
+  //   ivaModo 'con' -> lo escrito YA es el bruto, se usa tal cual.
+  //   ivaModo 'sin' -> lo escrito es el neto, se le suma 19% para obtener el bruto.
+  function costoBruto(costoIngresado,modo,unidadesCaja,ivaModo){
+    const unit=costoUnitario(costoIngresado,modo,unidadesCaja);
+    return ivaModo==='sin'?(unit*(1+IVA)):unit;
+  }
+  // Precio de venta a partir del costo bruto y el margen objetivo (margen SOBRE
+  // VENTA, no sobre costo): Precio = Costo / (1 - Margen).
+  function precioDesdeMargen(costoBrutoVal,margenPct){
+    costoBrutoVal=Number(costoBrutoVal)||0;
+    margenPct=Number(margenPct);
+    if(!costoBrutoVal||!margenPct||margenPct<=0||margenPct>=100)return null;
+    return Math.round(costoBrutoVal/(1-margenPct/100));
+  }
+  // Margen real ya alcanzado por un precio dado (para mostrar "margen real: X%"
+  // incluso cuando el precio fue editado a mano y ya no coincide con el objetivo).
+  function margenDesdePrecio(precio,costoBrutoVal){
+    precio=Number(precio)||0;
+    if(!precio)return null;
+    return ((precio-(Number(costoBrutoVal)||0))/precio)*100;
+  }
+  return {costoUnitario,costoBruto,precioDesdeMargen,margenDesdePrecio};
+})();
+
+// Sugerencias de redondeo psicológico: 2-3 chips (.50, .90, .00 de la centena más
+// cercana) para tocar directo, en vez de un solo botón que va ciclando.
+function pcSugerirRedondeos(precio){
+  precio=Number(precio)||0;
+  if(!precio)return [];
+  const terms=[50,90,0]; // 0 = terminación en 00 (centena exacta)
+  const vistos=new Set();
+  const out=[];
+  terms.forEach(term=>{
+    const base=Math.floor(precio/100)*100;
+    let candidato=base+term;
+    if(candidato<precio-50)candidato+=100; // el candidato de abajo quedó muy lejos — usa el de arriba
+    if(vistos.has(candidato))return;
+    vistos.add(candidato);
+    out.push(candidato);
+  });
+  return out.sort((a,b)=>a-b);
+}
+
+// ============================================================
+//  PcWidget — componente reutilizable de Costo/IVA/Margen/Redondeo/
+//  Precio de venta. Se monta con PcWidget.render(cfg) (devuelve el
+//  HTML) + PcWidget.wire(cfg) (cablea la interacción), igual en
+//  Recepción, Crear producto y Buscar producto — sin duplicar el
+//  bloque de HTML/JS en cada módulo.
+//  cfg = {
+//    prefix: 'rc'|'cp'|'fp-pr' — prefijo de ids para esta instancia,
+//    costo, margen, precio: valores iniciales (pueden venir null),
+//    ivaModo: 'con'|'sin' inicial,
+//    mostrarUnidadCaja: bool,
+//    costoLabel: texto del label de costo,
+//    mostrarBotonAplicar: bool,
+//    onCambio(): callback tras cualquier recálculo,
+//    onAplicar(precioFinal): solo si mostrarBotonAplicar,
+//    autocompletar: bool — si true, el precio se autocompleta solo
+//      mientras el usuario no lo haya editado a mano (Crear producto);
+//      si false, el usuario elige un chip o toca "Aplicar" (Recepción).
+//  }
+// ============================================================
+const PcWidget=(function(){
+  function render(cfg){
+    const pfx=cfg.prefix;
+    const costoLabel=cfg.costoLabel||'Costo';
+    return ''+
+    '<div class="pc-calc-box">'+
+      '<div class="pc-titlebar"><span>🧮 Costo y precio</span><span class="pc-titlebar-note">Se actualiza automáticamente</span></div>'+
+      (cfg.mostrarUnidadCaja?(
+        '<div class="mm-field" style="margin-bottom:8px">'+
+          '<div style="display:flex;gap:6px">'+
+            '<button type="button" class="pc-modo-btn active" id="'+pfx+'-modo-unidad" data-modo="unidad">Por unidad</button>'+
+            '<button type="button" class="pc-modo-btn" id="'+pfx+'-modo-caja" data-modo="caja">Por caja</button>'+
+          '</div>'+
+        '</div>'+
+        '<div class="mm-field hidden" id="'+pfx+'-caja-campo" style="margin-bottom:8px">'+
+          '<label>Unidades por caja</label>'+
+          '<input id="'+pfx+'-unidades-caja" type="number" inputmode="numeric" placeholder="Ej: 24" class="pc-input">'+
+        '</div>'
+      ):'')+
+      '<div class="pc-row2">'+
+        '<div class="mm-field" style="margin-bottom:0">'+
+          '<label id="'+pfx+'-costo-lbl">'+costoLabel+'</label>'+
+          '<input id="'+pfx+'-costo" type="number" inputmode="decimal" value="'+(cfg.costo!=null?cfg.costo:'')+'" placeholder="$" class="pc-input pc-input-lg">'+
+          '<div id="'+pfx+'-costo-explica" class="pc-hint"></div>'+
+        '</div>'+
+        '<div class="mm-field" style="margin-bottom:0">'+
+          '<label>IVA</label>'+
+          '<div style="display:flex;gap:6px">'+
+            '<button type="button" class="pc-iva-btn active" id="'+pfx+'-iva-con" data-iva="con">Con IVA</button>'+
+            '<button type="button" class="pc-iva-btn" id="'+pfx+'-iva-sin" data-iva="sin">Sin IVA</button>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="mm-field" style="margin:8px 0 0"><label>Margen objetivo (%)</label>'+
+        '<input id="'+pfx+'-margen-obj" type="number" inputmode="decimal" value="'+(cfg.margen!=null?cfg.margen:30)+'" placeholder="Ej: 30" class="pc-input">'+
+      '</div>'+
+      '<div class="pc-calculado" id="'+pfx+'-calculado-box">'+
+        '<div class="pc-calculado-lbl">Precio calculado <span>(referencia)</span></div>'+
+        '<div class="pc-calculado-val" id="'+pfx+'-calculado-val">—</div>'+
+      '</div>'+
+      '<div class="mm-field" style="margin:10px 0 0"><label>Redondear a <span style="font-weight:400;text-transform:none;color:var(--muted)">(opcional)</span></label>'+
+        '<div class="pc-round-row" id="'+pfx+'-round-row"></div>'+
+      '</div>'+
+      '<div class="pc-venta-box" style="margin-top:10px">'+
+        '<div class="pc-venta-top">'+
+          '<div><div class="pc-venta-lbl">Precio de venta <span>(se guardará)</span></div>'+
+            '<input id="'+pfx+'-precio" type="number" inputmode="decimal" value="'+(cfg.precio!=null?cfg.precio:'')+'" placeholder="$" class="pc-venta-input">'+
+          '</div>'+
+          (cfg.mostrarBotonAplicar?'<button type="button" class="pc-aplicar-btn" id="'+pfx+'-aplicar-btn">✓ Aplicar precio</button>':'')+
+        '</div>'+
+      '</div>'+
+      '<div class="pc-resumen-mini" id="'+pfx+'-resumen-mini"></div>'+
+    '</div>';
+  }
+  function wire(cfg){
+    const pfx=cfg.prefix;
+    const $=id=>document.getElementById(pfx+'-'+id);
+    const state=cfg.state; // objeto mutable del llamador: {modo,ivaModo,precioTocado}
+    function costoBruto(){
+      const uCaja=$('unidades-caja')?$('unidades-caja').value:null;
+      return PriceCalc.costoBruto($('costo').value,state.modo||'unidad',uCaja,state.ivaModo);
+    }
+    function precioCalculado(){
+      return PriceCalc.precioDesdeMargen(costoBruto(),$('margen-obj').value);
+    }
+    function renderCalculado(){
+      const val=precioCalculado();
+      $('calculado-val').textContent=val!=null?fmtPeso(val):'—';
+      renderRedondeos(val);
+    }
+    function renderRedondeos(precioCalc){
+      const row=$('round-row');
+      const sugerencias=pcSugerirRedondeos(precioCalc);
+      const precioActual=Number($('precio').value)||null;
+      let html='';
+      sugerencias.forEach(s=>{
+        const activo=precioActual===s;
+        html+='<button type="button" class="pc-round-chip'+(activo?' active':'')+'" data-val="'+s+'">'+fmtPeso(s)+'</button>';
+      });
+      html+='<button type="button" class="pc-round-chip pc-round-chip-sin'+(precioActual&&sugerencias.indexOf(precioActual)<0&&precioCalc&&precioActual===precioCalc?' active':'')+'" data-val="calc">Sin redondeo</button>';
+      row.innerHTML=html;
+      row.querySelectorAll('[data-val]').forEach(btn=>btn.onclick=()=>{
+        const v=btn.dataset.val==='calc'?precioCalc:Number(btn.dataset.val);
+        if(v==null)return;
+        $('precio').value=v;
+        state.precioTocado=false;
+        renderVenta();
+        if(cfg.onCambio)cfg.onCambio();
+      });
+    }
+    // El precio de venta NO se auto-completa mientras el usuario lo esté editando a
+    // mano — solo se recalcula solo si costo/IVA/margen cambian y el usuario aún no
+    // tocó el precio, o si el propio llamador pide auto-completar (cfg.autocompletar).
+    function renderVenta(){
+      const precio=Number($('precio').value)||0;
+      const base=costoBruto();
+      const margenReal=precio>0?PriceCalc.margenDesdePrecio(precio,base):null;
+      const mini=$('resumen-mini');
+      if(!base&&!precio){mini.innerHTML='';}
+      else{
+        const margenObj=Number($('margen-obj').value)||0;
+        mini.innerHTML='<span>Margen objetivo: <b>'+(margenObj?margenObj.toFixed(1)+'%':'—')+'</b></span><span>Margen real: <b'+(margenReal!=null?' style="color:var(--verde)"':'')+'>'+(margenReal!=null?margenReal.toFixed(1)+'%':'—')+'</b></span>';
+      }
+      renderRedondeos(precioCalculado()); // repinta para reflejar cuál chip queda "activo"
+      if(cfg.onVentaCambio)cfg.onVentaCambio(precio,margenReal,base);
+    }
+    function recalcularTodo(){
+      renderCalculado();
+      if(cfg.autocompletar&&!state.precioTocado){
+        const val=precioCalculado();
+        if(val!=null)$('precio').value=val;
+      }
+      renderVenta();
+      if(cfg.onCambio)cfg.onCambio();
+    }
+    if(cfg.mostrarUnidadCaja){
+      const setModo=(modo)=>{
+        state.modo=modo;
+        $('modo-unidad').classList.toggle('active',modo==='unidad');
+        $('modo-caja').classList.toggle('active',modo==='caja');
+        $('caja-campo').classList.toggle('hidden',modo!=='caja');
+        $('costo-lbl').textContent=modo==='caja'?(cfg.costoLabel||'Costo')+' de la caja':(cfg.costoLabel||'Costo');
+        recalcularTodo();
+      };
+      $('modo-unidad').onclick=()=>setModo('unidad');
+      $('modo-caja').onclick=()=>setModo('caja');
+      $('unidades-caja').addEventListener('input',recalcularTodo);
+      setModo(state.modo||'unidad');
+    }
+    const setIva=(modo)=>{
+      state.ivaModo=modo;
+      $('iva-con').classList.toggle('active',modo==='con');
+      $('iva-sin').classList.toggle('active',modo==='sin');
+      $('costo-explica').textContent=modo==='con'
+        ?'Este valor incluye IVA.'
+        :'Se le sumará 19% de IVA automáticamente.';
+      recalcularTodo();
+    };
+    $('iva-con').onclick=()=>setIva('con');
+    $('iva-sin').onclick=()=>setIva('sin');
+    setIva(state.ivaModo||'con');
+    $('costo').addEventListener('input',recalcularTodo);
+    $('margen-obj').addEventListener('input',recalcularTodo);
+    $('precio').addEventListener('input',()=>{state.precioTocado=true;renderVenta();if(cfg.onCambio)cfg.onCambio();});
+    if(cfg.mostrarBotonAplicar&&$('aplicar-btn')){
+      $('aplicar-btn').onclick=()=>{
+        const precio=Number($('precio').value)||0;
+        if(!precio)return;
+        if(cfg.onAplicar)cfg.onAplicar(precio);
+      };
+    }
+    recalcularTodo();
+    return {
+      costoBruto,precioCalculado,setIva,
+      getPrecio:()=>Number($('precio').value)||0,
+      getMargenObj:()=>Number($('margen-obj').value)||0
+    };
+  }
+  return {render,wire};
+})();
+
+
+const rcState={ item:null, modo:'unidad', ivaModo:'con', precioTocado:false, margenTocado:false, accion:'recibir', ajusteModo:'delta', provNuevo:null, sectorNuevo:null, codigoEscaneado:null };
 
 function rcSetAccion(accion){
   rcState.accion=accion;
@@ -1481,8 +1758,10 @@ function rcSetAccion(accion){
     document.getElementById('rc-cantidad-field').style.display='none';
     document.getElementById('rc-ajuste-field').style.display=it?'block':'none';
     document.getElementById('rc-ajuste-unidad-lbl').textContent=(it&&it.peso)?'kg':'u';
+    document.getElementById('rc-ajuste-exacto-unidad-lbl').textContent=(it&&it.peso)?'kg':'u';
     const savedResp=localStorage.getItem('cumpas_responsable')||'';
     if(savedResp) document.getElementById('rc-ajuste-responsable').value=savedResp;
+    rcRenderAjusteExactoHint();
   }else{
     document.getElementById('rc-ajuste-field').style.display='none';
     if(it){
@@ -1504,10 +1783,46 @@ document.getElementById('rc-ajuste-cantidad').oninput=rcValidar;
 document.getElementById('rc-ajuste-motivo-otro').oninput=rcValidar;
 document.getElementById('rc-ajuste-responsable').oninput=rcValidar;
 
+// ---- Modo "Cantidad exacta" (conteo físico): el usuario escribe el número real
+// que contó, sin tener que calcular un +/- a mano — útil cuando el stock quedó
+// negativo por ventas sin contar bien, y el conteo físico da el número correcto. ----
+function rcSetAjusteModo(modo){
+  rcState.ajusteModo=modo;
+  document.getElementById('rc-ajuste-modo-delta').classList.toggle('active',modo==='delta');
+  document.getElementById('rc-ajuste-modo-exacto').classList.toggle('active',modo==='exacto');
+  document.getElementById('rc-ajuste-delta-campos').classList.toggle('hidden',modo!=='delta');
+  document.getElementById('rc-ajuste-exacto-campos').classList.toggle('hidden',modo!=='exacto');
+  rcRenderAjusteExactoHint();
+  rcValidar();
+}
+document.getElementById('rc-ajuste-modo-delta').onclick=()=>rcSetAjusteModo('delta');
+document.getElementById('rc-ajuste-modo-exacto').onclick=()=>rcSetAjusteModo('exacto');
+document.getElementById('rc-ajuste-exacto-menos').onclick=()=>{ const i=document.getElementById('rc-ajuste-exacto-cantidad'); i.value=Math.max(0,(Number(i.value)||0)-1); rcRenderAjusteExactoHint(); rcValidar(); };
+document.getElementById('rc-ajuste-exacto-mas').onclick=()=>{ const i=document.getElementById('rc-ajuste-exacto-cantidad'); i.value=(Number(i.value)||0)+1; rcRenderAjusteExactoHint(); rcValidar(); };
+document.getElementById('rc-ajuste-exacto-cantidad').oninput=()=>{ rcRenderAjusteExactoHint(); rcValidar(); };
+
+// Muestra cuánto se va a sumar/restar en realidad, para que el usuario confirme
+// antes de guardar (ej: "Stock actual: -3 u → vas a fijarlo en 12 u (se sumarán 15 u)").
+function rcRenderAjusteExactoHint(){
+  const hint=document.getElementById('rc-ajuste-exacto-hint');
+  const it=rcState.item;
+  if(!it||rcState.ajusteModo!=='exacto'){ hint.textContent=''; return; }
+  const stockActual=it.stock!=null?it.stock:0;
+  const cantidadExacta=Number(document.getElementById('rc-ajuste-exacto-cantidad').value);
+  if(isNaN(cantidadExacta)||document.getElementById('rc-ajuste-exacto-cantidad').value===''){ hint.textContent='Stock actual: '+stockActual+(it.peso?' kg':' u'); return; }
+  const delta=Math.round((cantidadExacta-stockActual)*1000)/1000;
+  const unidad=it.peso?'kg':'u';
+  if(delta===0){ hint.innerHTML='Ya está en '+cantidadExacta+' '+unidad+' — no hay cambio que hacer.'; return; }
+  hint.innerHTML='Stock actual: <b>'+stockActual+' '+unidad+'</b> → se fijará en <b>'+cantidadExacta+' '+unidad+'</b> ('+(delta>0?'se sumarán ':'se restarán ')+Math.abs(delta)+' '+unidad+')';
+}
+
 // Proveedor/Sector: combobox compartido, disponible apenas carga la página.
 comboboxInit('rc-proveedor','rc-proveedor-results',()=>PROV_SEC.proveedores,'crear_proveedor',(v)=>{
   rcState.provNuevo=v; rcValidar();
-  if(esProveedorConIvaFactura(v)){ rcSetIva('con'); showToast('🧾 '+v+': factura con IVA incluido — modo "Con IVA" activado'); }
+  if(esProveedorConIvaFactura(v)){
+    if(rcPcApi)rcPcApi.setIva('con');
+    showToast('🧾 '+v+': factura con IVA incluido — modo "Con IVA" activado');
+  }
 });
 comboboxInit('rc-sector','rc-sector-results',()=>PROV_SEC.sectores,'crear_sector',(v)=>{ rcState.sectorNuevo=v; rcValidar(); });
 comboboxInit('cp-proveedor','cp-proveedor-results',()=>PROV_SEC.proveedores,'crear_proveedor',(v)=>{
@@ -1550,6 +1865,13 @@ function rcReset(){
   document.getElementById('rc-sector').value='';
   document.getElementById('rc-ajuste-field').style.display='none';
   document.getElementById('rc-ajuste-cantidad').value='';
+  document.getElementById('rc-ajuste-exacto-cantidad').value='';
+  document.getElementById('rc-ajuste-exacto-hint').textContent='';
+  rcState.ajusteModo='delta';
+  document.getElementById('rc-ajuste-modo-delta').classList.add('active');
+  document.getElementById('rc-ajuste-modo-exacto').classList.remove('active');
+  document.getElementById('rc-ajuste-delta-campos').classList.remove('hidden');
+  document.getElementById('rc-ajuste-exacto-campos').classList.add('hidden');
   document.getElementById('rc-ajuste-motivo').value='';
   document.getElementById('rc-ajuste-motivo-otro').value='';
   document.getElementById('rc-ajuste-motivo-otro').classList.add('hidden');
@@ -1559,16 +1881,13 @@ function rcReset(){
   const cIn=document.getElementById('rc-cantidad'); cIn.value=''; cIn.disabled=true; cIn.placeholder='0';
   document.getElementById('rc-unidades-caja').value='';
   document.getElementById('rc-caja-campos').classList.add('hidden');
-  document.getElementById('rc-costo').value='';
-  document.getElementById('rc-precio').value='';
-  document.getElementById('rc-margen-obj').value='30';
-  document.getElementById('rc-resumen').innerHTML='';
+  document.getElementById('rc-pc-mount').innerHTML='';
+  rcPcApi=null;
   document.getElementById('rc-stock-total-hint').textContent='';
   document.getElementById('rc-fecha').value='';
   document.getElementById('rc-fecha-dd').value='';
   document.getElementById('rc-fecha-mm').value='';
   document.getElementById('rc-fecha-aaaa').value='';
-  rcSetIva('con');
   rcSetModo('unidad');
   rcSetAccion('recibir');
   const btnG=document.getElementById('rc-guardar'); btnG.disabled=true; btnG.textContent='Guardar y sumar stock';
@@ -1579,41 +1898,39 @@ function rcSetModo(modo){
   document.getElementById('rc-modo-unidad').classList.toggle('active',modo==='unidad');
   document.getElementById('rc-modo-caja').classList.toggle('active',modo==='caja');
   document.getElementById('rc-caja-campos').classList.toggle('hidden',modo!=='caja');
-  document.getElementById('rc-costo-label').textContent=modo==='caja'?'COSTO DE LA CAJA':'COSTO';
   const esPeso=rcState.item&&rcState.item.peso;
   document.getElementById('rc-unidad-lbl').textContent=modo==='caja'?'cajas':(esPeso?'kg':'u');
-  rcRenderResumen();
+  rcRenderStockHint();
 }
 document.getElementById('rc-modo-unidad').onclick=()=>rcSetModo('unidad');
 document.getElementById('rc-modo-caja').onclick=()=>rcSetModo('caja');
-document.getElementById('rc-unidades-caja').oninput=rcRenderResumen;
+document.getElementById('rc-unidades-caja').oninput=rcRenderStockHint;
 
-function rcSetIva(modo){
-  if(modo===rcState.ivaModo){
-    // Mismo modo (click repetido): no hay nada que recalcular, solo refresca vista.
-    rcRenderExplicaCosto(); rcRenderResumen(); return;
-  }
-  rcState.ivaModo=modo;
-  document.getElementById('rc-iva-con').classList.toggle('active',modo==='con');
-  document.getElementById('rc-iva-sin').classList.toggle('active',modo==='sin');
-  // El campo Costo NO cambia de número — es el mismo valor que el usuario escribió
-  // (ej. el que viene en la factura). Lo que cambia es cómo se interpreta: en modo
-  // "Sin IVA" ese número se trata como neto y se le suma 19% para obtener la base
-  // real de cálculo; en "Con IVA" se usa tal cual. Cambiar el selector siempre
-  // recalcula el precio desde cero, aunque el usuario lo haya editado a mano antes.
-  rcState.precioTocado=false;
-  rcRecalcularPrecioAuto();
-  rcRenderExplicaCosto();
-  rcRenderResumen();
-}
-document.getElementById('rc-iva-con').onclick=()=>rcSetIva('con');
-document.getElementById('rc-iva-sin').onclick=()=>rcSetIva('sin');
+// NOTA: el manejo de Costo/IVA/Margen/Precio/Redondeo ahora vive en PcWidget
+// (montado en rcMontarPrecio, ver más abajo) — rcSetIva/rcRenderExplicaCosto/
+// rcCostoBruto/rcRecalcularPrecioAuto quedan reemplazadas por el widget.
 
-function rcRenderExplicaCosto(){
-  const el=document.getElementById('rc-costo-explica');
-  el.textContent=rcState.ivaModo==='con'
-    ?'Este valor ya incluye IVA — se usará tal cual para calcular el precio y para guardar en Loyverse.'
-    :'Se le sumará 19% de IVA automáticamente. Ese valor con IVA es el que se usa para calcular el precio y el que se guarda en Loyverse.';
+// ---- Widget de Costo/IVA/Margen/Precio, montado dinámicamente cada vez que se
+// elige un producto en Recepción. "Cantidad recibida" (rc-cantidad/rc-modo-unidad/
+// rc-modo-caja) sigue siendo un bloque aparte porque es el STOCK a sumar, no el
+// costo — pero comparte el mismo rcState.modo con el widget para que, si la compra
+// fue "por caja", tanto el costo como la cantidad se interpreten igual. ----
+let rcPcApi=null;
+function rcMontarPrecio(costo,precio){
+  const mount=document.getElementById('rc-pc-mount');
+  if(!mount)return;
+  mount.innerHTML=PcWidget.render({
+    prefix:'rc',costo:costo||null,margen:30,precio:precio||null,
+    mostrarUnidadCaja:false, // el toggle unidad/caja de Recepción ya vive en "Cantidad recibida"
+    mostrarBotonAplicar:false, // en Recepción el precio del widget ES directamente el que se guarda
+    costoLabel:'Costo'
+  });
+  rcPcApi=PcWidget.wire({
+    prefix:'rc',state:rcState,mostrarUnidadCaja:false,
+    autocompletar:true, // el precio se autocompleta solo mientras el usuario no lo edite a mano
+    costoLabel:'Costo',
+    onCambio:()=>guardarSnapshot()
+  });
 }
 
 function rcPick(ref){
@@ -1645,14 +1962,12 @@ function rcPick(ref){
   // El costo/precio se puede editar SIEMPRE, tenga o no seguimiento de inventario
   // activado — solo la cantidad recibida (que mueve stock en Loyverse) lo requiere.
   document.getElementById('rc-costo-field').style.display='block';
-  document.getElementById('rc-costo').value=it.coste||'';
-  document.getElementById('rc-precio').value=it.precio||'';
   rcState.precioTocado=false; rcState.margenTocado=false;
-  document.getElementById('rc-margen-obj').value='30';
   // El costo prellenado ya está guardado en Loyverse (siempre bruto/con IVA) — arranca en "Con IVA".
-  rcSetIva('con');
-  rcSetModo('unidad');
+  rcState.ivaModo='con';
+  rcMontarPrecio(it.coste,it.precio);
   if(esProveedorConIvaFactura(it.prov)){
+    if(rcPcApi)rcPcApi.setIva('con');
     showToast('🧾 '+it.prov+': factura con IVA incluido — modo "Con IVA" activado');
   }
 
@@ -1748,11 +2063,20 @@ function rcValidar(){
   const btn=document.getElementById('rc-guardar');
   if(!it){ btn.disabled=true; return; }
   if(rcState.accion==='ajustar'){
-    const cant=Number(document.getElementById('rc-ajuste-cantidad').value)||0;
     const motivoSel=document.getElementById('rc-ajuste-motivo').value;
     const motivo=motivoSel==='Otro'?document.getElementById('rc-ajuste-motivo-otro').value.trim():motivoSel;
     const resp=document.getElementById('rc-ajuste-responsable').value.trim();
-    btn.disabled=!(it.track&&cant!==0&&motivo&&resp);
+    let hayCambio;
+    if(rcState.ajusteModo==='exacto'){
+      const val=document.getElementById('rc-ajuste-exacto-cantidad').value;
+      const cantidadExacta=Number(val);
+      const stockActual=it.stock!=null?it.stock:0;
+      hayCambio=val!==''&&!isNaN(cantidadExacta)&&cantidadExacta>=0&&cantidadExacta!==stockActual;
+    }else{
+      const cant=Number(document.getElementById('rc-ajuste-cantidad').value)||0;
+      hayCambio=cant!==0;
+    }
+    btn.disabled=!(it.track&&hayCambio&&motivo&&resp);
     btn.textContent='Guardar ajuste de stock';
     return;
   }
@@ -1797,87 +2121,28 @@ document.getElementById('rc-qty-menos').onclick=()=>{
   const i=document.getElementById('rc-cantidad');
   const step=rcState.item&&rcState.item.peso?0.05:1;
   i.value=Math.max(0,(Number(i.value)||0)-step).toFixed(rcState.item&&rcState.item.peso?3:0);
-  rcValidar(); rcRenderResumen();
+  rcValidar(); rcRenderStockHint();
 };
 document.getElementById('rc-qty-mas').onclick=()=>{
   const i=document.getElementById('rc-cantidad');
   const step=rcState.item&&rcState.item.peso?0.05:1;
   i.value=((Number(i.value)||0)+step).toFixed(rcState.item&&rcState.item.peso?3:0);
-  rcValidar(); rcRenderResumen();
+  rcValidar(); rcRenderStockHint();
 };
-document.getElementById('rc-cantidad').oninput=()=>{ rcValidar(); rcRenderResumen(); };
+document.getElementById('rc-cantidad').oninput=()=>{ rcValidar(); rcRenderStockHint(); };
 
-// ---- Cálculo de costo/precio, idéntico a Marín ----
-function rcCostoUnitarioBruto(){
-  const costoIngresado=Number(document.getElementById('rc-costo').value)||0;
-  if(rcState.modo!=='caja')return costoIngresado;
-  const uCaja=Number(document.getElementById('rc-unidades-caja').value)||0;
-  return uCaja>0?(costoIngresado/uCaja):0;
-}
+// Costo BRUTO real para el guardado — se lee directo del widget montado en
+// rc-pc-mount (ver rcMontarPrecio). Si no hay widget montado todavía, es 0.
 function rcCostoBruto(){
-  const ingresado=rcCostoUnitarioBruto();
-  return rcState.ivaModo==='sin'?(ingresado*(1+IVA)):ingresado;
+  return rcPcApi?rcPcApi.costoBruto():0;
 }
-function rcRecalcularPrecioAuto(){
-  const margenPct=Number(document.getElementById('rc-margen-obj').value);
-  const base=rcCostoBruto();
-  if(!base||!margenPct||margenPct<=0||margenPct>=100)return;
-  document.getElementById('rc-precio').value=Math.round(base/(1-margenPct/100));
-  rcState.precioTocado=false;
-}
-document.getElementById('rc-precio').oninput=()=>{ rcState.precioTocado=true; rcRenderResumen(); };
-document.getElementById('rc-costo').oninput=()=>{
-  // Cambiar el Costo SIEMPRE recalcula el Precio de venta, aunque el usuario lo haya
-  // editado a mano o redondeado antes — el costo manda sobre cualquier edición previa
-  // del precio (solo mientras el usuario está escribiendo el precio en sí se respeta
-  // su valor tal cual, para no pisarle la tecla que está tocando en ese momento).
-  rcState.precioTocado=false;
-  rcRecalcularPrecioAuto();
-  rcRenderExplicaCosto(); rcRenderResumen();
-};
-document.getElementById('rc-unidades-caja').addEventListener('input', ()=>{
-  // "Por caja": cambiar las unidades por caja también cambia el costo unitario
-  // real, así que debe recalcular el precio igual que si se editara el Costo.
-  rcState.precioTocado=false;
-  rcRecalcularPrecioAuto();
-  rcRenderResumen();
-});
-document.getElementById('rc-margen-obj').oninput=()=>{
-  rcState.margenTocado=true;
-  rcState.precioTocado=false;
-  rcRecalcularPrecioAuto();
-  rcRenderResumen();
-};
 
-function rcRenderResumen(){
-  const cont=document.getElementById('rc-resumen');
-  const costoIngresado=Number(document.getElementById('rc-costo').value)||0;
-  const costoUnitBruto=rcCostoUnitarioBruto();
-  const base=rcCostoBruto();
-  const margenPct=Number(document.getElementById('rc-margen-obj').value)||0;
-  const precio=Number(document.getElementById('rc-precio').value)||0;
-  const margenReal=precio>0?((precio-base)/precio)*100:null;
+// Solo el aviso de "stock a sumar" (cantidad × unidades por caja) — el resto del
+// resumen de costo/margen ahora vive dentro del propio widget (pc-resumen-mini).
+function rcRenderStockHint(){
+  const stockHint=document.getElementById('rc-stock-total-hint');
   const cant=Number(document.getElementById('rc-cantidad').value)||0;
   const uCaja=Number(document.getElementById('rc-unidades-caja').value)||0;
-
-  if(!costoIngresado){cont.innerHTML='';document.getElementById('rc-stock-total-hint').textContent='';return;}
-
-  const filas=[];
-  if(rcState.modo==='caja'){
-    filas.push('Costo de la caja: <b>'+fmtPeso(costoIngresado)+'</b>');
-    filas.push('Costo por unidad ('+(rcState.ivaModo==='con'?'con IVA':'neto')+'): <b>'+(costoUnitBruto?fmtPeso(Math.round(costoUnitBruto)):'—')+'</b>');
-  }else{
-    filas.push('Costo ingresado ('+(rcState.ivaModo==='con'?'con IVA':'neto')+'): <b>'+fmtPeso(costoIngresado)+'</b>');
-  }
-  if(rcState.ivaModo==='sin')filas.push('Costo con IVA (19% sumado): <b>'+(base?fmtPeso(Math.round(base)):'—')+'</b>');
-  filas.push('Costo con IVA guardado en Loyverse: <b>'+(base?fmtPeso(Math.round(base)):'—')+'</b>');
-  if(margenPct)filas.push('Margen objetivo: <b>'+margenPct.toFixed(1)+'%</b>');
-  if(margenReal!=null)filas.push('Margen real'+(rcState.precioTocado?' (precio editado a mano)':'')+': <b>'+margenReal.toFixed(1)+'%</b>');
-  filas.push('Precio de venta final: <b>'+(precio?fmtPeso(precio):'—')+'</b>');
-  if(rcState.modo==='caja'&&cant>0&&uCaja>0)filas.push('Stock a sumar: <b>'+cant+' caja'+(cant===1?'':'s')+' × '+uCaja+' u = '+(cant*uCaja)+' u</b>');
-  cont.innerHTML=filas.join('<br>');
-
-  const stockHint=document.getElementById('rc-stock-total-hint');
   if(rcState.modo==='caja'&&cant>0&&uCaja>0){
     stockHint.innerHTML='📦 '+cant+' caja'+(cant===1?'':'s')+' × '+uCaja+' u/caja = <b>'+(cant*uCaja)+' unidades</b> se sumarán al stock.';
   }else if(rcState.modo==='caja'&&cant>0&&!uCaja){
@@ -1887,13 +2152,8 @@ function rcRenderResumen(){
   }
 }
 
-document.getElementById('rc-redondear').onclick=()=>{
-  const precioActual=Number(document.getElementById('rc-precio').value);
-  if(!precioActual||precioActual<=0){ showToast('⚠️ Ingresa un precio primero'); return; }
-  document.getElementById('rc-precio').value=fpRedondeoSiguientePaso(precioActual);
-  rcState.precioTocado=true; // el redondeo es una elección explícita, no debe volver a pisarse solo
-  rcRenderResumen();
-};
+// NOTA: "Redondear" ahora vive dentro del widget PcWidget como chips de sugerencias
+// (ver pcSugerirRedondeos) — el botón rc-redondear standalone ya no existe.
 
 // ---- Fecha segmentada DD/MM/AAAA ----
 function wireFechaSegmentada(ddId,mmId,aaaaId,hiddenId,calId){
@@ -1942,15 +2202,24 @@ document.getElementById('rc-guardar').onclick=async()=>{
   const it=rcState.item; if(!it)return;
 
   if(rcState.accion==='ajustar'){
-    const cantidad=Number(document.getElementById('rc-ajuste-cantidad').value)||0;
     const motivoSel=document.getElementById('rc-ajuste-motivo').value;
     const motivo=motivoSel==='Otro'?document.getElementById('rc-ajuste-motivo-otro').value.trim():motivoSel;
     const responsable=document.getElementById('rc-ajuste-responsable').value.trim();
-    if(!cantidad||!motivo||!responsable){ showToast('Completa cantidad, motivo y responsable'); return; }
+    const payload={ sku:it.ref, motivo, responsable };
+    if(rcState.ajusteModo==='exacto'){
+      const cantidadExacta=Number(document.getElementById('rc-ajuste-exacto-cantidad').value);
+      if(isNaN(cantidadExacta)||cantidadExacta<0||!motivo||!responsable){ showToast('Completa la cantidad contada, motivo y responsable'); return; }
+      payload.modo='exacto';
+      payload.cantidadExacta=cantidadExacta;
+    }else{
+      const cantidad=Number(document.getElementById('rc-ajuste-cantidad').value)||0;
+      if(!cantidad||!motivo||!responsable){ showToast('Completa cantidad, motivo y responsable'); return; }
+      payload.cantidad=cantidad;
+    }
     btn.disabled=true; btn.textContent='Guardando…';
     try{
       localStorage.setItem('cumpas_responsable', responsable);
-      const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'ajustar_stock',payload:{sku:it.ref,cantidad,motivo,responsable}})});
+      const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'ajustar_stock',payload})});
       const j=await res.json();
       if(j&&j.ok){
         const itLocal=(DB.items||[]).find(x=>x.ref===it.ref);
