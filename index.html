@@ -568,6 +568,15 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 
+  <button class="menu-card pedido" id="btn-categorias">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h7v7H3z"/><path d="M14 3h7v7h-7z"/><path d="M14 14h7v7h-7z"/><path d="M3 14h7v7H3z"/></svg></div>
+    <div class="txt">
+      <div class="t">Categorías</div>
+      <div class="s">Cambio con proveedor al vencer, y consumo interno por categoría</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+  </button>
+
   <button class="menu-card pedido" id="btn-proveedores">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
     <div class="txt">
@@ -921,6 +930,27 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
       <div class="total-box"><span id="sc-summary">Cargando…</span></div>
     </div>
     <div id="sc-list"></div>
+  </div>
+</div>
+
+<!-- ===== MODAL: CATEGORÍAS (cambio con proveedor / consumo interno) ===== -->
+<div class="ov hidden" id="cat-ov">
+  <div class="ov-head">
+    <h3>🗂️ Categorías</h3>
+    <button class="ov-close" id="cat-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="field">
+      <label>Gestionar por cambio con proveedor</label>
+      <div class="cat" style="color:var(--muted);font-size:11.5px;margin:-2px 0 8px">Marca las categorías (ej. productos en consignación) que al vencer se gestionan devolviendo/cambiando con el proveedor, no con descuento o merma. Es solo un aviso en Vencimientos — no cambia nada automáticamente.</div>
+      <div id="cat-cambio-list"></div>
+    </div>
+    <div class="field">
+      <label>Consumo interno por categoría</label>
+      <div class="cat" style="color:var(--muted);font-size:11.5px;margin:-2px 0 8px">Costo de las mermas registradas con motivo "Consumo interno", últimos 30 días.</div>
+      <div class="total-box" id="cat-consumo-total">Cargando…</div>
+      <div id="cat-consumo-list" style="margin-top:8px"></div>
+    </div>
   </div>
 </div>
 
@@ -1872,6 +1902,7 @@ async function cargarCatalogo(silencioso){
     });
     persist();
     cargarABC(); // no bloquea la carga del catálogo — se refresca aparte, en segundo plano
+    if(!CATEGORIAS_CAMBIO.size) cargarCategoriasCambio();
     // "Sincronizado hace X" refleja qué tan fresco es lo que se ve en pantalla, no
     // solo la última vez que se tocó el botón manual — así que se marca acá, en
     // TODA carga exitosa del catálogo (incluida la automática cada pocos segundos
@@ -2060,7 +2091,7 @@ function cerrarModal(id){ document.getElementById(id).classList.add('hidden'); }
 //  history.back() y pushState al encadenar aperturas/cierres).
 // ============================================================
 let seccionActual='inicio';
-const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov', mermas:'mm-ov', llegadas:'ll-ov', abc:'abcr-ov', sincosto:'sc-ov' };
+const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov', mermas:'mm-ov', llegadas:'ll-ov', abc:'abcr-ov', sincosto:'sc-ov', categorias:'cat-ov' };
 history.replaceState({ cumpasSeccion:'inicio' }, '', location.pathname);
 
 function cerrarSeccionActual(){
@@ -2089,6 +2120,7 @@ function abrirSeccionVisual(seccion){
   else if(seccion==='llegadas') openLlegadas();
   else if(seccion==='abc') openABCResumen();
   else if(seccion==='sincosto') openSinCosto();
+  else if(seccion==='categorias') openCategorias();
 }
 
 function actualizarNavActiva(){
@@ -3985,10 +4017,11 @@ function vencRender(){
   }
   box.innerHTML = vencState.listaFiltrada.map(l => {
     const chip = VENC_LABELS[l.urgencia](l.diasRestantes);
+    const cambio = CATEGORIAS_CAMBIO.has(l.categoria) ? ' · 🔄 gestionar por cambio con proveedor' : '';
     return `<div class="venc-row ${l.urgencia}" data-id="${l.id}">
       <div class="info">
         <div class="n">${l.producto}</div>
-        <div class="s">${l.cantidad} ${l.unidad} · lote del ${l.fecha_ingreso}${l.fecha_vencimiento ? ' · vence ' + l.fecha_vencimiento : ''} · ${l.estado}</div>
+        <div class="s">${l.cantidad} ${l.unidad} · lote del ${l.fecha_ingreso}${l.fecha_vencimiento ? ' · vence ' + l.fecha_vencimiento : ''} · ${l.estado}${cambio}</div>
       </div>
       <div class="venc-chip ${l.urgencia}">${chip}</div>
     </div>`;
@@ -5356,6 +5389,66 @@ function openSinCosto(){ scLoad(); }
 document.getElementById('sc-close').onclick=()=>irASeccion('inicio');
 document.getElementById('btn-abc').onclick=()=>irASeccion('abc');
 document.getElementById('btn-sincosto').onclick=()=>irASeccion('sincosto');
+
+// ============================================================
+//  CATEGORÍAS — "cambio con proveedor" (aviso en Vencimientos, no cambia
+//  el flujo manual de estados) y "Consumo interno" por categoría (usa la
+//  tabla mermas que ya existe, sin nada nuevo que registrar).
+// ============================================================
+let CATEGORIAS_CAMBIO=new Set();
+async function cargarCategoriasCambio(){
+  try{
+    const res=await fetch(SYNC_URL+'?action=config_categorias');
+    const j=await res.json();
+    if(j&&j.ok) CATEGORIAS_CAMBIO=new Set(j.categoriasCambio||[]);
+  }catch(e){ /* silencioso: el aviso en Vencimientos simplemente no aparece */ }
+}
+function renderCatCambioList(){
+  const box=document.getElementById('cat-cambio-list');
+  const cats=[...new Set((DB.items||[]).map(it=>it.cat).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  if(!cats.length){ box.innerHTML='<div class="ap-empty">Sin categorías en el catálogo todavía.</div>'; return; }
+  box.innerHTML=cats.map(c=>{
+    const on=CATEGORIAS_CAMBIO.has(c);
+    return `<label style="display:flex;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid var(--line);cursor:pointer;text-transform:none;font-weight:600;font-size:13px;color:var(--ink)">
+      <input type="checkbox" class="cat-cambio-chk" data-cat="${c.replace(/"/g,'&quot;')}" ${on?'checked':''} style="width:16px;height:16px">
+      ${c}
+    </label>`;
+  }).join('');
+  box.querySelectorAll('.cat-cambio-chk').forEach(chk=>{
+    chk.onchange=async()=>{
+      const categoria=chk.dataset.cat;
+      chk.disabled=true;
+      try{
+        const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'config_categoria_cambio',payload:{categoria,activo:chk.checked}})});
+        const j=await res.json();
+        if(j&&j.ok){ if(chk.checked)CATEGORIAS_CAMBIO.add(categoria); else CATEGORIAS_CAMBIO.delete(categoria); }
+        else{ showToast('❌ No se pudo guardar'); chk.checked=!chk.checked; }
+      }catch(e){ showToast('❌ Error de conexión'); chk.checked=!chk.checked; }
+      finally{ chk.disabled=false; }
+    };
+  });
+}
+async function cargarConsumoCategoria(){
+  const totalEl=document.getElementById('cat-consumo-total'), listEl=document.getElementById('cat-consumo-list');
+  totalEl.textContent='Cargando…'; listEl.innerHTML='';
+  try{
+    const res=await fetch(SYNC_URL+'?action=consumo_categoria&dias=30');
+    const j=await res.json();
+    if(!j||!j.ok){ totalEl.textContent='⚠️ Error al cargar.'; return; }
+    const r=j.resumen;
+    totalEl.innerHTML='<span>Total últimos 30 días</span><b>'+fmtPeso(r.total)+'</b>';
+    listEl.innerHTML=r.categorias.length?r.categorias.map(c=>
+      `<div class="result-item" style="cursor:default;display:flex;justify-content:space-between;align-items:center">
+        <span>${c.categoria}</span><b>${fmtPeso(c.total)}</b>
+      </div>`).join(''):'<div class="ap-empty">Sin mermas por consumo interno en los últimos 30 días.</div>';
+  }catch(e){ totalEl.textContent='⚠️ Error de conexión.'; }
+}
+async function openCategorias(){
+  renderCatCambioList();
+  await cargarConsumoCategoria();
+}
+document.getElementById('cat-close').onclick=()=>irASeccion('inicio');
+document.getElementById('btn-categorias').onclick=()=>irASeccion('categorias');
 
 // ============================================================
 //  NOTIFICACIONES PUSH

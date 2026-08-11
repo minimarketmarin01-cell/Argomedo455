@@ -219,6 +219,15 @@ async function asegurarTablas(env) {
   // Clasificación ABC (participación en ventas de los últimos N días, cortes
   // 80/95/100) — se recalcula a pedido (?action=abc_calcular), esta tabla solo
   // guarda el último resultado para no tener que recalcular en cada consulta.
+  // Categorías marcadas para gestionarse por "cambio con proveedor" en vez de
+  // descuento/merma al vencer (ej. productos en consignación). Puramente
+  // informativo por ahora — no cambia el cálculo de prioridad de Vencimientos,
+  // que sigue siendo el mismo flujo manual ya en producción.
+  await run(env, `CREATE TABLE IF NOT EXISTS config_categorias (
+    categoria TEXT PRIMARY KEY,
+    tipo TEXT
+  )`);
+
   await run(env, `CREATE TABLE IF NOT EXISTS clasificacion_abc (
     sku TEXT PRIMARY KEY,
     venta_total REAL,
@@ -1057,6 +1066,48 @@ async function repSinCosto(env) {
   const items = results.map(r => ({ sku: r.sku, nombre: r.nombre, categoria: r.categoria || "SIN CATEGORÍA", peso: !!r.sold_by_weight }));
   items.sort((a, b) => (b.peso - a.peso) || String(a.nombre).localeCompare(String(b.nombre)));
   return { total: items.length, porPeso: items.filter(x => x.peso).length, items };
+}
+
+// ============================================================
+//  CONFIG CATEGORÍAS — categorías marcadas para gestionarse por "cambio
+//  con proveedor" al vencer, en vez de descuento/merma (ej. productos en
+//  consignación). Informativo: se muestra como aviso en Vencimientos,
+//  no cambia el flujo manual de estados ya en producción.
+// ============================================================
+async function repCategoriasCambio(env) {
+  const { results } = await env.DB.prepare("SELECT categoria FROM config_categorias WHERE tipo = 'cambio' ORDER BY categoria").all();
+  return results.map(r => r.categoria);
+}
+
+async function accionConfigCategoriaCambio(env, payload) {
+  payload = payload || {};
+  const categoria = String(payload.categoria || "").trim();
+  if (!categoria) throw new Error("Falta la categoría");
+  if (payload.activo) {
+    await run(env, "INSERT INTO config_categorias (categoria, tipo) VALUES (?, 'cambio') ON CONFLICT(categoria) DO UPDATE SET tipo='cambio'", categoria);
+  } else {
+    await run(env, "DELETE FROM config_categorias WHERE categoria = ?", categoria);
+  }
+  return { categoria, activo: !!payload.activo };
+}
+
+// Costo total de mermas por "consumo_interno" (ej. la familia dueña consume
+// stock) agrupado por categoría, en los últimos N días — usa la tabla
+// `mermas` que ya existe (Módulo Mermas), no crea nada nuevo.
+async function repConsumoCategoria(env, dias) {
+  const diasNum = Number(dias) || 30;
+  const { results } = await env.DB.prepare("SELECT categoria, fecha, costo_total FROM mermas WHERE motivo = 'consumo_interno'").all();
+  const corte = Date.now() - diasNum * 86400000;
+  const cats = {};
+  results.forEach(r => {
+    const f = parseFechaDDMMAAAA(r.fecha);
+    if (!f || f.getTime() < corte) return;
+    const cat = r.categoria || "SIN CATEGORÍA";
+    cats[cat] = (cats[cat] || 0) + (Number(r.costo_total) || 0);
+  });
+  const arr = Object.keys(cats).map(c => ({ categoria: c, total: Math.round(cats[c]) })).sort((a, b) => b.total - a.total);
+  const total = arr.reduce((s, x) => s + x.total, 0);
+  return { total, dias: diasNum, categorias: arr };
 }
 
 // Aplica ventas recibidas por webhook (receipts.update): guarda una fila por
@@ -2570,6 +2621,28 @@ export default {
         return json({ ok: true, reporte });
       }
 
+      // GET /?action=config_categorias  →  categorías marcadas para gestionarse
+      // por "cambio con proveedor" al vencer.
+      if (action === "config_categorias") {
+        const categoriasCambio = await repCategoriasCambio(env);
+        return json({ ok: true, categoriasCambio });
+      }
+
+      // POST { action:'config_categoria_cambio', payload:{categoria,activo} } →
+      // marca/desmarca una categoría como "cambio con proveedor".
+      if (action === "config_categoria_cambio") {
+        const resultado = await accionConfigCategoriaCambio(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=consumo_categoria[&dias=30]  →  costo total de mermas por
+      // "consumo_interno", agrupado por categoría, en los últimos N días.
+      if (action === "consumo_categoria") {
+        const dias = url.searchParams.get("dias") || 30;
+        const resumen = await repConsumoCategoria(env, dias);
+        return json({ ok: true, resumen });
+      }
+
       // GET /?action=descuentos_activos  →  lista de lotes con descuento aplicado
       // y todavía en gestión (sin cerrar).
       if (action === "descuentos_activos") {
@@ -2707,7 +2780,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
