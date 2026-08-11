@@ -1932,13 +1932,59 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // GET /?action=vapid_public_key  →  clave pública VAPID para que el frontend
+      // pueda suscribirse a notificaciones push.
+      if (action === "vapid_public_key") {
+        return json({ ok: true, key: env.VAPID_PUBLIC_KEY || null });
+      }
+
+      // POST { action:'guardar_suscripcion_push', payload:{subscription} }  →
+      // guarda/actualiza la suscripción push de este celular.
+      if (action === "guardar_suscripcion_push") {
+        const resultado = await accionGuardarSuscripcionPush(env, payload);
+        return json(resultado);
+      }
+
+      // POST { action:'quitar_suscripcion_push', payload:{endpoint} }  →  borra la
+      // suscripción push de este celular (ej. el usuario desactivó notificaciones).
+      if (action === "quitar_suscripcion_push") {
+        const resultado = await accionQuitarSuscripcionPush(env, payload);
+        return json(resultado);
+      }
+
+      // GET /?action=probar_push  →  envía una notificación de prueba a todos los
+      // celulares suscritos, para confirmar que la configuración VAPID funciona.
+      if (action === "probar_push") {
+        const resultado = await webPushEnviarATodos(env, "🔔 Notificación de prueba", "Si ves esto, las notificaciones de Los Cumpas están funcionando.", "./");
+        return json({ ok: true, ...resultado });
+      }
+
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
+    }
+  },
+
+  // ============================================================
+  //  CRON TRIGGER — se ejecuta automáticamente según el horario
+  //  configurado en Cloudflare (Settings → Triggers → Cron Triggers).
+  //  Configurar dos triggers: "0 11 * * *" y "0 18 * * *" en UTC,
+  //  que equivalen a las 8:00 y 15:00 hora Chile (UTC-3 en horario
+  //  de verano / UTC-4 en invierno — ajustar si Cloudflare no
+  //  resuelve el huso horario automáticamente).
+  // ============================================================
+  async scheduled(event, env, ctx) {
+    try {
+      await asegurarTablas(env);
+      await chequearYNotificarVencimientos(env);
+      // Espacio reservado para futuros chequeos automáticos (ej. riesgo de quiebre
+      // de stock, cuando exista la clasificación ABC) — se agregan acá mismo.
+    } catch (e) {
+      await logMsg(env, "❌ Error en scheduled(): " + e.message);
     }
   }
 };
