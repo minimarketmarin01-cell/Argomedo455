@@ -144,6 +144,16 @@ async function asegurarTablas(env) {
     // ya existía.
   }
 
+  // Migración: fecha_retiro en `vencimientos` — distingue el momento en que un
+  // lote se retiró físicamente de la góndola (estado "Retirado", pendiente de que
+  // el proveedor lo cambie o se confirme como merma) del momento en que se cierra
+  // definitivamente (fecha_revision).
+  try {
+    await run(env, `ALTER TABLE vencimientos ADD COLUMN fecha_retiro TEXT`);
+  } catch (e) {
+    // ya existía.
+  }
+
   // Catálogos reutilizables de proveedores y sectores — permiten buscar y crear
   // nuevos registros desde el formulario sin salir de él, y que queden disponibles
   // para elegir la próxima vez (Módulo 3: Proveedores y sectores).
@@ -1174,7 +1184,7 @@ async function chequearYNotificarVencimientos(env) {
 //  → cambia el estado del lote (Revisado, Cambiado, Descuento recibido,
 //    Desechado) y, si retirarStock es true, resta esa cantidad del stock
 //    en Loyverse (retiro de góndola) dejando registro en auditoría.
-const ESTADOS_VENCIMIENTO = ["Pendiente", "Revisado", "Cambiado", "Descuento recibido", "Desechado", "Sin fecha"];
+const ESTADOS_VENCIMIENTO = ["Pendiente", "Retirado", "Revisado", "Cambiado", "Descuento recibido", "Desechado", "Sin fecha"];
 async function accionVencimientoEstado(env, payload) {
   payload = payload || {};
   const id = Number(payload.id);
@@ -1216,8 +1226,8 @@ async function accionVencimientoEstado(env, payload) {
   }
 
   await run(env,
-    `UPDATE vencimientos SET estado = ?, fecha_revision = ?, revisado_por = ? WHERE id = ?`,
-    estado, fecha, responsable, id);
+    `UPDATE vencimientos SET estado = ?, fecha_revision = ?, revisado_por = ?${estado === "Retirado" ? ", fecha_retiro = ?" : ""} WHERE id = ?`,
+    ...(estado === "Retirado" ? [estado, fecha, responsable, fecha, id] : [estado, fecha, responsable, id]));
 
   return out;
 }

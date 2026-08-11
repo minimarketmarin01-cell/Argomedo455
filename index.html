@@ -288,6 +288,11 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .venc-retiro.on{display:block}
 .venc-retiro label{display:flex;align-items:center;gap:8px;font-weight:700;font-size:12.5px;color:var(--ink);margin-bottom:8px}
 .venc-retiro input[type="text"],.venc-retiro input[type="number"]{width:100%;height:40px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;font-size:13px}
+.venc-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--rojo);color:#fff;font-size:10.5px;font-weight:800}
+.venc-progress{display:flex;align-items:center;gap:10px}
+.venc-progress-bar{flex:1;height:8px;border-radius:5px;background:var(--card2);overflow:hidden}
+.venc-progress-bar div{height:100%;background:var(--verde);border-radius:5px;transition:width .3s ease;width:0%}
+#venc-progress-lbl{flex:none;font-size:11px;color:var(--muted);font-weight:700;white-space:nowrap}
 
 /* Botón flotante del carrito */
 .cart-fab{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));z-index:270;height:52px;padding:0 18px;border-radius:26px;background:var(--brand-grad);color:#fff;border:none;font-size:14px;font-weight:800;box-shadow:var(--sh-float);cursor:pointer;display:flex;align-items:center;gap:8px}
@@ -779,14 +784,98 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 <div class="ov hidden" id="venc-ov">
   <div class="ov-head">
     <h3>⏰ Vencimientos</h3>
+    <button class="btn-secondary" id="venc-nuevo-lote-btn" type="button" style="width:auto;padding:0 12px;height:34px;margin:0 8px 0 0;color:var(--cielo-d);border-color:var(--cielo)">+ Nuevo lote</button>
     <button class="ov-close" id="venc-close" aria-label="Cerrar">✕</button>
   </div>
+
   <div class="venc-tabs">
-    <button class="venc-tab active" data-estado="">Activos</button>
-    <button class="venc-tab" data-estado="todos">Todos</button>
+    <button class="venc-tab active" data-vista="revision">📋 Revisión<span class="venc-badge hidden" id="venc-badge-revision"></span></button>
+    <button class="venc-tab" data-vista="pendientes">⏳ Pendientes<span class="venc-badge hidden" id="venc-badge-pendientes"></span></button>
   </div>
-  <div class="ov-body" style="padding-top:0">
-    <div class="venc-list" id="venc-list"></div>
+
+  <div id="venc-view-revision">
+    <div class="venc-tabs" style="border-top:1px solid var(--line)">
+      <button class="venc-tab active" data-estado="">Activos</button>
+      <button class="venc-tab" data-estado="todos">Todos</button>
+    </div>
+
+    <div style="padding:10px 16px 0;max-width:520px;margin:0 auto;width:100%">
+      <div class="search-row">
+        <input id="venc-search" placeholder="Buscar producto: nombre, código o SKU…" autocomplete="off">
+        <button class="scan-btn" id="venc-scan" type="button" aria-label="Escanear código">📷</button>
+      </div>
+      <select id="venc-prov-filtro" style="width:100%;height:44px;margin-top:8px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-size:13px">
+        <option value="">🏢 Todos los proveedores</option>
+      </select>
+      <div class="venc-progress" style="margin-top:10px">
+        <div class="venc-progress-bar"><div id="venc-progress-fill"></div></div>
+        <span id="venc-progress-lbl">0/0 revisados</span>
+      </div>
+    </div>
+
+    <div class="ov-body" style="padding-top:8px">
+      <div class="venc-list" id="venc-list"></div>
+    </div>
+  </div>
+
+  <div id="venc-view-pendientes" class="hidden">
+    <div class="ov-body" style="padding-top:12px">
+      <div class="ap-empty" style="text-align:left;color:var(--muted);font-size:12px;margin-bottom:10px;padding:0">Ya se retiraron de la góndola — esperando que el proveedor los cambie, o falta confirmar si quedan como merma.</div>
+      <div class="venc-list" id="venc-pend-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: VENCIMIENTOS — NUEVO LOTE ===== -->
+<div class="ov hidden" id="venc-nuevo-ov">
+  <div class="ov-head">
+    <h3>📦 Nuevo lote</h3>
+    <button class="ov-close" id="venc-nuevo-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="field">
+      <label>Producto</label>
+      <div class="search-row">
+        <input id="venc-n-search" placeholder="Nombre, SKU o código…" autocomplete="off">
+        <button class="scan-btn" id="venc-n-scan" type="button" aria-label="Escanear código">📷</button>
+      </div>
+      <div class="results" id="venc-n-results"></div>
+      <div class="picked" id="venc-n-picked">
+        <div class="n" id="venc-n-nom">—</div>
+        <div class="s" id="venc-n-cat">—</div>
+      </div>
+    </div>
+
+    <div class="field" id="venc-n-cantidad-field" style="display:none">
+      <label>Cantidad</label>
+      <div class="qty-row">
+        <button class="qty-btn" id="venc-n-qty-menos" type="button">−</button>
+        <input id="venc-n-cantidad" inputmode="decimal" placeholder="0">
+        <span id="venc-n-unidad-lbl" style="min-width:34px;text-align:center;color:var(--muted);font-weight:700;font-size:12px">u</span>
+        <button class="qty-btn" id="venc-n-qty-mas" type="button">+</button>
+      </div>
+    </div>
+
+    <div class="field" id="venc-n-lote-field" style="display:none">
+      <label>Código de lote <span style="text-transform:none;font-weight:400">(opcional)</span></label>
+      <input id="venc-n-lote" placeholder="Si el producto trae un código de lote" autocomplete="off">
+    </div>
+
+    <div class="field" id="venc-n-fecha-field" style="display:none">
+      <label>Fecha de vencimiento</label>
+      <div class="fecha-row">
+        <input id="venc-n-fecha-dd" class="fecha-seg" inputmode="numeric" maxlength="2" placeholder="DD">
+        <span class="fecha-sep">/</span>
+        <input id="venc-n-fecha-mm" class="fecha-seg" inputmode="numeric" maxlength="2" placeholder="MM">
+        <span class="fecha-sep">/</span>
+        <input id="venc-n-fecha-aaaa" class="fecha-seg" inputmode="numeric" maxlength="4" placeholder="AAAA">
+        <button type="button" class="fecha-cal-btn" id="venc-n-fecha-cal">📅</button>
+        <input type="date" id="venc-n-fecha" class="fecha-date-hidden" tabindex="-1">
+      </div>
+    </div>
+  </div>
+  <div class="ov-foot">
+    <button class="btn-primary" id="venc-n-guardar" disabled>Guardar lote</button>
   </div>
 </div>
 
@@ -3018,7 +3107,7 @@ document.getElementById('btn-recibir').onclick=()=>irASeccion('recepcion');
 // ============================================================
 //  VENCIMIENTOS (Módulo 5)
 // ============================================================
-const vencState = { estado: '', lista: [], loteActual: null };
+const vencState = { estado: '', vista: 'revision', busqueda: '', proveedorFiltro: '', lista: [], listaFiltrada: [], loteActual: null };
 
 const VENC_ESTADOS_CIERRE = ['Cambiado', 'Descuento recibido', 'Desechado'];
 const VENC_LABELS = {
@@ -3038,19 +3127,71 @@ async function vencCargar(){
     const j = await res.json();
     if(!j.ok) throw new Error(j.error || 'Error al cargar vencimientos');
     vencState.lista = j.lista;
-    vencRender();
+    vencPoblarFiltroProveedor();
+    vencAplicarFiltros();
   }catch(e){
     box.innerHTML = '<div class="ap-empty">⚠️ No se pudo cargar. Desliza para reintentar.</div>';
   }
 }
 
+// El filtro de proveedores se arma a partir de los productos que ya tiene el
+// catálogo local (DB.items) — cruza por SKU con la lista de lotes cargada, así
+// solo aparecen proveedores que de verdad tienen lotes en la vista actual.
+function vencPoblarFiltroProveedor(){
+  const sel = document.getElementById('venc-prov-filtro');
+  const provsEnLista = new Set();
+  vencState.lista.forEach(l => {
+    const it = (DB.items || []).find(i => i.ref === l.sku);
+    if(it && it.prov && it.prov !== 'SIN PROVEEDOR') provsEnLista.add(it.prov);
+  });
+  const actual = sel.value;
+  sel.innerHTML = '<option value="">🏢 Todos los proveedores</option>' +
+    Array.from(provsEnLista).sort().map(p => `<option value="${p}">${p}</option>`).join('');
+  sel.value = provsEnLista.has(actual) ? actual : '';
+  vencState.proveedorFiltro = sel.value;
+}
+
+// Aplica búsqueda de texto + filtro de proveedor sobre vencState.lista (ya
+// traída del servidor) — todo en memoria, sin volver a golpear el backend.
+function vencAplicarFiltros(){
+  const q = vencState.busqueda.toLowerCase().trim();
+  const palabras = q.split(/\s+/).filter(Boolean);
+  vencState.listaFiltrada = vencState.lista.filter(l => {
+    if(vencState.proveedorFiltro){
+      const it = (DB.items || []).find(i => i.ref === l.sku);
+      if(!it || it.prov !== vencState.proveedorFiltro) return false;
+    }
+    if(!palabras.length) return true;
+    const texto = (l.producto + ' ' + l.sku).toLowerCase();
+    return palabras.every(p => texto.includes(p));
+  });
+  vencRender();
+  vencRenderProgreso();
+}
+
+function vencRenderProgreso(){
+  const total = vencState.lista.length;
+  const revisados = vencState.lista.filter(l => l.estado !== 'Pendiente' && l.estado !== 'Sin fecha').length;
+  const pct = total ? Math.round((revisados / total) * 100) : 0;
+  document.getElementById('venc-progress-fill').style.width = pct + '%';
+  document.getElementById('venc-progress-lbl').textContent = revisados + '/' + total + ' revisados';
+
+  // Badge de la pestaña "Revisión": cuenta lotes urgentes o vencidos que aún no
+  // se han gestionado — para que se note de un vistazo cuánto queda pendiente.
+  const urgentes = vencState.lista.filter(l => (l.urgencia === 'vencido' || l.urgencia === 'urgente') && l.estado === 'Pendiente').length;
+  const badgeRev = document.getElementById('venc-badge-revision');
+  badgeRev.classList.toggle('hidden', !urgentes);
+  badgeRev.textContent = urgentes;
+}
+
 function vencRender(){
   const box = document.getElementById('venc-list');
-  if(!vencState.lista.length){
-    box.innerHTML = '<div class="ap-empty">Sin lotes' + (vencState.estado ? '' : ' pendientes de revisión') + ' 🎉</div>';
+  if(!vencState.listaFiltrada.length){
+    const motivo = vencState.busqueda || vencState.proveedorFiltro ? 'Sin coincidencias con ese filtro.' : ('Sin lotes' + (vencState.estado ? '' : ' pendientes de revisión') + ' 🎉');
+    box.innerHTML = '<div class="ap-empty">' + motivo + '</div>';
     return;
   }
-  box.innerHTML = vencState.lista.map(l => {
+  box.innerHTML = vencState.listaFiltrada.map(l => {
     const chip = VENC_LABELS[l.urgencia](l.diasRestantes);
     return `<div class="venc-row ${l.urgencia}" data-id="${l.id}">
       <div class="info">
@@ -3078,7 +3219,9 @@ function vencAbrirDetalle(id){
      ${lote.fecha_vencimiento ? 'Vence ' + lote.fecha_vencimiento + ' · ' + chip : 'Sin fecha de vencimiento cargada'}<br>
      Estado actual: <b>${lote.estado}</b></div>`;
 
-  const estados = ['Revisado', 'Cambiado', 'Descuento recibido', 'Desechado'];
+  const estados = lote.estado === 'Retirado'
+    ? ['Revisado', 'Cambiado', 'Descuento recibido', 'Desechado']
+    : ['Retirado', 'Revisado', 'Cambiado', 'Descuento recibido', 'Desechado'];
   document.getElementById('venc-estados').innerHTML = estados.map(e =>
     `<button class="venc-estado-btn" data-estado="${e}">${vencIconoEstado(e)} ${e}</button>`
   ).join('');
@@ -3098,7 +3241,7 @@ function vencAbrirDetalle(id){
 }
 
 function vencIconoEstado(e){
-  return { 'Revisado': '👀', 'Cambiado': '🔄', 'Descuento recibido': '🏷️', 'Desechado': '🗑️' }[e] || '•';
+  return { 'Retirado': '📤', 'Revisado': '👀', 'Cambiado': '🔄', 'Descuento recibido': '🏷️', 'Desechado': '🗑️' }[e] || '•';
 }
 
 let vencEstadoSeleccionado = null;
@@ -3138,7 +3281,11 @@ async function vencConfirmar(){
     else showToast('✓ Lote actualizado a "' + estado + '"');
     cerrarModal('venc-detalle-ov');
     vencEstadoSeleccionado = null;
-    vencCargar();
+    // Recarga la vista donde estaba el usuario — si gestionó un lote desde
+    // Pendientes, vuelve a esa lista (ya no debería seguir apareciendo ahí salvo
+    // que el nuevo estado siga siendo "Retirado", lo cual no es una opción disponible).
+    if(vencState.vista === 'pendientes') vencCargarPendientes();
+    else vencCargar();
   }catch(e){
     showToast('⚠️ ' + e.message);
   }
@@ -3146,22 +3293,198 @@ async function vencConfirmar(){
 
 document.getElementById('venc-close').onclick = () => irASeccion('inicio');
 document.getElementById('venc-detalle-close').onclick = () => cerrarModal('venc-detalle-ov');
-document.querySelectorAll('.venc-tab').forEach(tab => {
+
+// Tabs de VISTA (Revisión / Pendientes) — solo el primer grupo .venc-tabs.
+document.querySelectorAll('#venc-ov > .venc-tabs > .venc-tab').forEach(tab => {
+  tab.onclick = () => vencSetVista(tab.dataset.vista);
+});
+function vencSetVista(vista){
+  vencState.vista = vista;
+  document.querySelectorAll('#venc-ov > .venc-tabs > .venc-tab').forEach(t => t.classList.toggle('active', t.dataset.vista === vista));
+  document.getElementById('venc-view-revision').classList.toggle('hidden', vista !== 'revision');
+  document.getElementById('venc-view-pendientes').classList.toggle('hidden', vista !== 'pendientes');
+  if(vista === 'pendientes') vencCargarPendientes();
+}
+
+// Tabs de ESTADO (Activos / Todos) — segundo grupo, dentro de #venc-view-revision.
+document.querySelectorAll('#venc-view-revision .venc-tab').forEach(tab => {
   tab.onclick = () => {
-    document.querySelectorAll('.venc-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#venc-view-revision .venc-tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     vencState.estado = tab.dataset.estado;
     vencCargar();
   };
 });
 
+document.getElementById('venc-search').oninput = e => {
+  vencState.busqueda = e.target.value;
+  vencAplicarFiltros();
+};
+document.getElementById('venc-prov-filtro').onchange = e => {
+  vencState.proveedorFiltro = e.target.value;
+  vencAplicarFiltros();
+};
+document.getElementById('venc-scan').onclick = () => {
+  cerrarModal('venc-ov');
+  openScanner(code => {
+    abrirModal('venc-ov');
+    document.getElementById('venc-search').value = code;
+    vencState.busqueda = code;
+    vencAplicarFiltros();
+  });
+};
+
+// ---- Vista "Pendientes": lotes en estado "Retirado" (ya salieron de góndola,
+// esperando que el proveedor los cambie o se confirme como merma). ----
+async function vencCargarPendientes(){
+  const box = document.getElementById('venc-pend-list');
+  box.innerHTML = '<div class="ap-empty">Cargando…</div>';
+  try{
+    const res = await fetch(SYNC_URL + '?action=vencimientos&estado=Retirado');
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || 'Error al cargar pendientes');
+    const lista = j.lista || [];
+    document.getElementById('venc-badge-pendientes').classList.toggle('hidden', !lista.length);
+    document.getElementById('venc-badge-pendientes').textContent = lista.length;
+    if(!lista.length){ box.innerHTML = '<div class="ap-empty">Sin lotes pendientes de reposición 🎉</div>'; return; }
+    box.innerHTML = lista.map(l => `<div class="venc-row" data-id="${l.id}">
+      <div class="info">
+        <div class="n">${l.producto}</div>
+        <div class="s">${l.cantidad} ${l.unidad} · retirado el ${l.fecha_retiro || l.fecha_revision || '—'}</div>
+      </div>
+      <div class="venc-chip sin_fecha">Pendiente</div>
+    </div>`).join('');
+    box.querySelectorAll('.venc-row').forEach(row => {
+      row.onclick = () => {
+        vencState.lista = lista; // para que vencAbrirDetalle encuentre el lote
+        vencAbrirDetalle(Number(row.dataset.id));
+      };
+    });
+  }catch(e){
+    box.innerHTML = '<div class="ap-empty">⚠️ No se pudo cargar.</div>';
+  }
+}
+
 function openVencimientos(){
-  vencState.estado = '';
-  document.querySelectorAll('.venc-tab').forEach(t => t.classList.toggle('active', t.dataset.estado === ''));
+  vencState.estado = ''; vencState.vista = 'revision'; vencState.busqueda = ''; vencState.proveedorFiltro = '';
+  document.getElementById('venc-search').value = '';
+  document.querySelectorAll('#venc-view-revision .venc-tab').forEach(t => t.classList.toggle('active', t.dataset.estado === ''));
+  vencSetVista('revision');
   abrirModal('venc-ov');
   vencCargar();
 }
 document.getElementById('btn-vencimientos').onclick = () => irASeccion('vencimientos');
+
+// ============================================================
+//  MÓDULO: VENCIMIENTOS — NUEVO LOTE
+//  Formulario simplificado (buscar producto → cantidad → fecha),
+//  reutiliza la misma acción de backend "lote_nuevo" que Recepción.
+// ============================================================
+const vencNuevoState = { item: null };
+
+function vencAbrirNuevoLote(){
+  vencNuevoState.item = null;
+  document.getElementById('venc-n-search').value = '';
+  document.getElementById('venc-n-results').innerHTML = '';
+  document.getElementById('venc-n-picked').classList.remove('on');
+  document.getElementById('venc-n-cantidad-field').style.display = 'none';
+  document.getElementById('venc-n-lote-field').style.display = 'none';
+  document.getElementById('venc-n-fecha-field').style.display = 'none';
+  document.getElementById('venc-n-cantidad').value = '';
+  document.getElementById('venc-n-lote').value = '';
+  document.getElementById('venc-n-fecha-dd').value = '';
+  document.getElementById('venc-n-fecha-mm').value = '';
+  document.getElementById('venc-n-fecha-aaaa').value = '';
+  document.getElementById('venc-n-guardar').disabled = true;
+  abrirModal('venc-nuevo-ov');
+  document.getElementById('venc-n-search').focus();
+}
+document.getElementById('venc-nuevo-lote-btn').onclick = vencAbrirNuevoLote;
+document.getElementById('venc-nuevo-close').onclick = () => cerrarModal('venc-nuevo-ov');
+
+document.getElementById('venc-n-search').oninput = e => {
+  const lista = buscarProductos(e.target.value);
+  const box = document.getElementById('venc-n-results');
+  box.innerHTML = lista.map(it => `<div class="result-item" data-ref="${it.ref}"><div class="n">${it.nombre}</div><div class="s">${it.prov}${it.barcode ? ' · ' + it.barcode : ''}</div></div>`).join('');
+  box.querySelectorAll('[data-ref]').forEach(el => el.onclick = () => vencNuevoPick(el.dataset.ref));
+};
+document.getElementById('venc-n-scan').onclick = () => {
+  cerrarModal('venc-nuevo-ov');
+  openScanner(code => {
+    const lista = buscarProductos(code);
+    if(lista.length === 1){ abrirModal('venc-nuevo-ov'); vencNuevoPick(lista[0].ref); }
+    else{
+      abrirModal('venc-nuevo-ov');
+      document.getElementById('venc-n-search').value = code;
+      document.getElementById('venc-n-search').dispatchEvent(new Event('input', {bubbles:true}));
+    }
+  });
+};
+
+function vencNuevoPick(ref){
+  const it = (DB.items || []).find(i => i.ref === ref);
+  if(!it) return;
+  vencNuevoState.item = it;
+  document.getElementById('venc-n-search').value = it.nombre;
+  document.getElementById('venc-n-results').innerHTML = '';
+  document.getElementById('venc-n-picked').classList.add('on');
+  document.getElementById('venc-n-nom').textContent = it.nombre;
+  document.getElementById('venc-n-cat').textContent = it.prov + (it.barcode ? ' · ' + it.barcode : '');
+  document.getElementById('venc-n-cantidad-field').style.display = 'block';
+  document.getElementById('venc-n-lote-field').style.display = 'block';
+  document.getElementById('venc-n-fecha-field').style.display = 'block';
+  document.getElementById('venc-n-unidad-lbl').textContent = it.peso ? 'kg' : 'u';
+  document.getElementById('venc-n-cantidad').value = '';
+  vencValidarNuevo();
+}
+document.getElementById('venc-n-qty-menos').onclick = () => {
+  const i = document.getElementById('venc-n-cantidad');
+  const step = vencNuevoState.item && vencNuevoState.item.peso ? 0.05 : 1;
+  i.value = Math.max(0, (Number(i.value) || 0) - step).toFixed(vencNuevoState.item && vencNuevoState.item.peso ? 3 : 0);
+  vencValidarNuevo();
+};
+document.getElementById('venc-n-qty-mas').onclick = () => {
+  const i = document.getElementById('venc-n-cantidad');
+  const step = vencNuevoState.item && vencNuevoState.item.peso ? 0.05 : 1;
+  i.value = ((Number(i.value) || 0) + step).toFixed(vencNuevoState.item && vencNuevoState.item.peso ? 3 : 0);
+  vencValidarNuevo();
+};
+document.getElementById('venc-n-cantidad').oninput = vencValidarNuevo;
+wireFechaSegmentada('venc-n-fecha-dd', 'venc-n-fecha-mm', 'venc-n-fecha-aaaa', 'venc-n-fecha', 'venc-n-fecha-cal');
+
+function vencValidarNuevo(){
+  const cant = Number(document.getElementById('venc-n-cantidad').value) || 0;
+  document.getElementById('venc-n-guardar').disabled = !(vencNuevoState.item && cant > 0);
+}
+
+document.getElementById('venc-n-guardar').onclick = async () => {
+  const it = vencNuevoState.item; if(!it) return;
+  const btn = document.getElementById('venc-n-guardar');
+  const cantidad = Number(document.getElementById('venc-n-cantidad').value) || 0;
+  const fecha = fechaSegmentadaTexto('venc-n-fecha-dd', 'venc-n-fecha-mm', 'venc-n-fecha-aaaa');
+  const lote = document.getElementById('venc-n-lote').value.trim();
+  btn.disabled = true; btn.textContent = 'Guardando…';
+  try{
+    const payload = { sku: it.ref, cantidad, fechaVencimiento: fecha };
+    if(lote) payload.lote = lote;
+    const res = await fetch(SYNC_URL, {method:'POST', body: JSON.stringify({action:'lote_nuevo', payload})});
+    const j = await res.json();
+    if(j && j.ok){
+      const itLocal = (DB.items || []).find(x => x.ref === it.ref);
+      if(itLocal){ if(j.nuevoStock != null) itLocal.stock = j.nuevoStock; persist(); }
+      showToast('✓ Lote guardado: ' + it.nombre + ' · +' + cantidad + (it.peso ? ' kg' : ' u') + (fecha ? ' · vence ' + fecha : ''));
+      cerrarModal('venc-nuevo-ov');
+      vencCargar();
+    }else{
+      showToast('❌ Error: ' + ((j && j.error) || 'no se pudo guardar el lote'));
+    }
+  }catch(e){
+    showToast('❌ Error de conexión al guardar el lote');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Guardar lote';
+    vencValidarNuevo();
+  }
+};
 
 // ============================================================
 //  TARJETA "REPORTES" Y ACCIONES RÁPIDAS DEL INICIO
