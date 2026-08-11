@@ -1306,10 +1306,15 @@ async function accionVencimientoEstado(env, payload) {
 //  automático al agotarse la cantidad, o al vencer sin venderse).
 // ============================================================
 
-const MOTIVOS_MERMA_VALIDOS = ["vencido", "dañado", "robo", "otro"];
+// Mismos motivos que usa la app hermana (Marín 376) — "otro" se mantiene al final
+// solo como red de seguridad para datos viejos/llamadas internas que no manden uno
+// de la lista, el formulario de Mermas no lo ofrece como opción.
+const MOTIVOS_MERMA_VALIDOS = ["liquidado", "vencido", "dañado", "robo", "consumo_interno", "cambio_proveedor", "otro"];
 
-// Registro de merma mínimo — usado por el flujo de Descuentos activos para
-// contabilizar la parte de un lote que no se logra vender antes de vencer.
+// Registro de merma — usado tanto por el módulo "Mermas" (registro manual) como por
+// el flujo de Descuentos activos, para contabilizar la parte de un lote que no se
+// logra vender antes de vencer. El costo sale de Loyverse cuando el producto lo
+// tiene cargado; si no, se acepta costoManual (digitado a mano en el formulario).
 async function accionMerma(env, payload) {
   payload = payload || {};
   const it = await get(env, "SELECT * FROM productos WHERE sku = ?", String(payload.sku || "").trim());
@@ -1318,8 +1323,15 @@ async function accionMerma(env, payload) {
   const cantidad = Number(payload.cantidad);
   if (!cantidad || cantidad <= 0) throw new Error("Cantidad inválida para " + it.nombre);
 
+  const responsable = String(payload.responsable || "").trim();
+  if (!responsable) throw new Error("Indica el usuario responsable");
+
   const unidad = it.sold_by_weight ? "kg" : "un";
-  const costoUnit = it.costo || 0;
+  const costoLoyverse = Number(it.costo) || 0;
+  const costoManual = Number(payload.costoManual) || 0;
+  // El costo de Loyverse manda siempre que exista — el manual es solo un respaldo
+  // para productos que todavía no lo tienen cargado ahí.
+  const costoUnit = costoLoyverse > 0 ? costoLoyverse : costoManual;
   const costoTotal = Math.round(cantidad * costoUnit);
   const motivo = MOTIVOS_MERMA_VALIDOS.includes(payload.motivo) ? payload.motivo : "otro";
   const origen = payload.origen === "vencimiento" ? "vencimiento" : "manual";
@@ -1329,11 +1341,12 @@ async function accionMerma(env, payload) {
     `INSERT INTO mermas (fecha, sku, producto, categoria, unidad, lote, cantidad, costo_unitario, costo_total, motivo, estado_costo, responsable, origen)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     fecha, it.sku, it.nombre, it.categoria, unidad, payload.lote || "", cantidad,
-    costoUnit, costoTotal, motivo, costoUnit ? "OK" : "⚠️ SIN COSTO", payload.responsable || "", origen);
+    costoUnit, costoTotal, motivo, costoUnit ? "OK" : "⚠️ SIN COSTO", responsable, origen);
 
   const out = {
-    filaIndex: insertRes.meta.last_row_id, fecha, sku: it.sku, nombre: it.nombre,
-    cantidad, costoUnitario: costoUnit, costoTotal, motivo
+    id: insertRes.meta.last_row_id, filaIndex: insertRes.meta.last_row_id, fecha, sku: it.sku, nombre: it.nombre,
+    categoria: it.categoria, unidad, cantidad, costoUnitario: costoUnit, costoTotal, motivo,
+    costoDesdeLoyverse: costoLoyverse > 0, responsable
   };
 
   // Descuenta stock en Loyverse (con el mismo tope-en-0 que el resto de la app) —
@@ -1347,6 +1360,67 @@ async function accionMerma(env, payload) {
   }
 
   return out;
+}
+
+// GET /?action=historial_mermas[&sku=XXXX][&dias=30][&limit=200]  →  historial de
+// mermas registradas, más reciente primero. `dias` filtra en JS sobre el campo
+// `fecha` (texto DD/MM/AAAA, igual que vencimientos/auditoría — no se puede
+// comparar como texto en SQL, por eso se usa parseFechaDDMMAAAA aquí igual que en
+// diasRestantes()).
+async function historialMermas(env, { sku, dias, limit } = {}) {
+  let sql = "SELECT * FROM mermas WHERE 1=1";
+  const params = [];
+  const skuLimpio = String(sku || "").trim();
+  if (skuLimpio) { sql += " AND sku = ?"; params.push(skuLimpio); }
+  sql += " ORDER BY id DESC LIMIT ?";
+  const tope = Math.min(Number(limit) || 200, 500);
+  params.push(tope);
+  const { results } = await env.DB.prepare(sql).bind(...params).all();
+
+  let lista = results;
+  const diasNum = Number(dias) || 0;
+  if (diasNum > 0) {
+    const desde = new Date(Date.now() - diasNum * 86400000);
+    lista = lista.filter(r => {
+      const d = parseFechaDDMMAAAA(r.fecha);
+      return d && d >= desde;
+    });
+  }
+
+  const totalCosto = lista.reduce((s, r) => s + (Number(r.costo_total) || 0), 0);
+  const totalCantidad = lista.reduce((s, r) => s + (Number(r.cantidad) || 0), 0);
+  return { lista, totalCosto, totalCantidad, total: lista.length };
+}
+
+// POST { action:'merma_motivo', payload:{id,motivo,responsable} }  →  corrige el
+// motivo de una merma ya registrada (ej. se anotó "vencido" y en realidad fue
+// "dañado"). Mismo estilo que vencimiento_estado, pero acá NO se vuelve a tocar el
+// stock en Loyverse — eso ya se descontó al registrar la merma, esto solo corrige
+// la clasificación para los reportes. Queda registrado en `auditoria` para trazar
+// quién corrigió y cuándo.
+async function accionMermaMotivo(env, payload) {
+  payload = payload || {};
+  const id = Number(payload.id);
+  if (!id) throw new Error("Falta el id de la merma");
+
+  const motivo = String(payload.motivo || "").trim();
+  if (!MOTIVOS_MERMA_VALIDOS.includes(motivo)) throw new Error("Motivo inválido: " + motivo);
+
+  const responsable = String(payload.responsable || "").trim();
+  if (!responsable) throw new Error("Indica el usuario responsable");
+
+  const merma = await get(env, "SELECT * FROM mermas WHERE id = ?", id);
+  if (!merma) throw new Error("Merma no encontrada");
+
+  await run(env, "UPDATE mermas SET motivo = ? WHERE id = ?", motivo, id);
+
+  await run(env,
+    `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    fechaHoraDDMMAAAA(), "correccion_motivo_merma", merma.sku, merma.producto, merma.categoria, null, null,
+    "Corrección de motivo de merma #" + id + ": " + merma.motivo + " → " + motivo, responsable);
+
+  return { id, sku: merma.sku, nombre: merma.producto, motivoAnterior: merma.motivo, motivo };
 }
 
 // POST { action:'aplicar_descuento_vencimiento', payload:{id,precio,responsable} }
@@ -2183,6 +2257,33 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'registrar_merma', payload:{sku,cantidad,costoManual,motivo,responsable,lote} }
+      // → registra una merma (pérdida): guarda el registro en `mermas` con el costo
+      //   de Loyverse (o el digitado a mano si el producto no lo tiene cargado) y
+      //   descuenta el stock en Loyverse, igual que un ajuste negativo.
+      if (action === "registrar_merma") {
+        const resultado = await accionMerma(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=historial_mermas[&sku=XXXX][&dias=30][&limit=200]  →  historial
+      // de mermas registradas, más reciente primero, con total de costo y cantidad.
+      if (action === "historial_mermas") {
+        const sku = url.searchParams.get("sku") || "";
+        const dias = url.searchParams.get("dias") || "";
+        const limit = url.searchParams.get("limit") || "";
+        const resultado = await historialMermas(env, { sku, dias, limit });
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'merma_motivo', payload:{id,motivo,responsable} } → corrige el
+      // motivo de una merma ya registrada (no vuelve a tocar el stock).
+      if (action === "merma_motivo") {
+        const resultado = await accionMermaMotivo(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
       // GET /?action=descuentos_activos  →  lista de lotes con descuento aplicado
       // y todavía en gestión (sin cerrar).
       if (action === "descuentos_activos") {
@@ -2320,7 +2421,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);

@@ -90,6 +90,7 @@ button{font-family:inherit}
 .menu-card.recibir .ico{background:var(--verde-bg);color:var(--verde)}
 .menu-card.venc .ico{background:var(--ambar-bg);color:var(--ambar)}
 .menu-card.reportes .ico{background:var(--violeta-bg);color:var(--violeta)}
+.menu-card.mermas .ico{background:var(--rojo-bg);color:var(--rojo)}
 .menu-card .txt{flex:1;min-width:0}
 .menu-card .txt .t{font-family:'Manrope';font-weight:800;font-size:14.5px;color:var(--ink)}
 .menu-card .txt .s{font-size:11.5px;color:var(--muted);margin-top:1px;line-height:1.3}
@@ -233,6 +234,16 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .iva-btn.active{border-color:var(--verde);background:var(--verde-bg);color:var(--verde)}
 .iva-info{color:var(--muted);font-size:10.5px;margin-top:5px;line-height:1.4}
 .resumen-box{margin-top:8px;padding:9px 11px;background:var(--card2);border-radius:10px;font-size:11.5px;line-height:1.7;color:var(--ink)}
+
+/* ===== MERMAS: motivo (chips) y costo (ok desde Loyverse / advertencia manual) ===== */
+.motivo-chips{display:flex;flex-wrap:wrap;gap:7px}
+.motivo-chip{border:1.5px solid var(--line);background:#fff;border-radius:20px;padding:7px 13px;font-size:12.5px;font-weight:700;color:var(--muted);cursor:pointer}
+.motivo-chip.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+.costo-ok-box{background:var(--verde-bg);border:1.5px solid var(--verde);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--verde);font-weight:700}
+.costo-warn-box{background:var(--rojo-bg);border:1.5px solid var(--rojo);border-radius:12px;padding:10px 12px;font-size:12.5px;color:var(--rojo);font-weight:600;line-height:1.4;margin-bottom:8px}
+.costo-manual-input{width:100%;height:46px;padding:0 12px;border:1.5px solid var(--rojo);border-radius:12px;font-size:14px;font-family:'JetBrains Mono',monospace}
+.total-box{background:var(--card2);border-radius:12px;padding:10px 12px;font-size:13px;display:flex;justify-content:space-between;align-items:center;font-weight:700;color:var(--ink)}
+.total-box b{font-family:'JetBrains Mono',monospace;font-size:17px}
 
 .btn-primary{width:100%;height:50px;border-radius:14px;background:var(--brand-grad);border:none;color:#fff;font-weight:800;font-size:15px;cursor:pointer;box-shadow:var(--sh-card)}
 .btn-primary:disabled{opacity:.4;cursor:default}
@@ -520,6 +531,15 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 
+  <button class="menu-card mermas" id="btn-mermas">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></div>
+    <div class="txt">
+      <div class="t">Mermas</div>
+      <div class="s">Registrar pérdidas: vencido, dañado, robo u otro motivo</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+  </button>
+
   <button class="menu-card pedido" id="btn-proveedores">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
     <div class="txt">
@@ -704,6 +724,78 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   </div>
   <div class="ov-foot">
     <button class="btn-primary" id="rc-guardar" disabled>Guardar y sumar stock</button>
+  </div>
+</div>
+
+<!-- ===== MODAL: MERMAS (registro de pérdidas — mismos campos que Marín) ===== -->
+<div class="ov hidden" id="mm-ov">
+  <div class="ov-head">
+    <h3>🗑️ Registrar merma</h3>
+    <button class="ov-close" id="mm-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+
+    <div class="field">
+      <label>Producto</label>
+      <div class="search-row">
+        <input id="mm-search" placeholder="Nombre, SKU o código…" autocomplete="off">
+        <button class="scan-btn" id="mm-scan" type="button" aria-label="Escanear código">📷</button>
+      </div>
+      <div class="results" id="mm-results"></div>
+      <div class="picked" id="mm-picked">
+        <div class="n" id="mm-nom">—</div>
+        <div class="s" id="mm-cat">—</div>
+      </div>
+    </div>
+
+    <div class="field" id="mm-cantidad-field" style="display:none">
+      <label>Cantidad</label>
+      <div class="qty-row">
+        <button class="qty-btn" id="mm-qty-menos" type="button">−</button>
+        <input id="mm-cantidad" inputmode="decimal" placeholder="0" disabled>
+        <span id="mm-unidad-lbl" style="min-width:34px;text-align:center;color:var(--muted);font-weight:700;font-size:12px">u</span>
+        <button class="qty-btn" id="mm-qty-mas" type="button">+</button>
+      </div>
+    </div>
+
+    <div class="field" id="mm-costo-field" style="display:none">
+      <label>Costo</label>
+      <div id="mm-costo-ok" class="costo-ok-box hidden">✓ <span id="mm-costo-txt">—</span> · desde Loyverse</div>
+      <div id="mm-costo-warn-wrap" class="hidden">
+        <div class="costo-warn-box">⚠️ Este producto no tiene costo cargado en Loyverse. Escríbelo para poder registrar la merma, y de paso cárgalo en Loyverse (Buscar producto → editar) para que no vuelva a pasar.</div>
+        <input class="costo-manual-input" id="mm-costo-manual" inputmode="decimal" placeholder="Costo por unidad ($)">
+      </div>
+    </div>
+
+    <div class="field" id="mm-total-field" style="display:none">
+      <div class="total-box">Costo total <b id="mm-total-val">$0</b></div>
+    </div>
+
+    <div class="field" id="mm-motivo-field" style="display:none">
+      <label>Motivo</label>
+      <div class="motivo-chips" id="mm-motivos">
+        <button type="button" class="motivo-chip" data-m="liquidado">Liquidado</button>
+        <button type="button" class="motivo-chip" data-m="vencido">Vencido</button>
+        <button type="button" class="motivo-chip" data-m="dañado">Dañado</button>
+        <button type="button" class="motivo-chip" data-m="robo">Robo</button>
+        <button type="button" class="motivo-chip" data-m="consumo_interno">Consumo interno</button>
+        <button type="button" class="motivo-chip" data-m="cambio_proveedor">Cambio con proveedor</button>
+      </div>
+    </div>
+
+    <div class="field" id="mm-resp-field" style="display:none">
+      <label>Usuario responsable</label>
+      <input id="mm-responsable" placeholder="Tu nombre" autocomplete="off">
+    </div>
+
+    <div class="field" style="margin-top:4px">
+      <button class="btn-secondary" id="mm-ver-historial" type="button">🕘 Ver historial de mermas</button>
+      <div id="mm-historial-box" class="hidden" style="margin-top:10px;max-height:240px;overflow-y:auto"></div>
+    </div>
+
+  </div>
+  <div class="ov-foot">
+    <button class="btn-primary" id="mm-guardar" disabled>Guardar merma</button>
   </div>
 </div>
 
@@ -1821,7 +1913,7 @@ function cerrarModal(id){ document.getElementById(id).classList.add('hidden'); }
 //  history.back() y pushState al encadenar aperturas/cierres).
 // ============================================================
 let seccionActual='inicio';
-const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov' };
+const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov', mermas:'mm-ov' };
 history.replaceState({ cumpasSeccion:'inicio' }, '', location.pathname);
 
 function cerrarSeccionActual(){
@@ -1846,6 +1938,7 @@ function abrirSeccionVisual(seccion){
   else if(seccion==='buscar') openFichaBuscarVisual();
   else if(seccion==='proveedores') openProveedoresVisual();
   else if(seccion==='crear') openCrearProductoVisual();
+  else if(seccion==='mermas') openMermas();
 }
 
 function actualizarNavActiva(){
@@ -4597,7 +4690,7 @@ document.getElementById('pv-search').oninput=e=>pvRenderLista(e.target.value);
 // guardan estado dispara guardarSnapshot() (con debounce ya incluido ahí dentro).
 // Un solo listener delegado, en vez de tocar cada input individual — así ningún
 // campo nuevo que se agregue en el futuro queda fuera del guardado. ----
-['rc-ov','cp-ov','fp-ov','ap-ov','pv-ov'].forEach(modId=>{
+['rc-ov','cp-ov','fp-ov','ap-ov','pv-ov','mm-ov'].forEach(modId=>{
   const el=document.getElementById(modId);
   if(!el)return;
   el.addEventListener('input', guardarSnapshot);
@@ -4633,6 +4726,188 @@ async function openProductosProveedor(proveedor){
 }
 document.getElementById('pvp-close').onclick=()=>cerrarModal('pvp-ov');
 document.getElementById('btn-ficha-producto').onclick=openFichaBuscar;
+
+// ============================================================
+//  MERMAS (registro de pérdidas) — mismo flujo que Marín: buscar
+//  producto, cantidad, costo (desde Loyverse, o a mano con
+//  advertencia si no está cargado), motivo y responsable. Guarda
+//  en D1 (tabla `mermas`) y descuenta stock en Loyverse igual que
+//  un ajuste negativo (reutiliza sumarStockLoyverse en el worker).
+// ============================================================
+const mmState={ item:null, motivo:null };
+
+function mmRenderResults(list){
+  const box=document.getElementById('mm-results');
+  if(!list.length){ box.innerHTML=''; return; }
+  box.innerHTML=list.map(it=>`<div class="result-item" data-ref="${it.ref}"><div class="n">${it.nombre}</div><div class="s">${it.prov}${it.barcode?' · '+it.barcode:''}</div></div>`).join('');
+  box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>mmPick(el.dataset.ref));
+}
+
+function mmPick(ref){
+  const it=(DB.items||[]).find(i=>i.ref===ref);
+  if(!it)return;
+  mmState.item=it;
+  document.getElementById('mm-search').value=it.nombre;
+  document.getElementById('mm-results').innerHTML='';
+  document.getElementById('mm-picked').classList.add('on');
+  document.getElementById('mm-nom').textContent=it.nombre;
+  document.getElementById('mm-cat').textContent=it.prov+(it.barcode?' · '+it.barcode:'');
+
+  const esPeso=!!it.peso;
+  document.getElementById('mm-unidad-lbl').textContent=esPeso?'kg':'u';
+  const cIn=document.getElementById('mm-cantidad');
+  cIn.disabled=false; cIn.value=''; cIn.placeholder=esPeso?'0.000':'0';
+
+  const okBox=document.getElementById('mm-costo-ok'),warnWrap=document.getElementById('mm-costo-warn-wrap');
+  if(it.coste>0){
+    okBox.classList.remove('hidden'); warnWrap.classList.add('hidden');
+    document.getElementById('mm-costo-txt').textContent=fmtPeso(it.coste)+(esPeso?' / kg':' / u');
+    document.getElementById('mm-costo-manual').value='';
+  }else{
+    okBox.classList.add('hidden'); warnWrap.classList.remove('hidden');
+    document.getElementById('mm-costo-manual').value='';
+  }
+
+  document.getElementById('mm-cantidad-field').style.display='block';
+  document.getElementById('mm-costo-field').style.display='block';
+  document.getElementById('mm-total-field').style.display='block';
+  document.getElementById('mm-motivo-field').style.display='block';
+  document.getElementById('mm-resp-field').style.display='block';
+
+  mmCalcTotal(); mmValidar();
+  guardarSnapshot();
+}
+
+function mmCostoUnit(){
+  const it=mmState.item; if(!it)return 0;
+  if(it.coste>0)return it.coste;
+  return Number(document.getElementById('mm-costo-manual').value)||0;
+}
+function mmCalcTotal(){
+  const cant=Number(document.getElementById('mm-cantidad').value)||0;
+  const total=Math.round(cant*mmCostoUnit());
+  document.getElementById('mm-total-val').textContent=fmtPeso(total);
+}
+function mmValidar(){
+  const it=mmState.item;
+  const cant=Number(document.getElementById('mm-cantidad').value)||0;
+  const resp=document.getElementById('mm-responsable').value.trim();
+  const ok=!!(it&&cant>0&&mmCostoUnit()>0&&mmState.motivo&&resp);
+  document.getElementById('mm-guardar').disabled=!ok;
+}
+
+function mmReset(){
+  mmState.item=null; mmState.motivo=null;
+  document.getElementById('mm-search').value='';
+  document.getElementById('mm-results').innerHTML='';
+  document.getElementById('mm-picked').classList.remove('on');
+  document.getElementById('mm-cantidad-field').style.display='none';
+  document.getElementById('mm-costo-field').style.display='none';
+  document.getElementById('mm-total-field').style.display='none';
+  document.getElementById('mm-motivo-field').style.display='none';
+  document.getElementById('mm-resp-field').style.display='none';
+  const cIn=document.getElementById('mm-cantidad'); cIn.value=''; cIn.disabled=true;
+  document.getElementById('mm-costo-manual').value='';
+  document.getElementById('mm-costo-ok').classList.add('hidden');
+  document.getElementById('mm-costo-warn-wrap').classList.add('hidden');
+  document.getElementById('mm-total-val').textContent='$0';
+  document.querySelectorAll('.motivo-chip[data-m]').forEach(b=>b.classList.remove('active'));
+  document.getElementById('mm-historial-box').classList.add('hidden');
+  document.getElementById('mm-historial-box').innerHTML='';
+  const savedResp=localStorage.getItem('cumpas_responsable')||'';
+  document.getElementById('mm-responsable').value=savedResp;
+  document.getElementById('mm-guardar').disabled=true;
+  document.getElementById('mm-guardar').textContent='Guardar merma';
+}
+
+function openMermas(){ mmReset(); abrirModal('mm-ov'); document.getElementById('mm-search').focus(); }
+
+document.getElementById('mm-close').onclick=()=>irASeccion('inicio');
+document.getElementById('mm-search').oninput=e=>mmRenderResults(buscarProductos(e.target.value));
+document.getElementById('mm-scan').onclick=()=>{
+  cerrarModal('mm-ov');
+  openScanner(code=>{
+    abrirModal('mm-ov');
+    document.getElementById('mm-search').value=code;
+    const lista=buscarProductos(code);
+    if(lista.length===1) mmPick(lista[0].ref); else mmRenderResults(lista);
+  });
+};
+document.getElementById('mm-qty-menos').onclick=()=>{
+  const i=document.getElementById('mm-cantidad');
+  const step=mmState.item&&mmState.item.peso?0.05:1;
+  i.value=Math.max(0,(Number(i.value)||0)-step).toFixed(mmState.item&&mmState.item.peso?3:0);
+  mmCalcTotal(); mmValidar();
+};
+document.getElementById('mm-qty-mas').onclick=()=>{
+  const i=document.getElementById('mm-cantidad');
+  const step=mmState.item&&mmState.item.peso?0.05:1;
+  i.value=((Number(i.value)||0)+step).toFixed(mmState.item&&mmState.item.peso?3:0);
+  mmCalcTotal(); mmValidar();
+};
+document.getElementById('mm-cantidad').oninput=()=>{ mmCalcTotal(); mmValidar(); };
+document.getElementById('mm-costo-manual').oninput=()=>{ mmCalcTotal(); mmValidar(); };
+document.querySelectorAll('.motivo-chip[data-m]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.motivo-chip[data-m]').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); mmState.motivo=b.dataset.m; mmValidar();
+});
+document.getElementById('mm-responsable').oninput=mmValidar;
+
+document.getElementById('mm-guardar').onclick=async()=>{
+  const btn=document.getElementById('mm-guardar');
+  const it=mmState.item; if(!it)return;
+  const cantidad=Number(document.getElementById('mm-cantidad').value)||0;
+  const costoManual=it.coste>0?undefined:(Number(document.getElementById('mm-costo-manual').value)||0);
+  const responsable=document.getElementById('mm-responsable').value.trim();
+  btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    localStorage.setItem('cumpas_responsable', responsable);
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'registrar_merma',payload:{
+      sku:it.ref, cantidad, costoManual, motivo:mmState.motivo, responsable
+    }})});
+    const j=await res.json();
+    if(j&&j.ok){
+      if(j.nuevoStock!=null){
+        const itLocal=(DB.items||[]).find(x=>x.ref===it.ref);
+        if(itLocal){ itLocal.stock=j.nuevoStock; persist(); }
+      }
+      showToast('✓ Merma registrada: '+it.nombre+' · '+fmtPeso(j.costoTotal)+(j.avisoStock?' · '+j.avisoStock:''));
+      mmReset();
+      limpiarSnapshot();
+      document.getElementById('mm-search').focus();
+    }else{
+      showToast('❌ Error: '+((j&&j.error)||'no se pudo guardar la merma'));
+    }
+  }catch(e){
+    showToast('❌ Error de conexión al guardar la merma');
+  }finally{
+    mmValidar();
+    btn.textContent='Guardar merma';
+  }
+};
+
+document.getElementById('mm-ver-historial').onclick=async()=>{
+  const box=document.getElementById('mm-historial-box');
+  const btn=document.getElementById('mm-ver-historial');
+  if(!box.classList.contains('hidden')){ box.classList.add('hidden'); return; }
+  btn.textContent='Cargando…';
+  try{
+    const url=SYNC_URL+'?action=historial_mermas&dias=30&limit=100'+(mmState.item?'&sku='+encodeURIComponent(mmState.item.ref):'');
+    const res=await fetch(url);
+    const j=await res.json();
+    if(j&&j.ok){
+      const lista=j.lista||[];
+      box.innerHTML=lista.length?(
+        '<div class="s" style="padding:2px 2px 8px">Últimos 30 días · Total: <b>'+fmtPeso(j.totalCosto)+'</b></div>'+
+        lista.map(m=>`<div class="result-item" style="cursor:default"><div class="n" style="font-size:12.5px">${m.producto} · ${fmtPeso(m.costo_total)}</div><div class="s">${m.fecha} · ${m.cantidad} ${m.unidad} · ${m.motivo} · ${m.responsable||'—'}</div></div>`).join('')
+      ):'<div class="s" style="padding:6px 2px">Sin mermas registradas en los últimos 30 días.</div>';
+      box.classList.remove('hidden');
+    }else{ showToast('❌ No se pudo cargar el historial de mermas'); }
+  }catch(e){ showToast('❌ Error de conexión al cargar el historial'); }
+  finally{ btn.textContent='🕘 Ver historial de mermas'; }
+};
+
+document.getElementById('btn-mermas').onclick=()=>irASeccion('mermas');
 
 // ============================================================
 //  NOTIFICACIONES PUSH
