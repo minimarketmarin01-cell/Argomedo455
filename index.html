@@ -207,6 +207,8 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .prov-select::-webkit-scrollbar{display:none}
 .prov-chip{flex:none;padding:8px 14px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12.5px;cursor:pointer;white-space:nowrap}
 .prov-chip.active{border-color:var(--cielo);background:var(--cielo);color:#fff}
+.chip-removible{display:inline-flex;align-items:center;gap:6px;padding:6px 8px 6px 12px;border-radius:16px;background:var(--cielo-tint);border:1.5px solid var(--cielo);color:var(--cielo-d);font-weight:700;font-size:12px}
+.chip-removible button{width:18px;height:18px;flex:none;border-radius:50%;border:none;background:var(--cielo-d);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .ap-search{padding:0 16px 10px}
 .ap-list{padding:0 16px 90px}
 .ap-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card)}
@@ -240,6 +242,9 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .ap-row .estado-badge.urgente{background:var(--rojo);color:#fff}
 .ap-row .estado-badge.pedir{background:var(--verde);color:#fff}
 .ap-row .estado-badge.sobrestock{background:var(--violeta);color:#fff}
+.trend-up{color:var(--verde);font-weight:800}
+.trend-down{color:var(--rojo);font-weight:800}
+.trend-flat{color:var(--muted)}
 
 /* ---- Layout ancho (tablet / POS), estilo referencia con carrito fijo lateral ---- */
 @media (min-width:900px){
@@ -740,8 +745,14 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
       <input id="ap-search" placeholder="Buscar producto…" style="width:100%;height:44px;padding:0 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-size:14px">
     </div>
   </div>
-  <div class="ap-toolbar" style="display:flex;align-items:center;gap:10px;padding:10px 16px 0">
-    <label style="font-size:11.5px;font-weight:700;color:var(--muted);white-space:nowrap">Cob. (días)</label>
+  <div class="ap-toolbar" style="display:flex;align-items:center;gap:8px;padding:10px 16px 0;flex-wrap:wrap">
+    <div class="toggle-row" id="ap-basis-seg" style="margin:0;flex:none;width:auto">
+      <button type="button" class="toggle-btn active" data-basis="7" style="padding:7px 10px">7d</button>
+      <button type="button" class="toggle-btn" data-basis="14" style="padding:7px 10px">14d</button>
+      <button type="button" class="toggle-btn" data-basis="30" style="padding:7px 10px">30d</button>
+      <button type="button" class="toggle-btn" data-basis="90" style="padding:7px 10px">90d</button>
+    </div>
+    <label style="font-size:11.5px;font-weight:700;color:var(--muted);white-space:nowrap;margin-left:4px">Cob. (días)</label>
     <input id="ap-cobertura" type="number" inputmode="numeric" value="10" style="width:56px;height:34px;text-align:center;border:1.5px solid var(--line);border-radius:8px;font-size:13px">
     <button id="ap-btn-ventas" style="margin-left:auto;height:34px;padding:0 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--cielo-d);font-weight:700;font-size:12px;white-space:nowrap">🔄 Actualizar ventas</button>
   </div>
@@ -755,7 +766,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <span class="th th-nombre" data-sort="nombre">Producto</span>
     <span class="th th-col" data-sort="cob">Cob ▾</span>
     <span class="th th-col" data-sort="stock">Stk ▾</span>
-    <span class="th th-col" data-sort="v7">Vta7d ▾</span>
+    <span class="th th-col" data-sort="venta" id="ap-th-venta">Vta7d ▾</span>
     <span class="th th-pedir" data-sort="sugerido">Pedir ▾</span>
   </div>
   <div class="ov-body" style="padding-top:0" id="ap-body">
@@ -773,8 +784,16 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   <div class="ov-body">
     <div class="cart-summary"><span id="cart-prov-txt">Proveedor: —</span><span id="cart-total-txt">0 productos</span></div>
     <div class="cart-body" id="cart-body"></div>
+    <div class="field hidden" id="cart-scale-card" style="background:var(--cielo-tint);border:1.5px solid var(--cielo);border-radius:12px;padding:12px;margin-top:10px">
+      <label style="color:var(--cielo-d)">⚡ Escala de volumen</label>
+      <div id="cart-scale-body" style="margin-top:8px"></div>
+    </div>
   </div>
   <div class="ov-foot">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 2px 10px;font-size:13px;font-weight:700;color:var(--ink)">
+      <span>Costo total del pedido</span>
+      <span id="cart-total-costo" class="mono">$0</span>
+    </div>
     <button class="btn-wa" id="btn-copy-wa">📋 Copiar pedido para WhatsApp</button>
     <button class="btn-secondary" id="btn-clear-cart" style="color:var(--rojo);border-color:var(--rojo)">Vaciar carrito</button>
   </div>
@@ -791,6 +810,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   <div class="venc-tabs">
     <button class="venc-tab active" data-vista="revision">📋 Revisión<span class="venc-badge hidden" id="venc-badge-revision"></span></button>
     <button class="venc-tab" data-vista="pendientes">⏳ Pendientes<span class="venc-badge hidden" id="venc-badge-pendientes"></span></button>
+    <button class="venc-tab" data-vista="descuentos">🏷️ Descuentos<span class="venc-badge hidden" id="venc-badge-descuentos"></span></button>
   </div>
 
   <div id="venc-view-revision">
@@ -823,6 +843,76 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
       <div class="ap-empty" style="text-align:left;color:var(--muted);font-size:12px;margin-bottom:10px;padding:0">Ya se retiraron de la góndola — esperando que el proveedor los cambie, o falta confirmar si quedan como merma.</div>
       <div class="venc-list" id="venc-pend-list"></div>
     </div>
+  </div>
+
+  <div id="venc-view-descuentos" class="hidden">
+    <div class="ov-body" style="padding-top:12px">
+      <div class="ap-empty" style="text-align:left;color:var(--muted);font-size:12px;margin-bottom:10px;padding:0">Productos con precio ya rebajado por vencimiento próximo — registra cuánto se vende o queda en merma hasta agotar el lote.</div>
+      <div class="venc-list" id="venc-desc-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: VENCIMIENTOS — APLICAR DESCUENTO ===== -->
+<div class="ov hidden" id="venc-aplicar-desc-ov">
+  <div class="ov-head">
+    <h3>🏷️ Aplicar descuento</h3>
+    <button class="ov-close" id="venc-aplicar-desc-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="venc-detalle-box" id="venc-aplicar-desc-info"></div>
+    <div class="field">
+      <label>Nuevo precio de venta</label>
+      <input id="venc-aplicar-desc-precio" inputmode="numeric" placeholder="$">
+      <div class="iva-info" id="venc-aplicar-desc-margen"></div>
+    </div>
+    <div class="field">
+      <label>Usuario responsable</label>
+      <input id="venc-aplicar-desc-responsable" placeholder="Tu nombre" autocomplete="off">
+    </div>
+  </div>
+  <div class="ov-foot">
+    <button class="btn-primary" id="venc-aplicar-desc-guardar">Aplicar descuento y sincronizar</button>
+  </div>
+</div>
+
+<!-- ===== MODAL: VENCIMIENTOS — GESTIONAR DESCUENTO ACTIVO ===== -->
+<div class="ov hidden" id="venc-gestion-desc-ov">
+  <div class="ov-head">
+    <h3>🏷️ Gestionar descuento</h3>
+    <button class="ov-close" id="venc-gestion-desc-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="venc-detalle-box" id="venc-gestion-desc-info"></div>
+
+    <div class="field">
+      <label>Cantidad vendida <span style="text-transform:none;font-weight:400">(con el precio rebajado)</span></label>
+      <div class="qty-row">
+        <button class="qty-btn" id="venc-gd-vendida-menos" type="button">−</button>
+        <input id="venc-gd-vendida" inputmode="decimal" placeholder="0">
+        <span id="venc-gd-unidad-lbl-1" style="min-width:34px;text-align:center;color:var(--muted);font-weight:700;font-size:12px">u</span>
+        <button class="qty-btn" id="venc-gd-vendida-mas" type="button">+</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Cantidad en merma <span style="text-transform:none;font-weight:400">(no se vendió)</span></label>
+      <div class="qty-row">
+        <button class="qty-btn" id="venc-gd-merma-menos" type="button">−</button>
+        <input id="venc-gd-merma" inputmode="decimal" placeholder="0">
+        <span id="venc-gd-unidad-lbl-2" style="min-width:34px;text-align:center;color:var(--muted);font-weight:700;font-size:12px">u</span>
+        <button class="qty-btn" id="venc-gd-merma-mas" type="button">+</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Usuario responsable</label>
+      <input id="venc-gd-responsable" placeholder="Tu nombre" autocomplete="off">
+    </div>
+  </div>
+  <div class="ov-foot">
+    <button class="btn-primary" id="venc-gd-guardar">Registrar gestión</button>
+    <button class="btn-secondary" id="venc-gd-cerrar" style="color:var(--rojo);border-color:var(--rojo)">Cerrar gestión (sin agotar el lote)</button>
   </div>
 </div>
 
@@ -888,6 +978,8 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   <div class="ov-body">
     <div class="venc-detalle-box" id="venc-detalle-info"></div>
 
+    <button type="button" class="btn-secondary hidden" id="venc-detalle-aplicar-desc-btn" style="color:var(--ambar);border-color:var(--ambar);margin-bottom:16px">🏷️ Aplicar descuento por vencimiento</button>
+
     <div class="venc-estados" id="venc-estados"></div>
 
     <div class="venc-retiro" id="venc-retiro">
@@ -931,9 +1023,17 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
         <input id="fp-nombre">
       </div>
       <div class="field">
-        <label>Proveedor</label>
+        <label>Proveedor <span style="text-transform:none;font-weight:400">(principal)</span></label>
         <input id="fp-proveedor" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
         <div class="results" id="fp-proveedor-results"></div>
+      </div>
+      <div class="field">
+        <label>Proveedores adicionales <span style="text-transform:none;font-weight:400">(opcional — este producto también se compra a estos)</span></label>
+        <div id="fp-prov-extra-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+        <div class="search-row">
+          <input id="fp-prov-extra-input" placeholder="Agregar otro proveedor…" autocomplete="off">
+        </div>
+        <div class="results" id="fp-prov-extra-results"></div>
       </div>
       <div class="field">
         <label>Sector</label>
@@ -1055,7 +1155,18 @@ function persist(){
 function restoreLocal(){
   try{
     const raw=localStorage.getItem('cumpas_catalogo');
-    if(raw){ DB.items=JSON.parse(raw); return true; }
+    if(raw){
+      DB.items=JSON.parse(raw);
+      // Resguardo: si el catálogo guardado es de una sesión anterior a este cambio,
+      // puede no traer _fmt/_scale calculados todavía.
+      DB.items.forEach(it=>{
+        if(it._fmt==null){
+          const t=tag(it.nombre, it.prov);
+          it._fmt=t.fmt; it._scale=t.scale; it._role=t.role; it._word=t.word;
+        }
+      });
+      return true;
+    }
   }catch(e){}
   return false;
 }
@@ -1308,6 +1419,13 @@ async function cargarCatalogo(silencioso){
     const j=await res.json();
     if(!j||!j.ok) throw new Error((j&&j.error)||'Respuesta inválida del servidor');
     DB.items=j.items||[];
+    // Formato/empaque (unidades por pack o caja) y escala de descuento por volumen,
+    // calculados una vez al cargar — evita recalcular con regex en cada render de
+    // la tabla (que puede tener miles de filas).
+    DB.items.forEach(it=>{
+      const t=tag(it.nombre, it.prov);
+      it._fmt=t.fmt; it._scale=t.scale; it._role=t.role; it._word=t.word;
+    });
     persist();
     // "Sincronizado hace X" refleja qué tan fresco es lo que se ve en pantalla, no
     // solo la última vez que se tocó el botón manual — así que se marca acá, en
@@ -2817,7 +2935,117 @@ document.getElementById('cp-guardar').onclick=async()=>{
 // ============================================================
 //  MÓDULO: ARMAR PEDIDO
 // ============================================================
-const apState={ prov:'TODOS', search:'', cobertura: Number(localStorage.getItem('cumpas_cobertura'))||10, sortBy:null, sortDir:'desc' };
+// ============================================================
+//  ESCALAS DE DESCUENTO POR VOLUMEN (CCU / Coca-Cola)
+//  Mismos tramos y costos negociados que usa Marín — el proveedor
+//  y la estructura de descuento son los mismos; si tus condiciones
+//  reales cambian, ajusta los números acá.
+// ============================================================
+const SCALES={
+  cc_15:{label:'Coca-Cola 1.5L · pack x6',unit:6,mixed:false,word:'packs',tiers:[{min:1,max:7,dto:4.3,c:1834},{min:8,max:14,dto:6.2,c:1782},{min:15,max:19,dto:8.1,c:1746},{min:20,max:9999,dto:10.7,c:1697}]},
+  cc_vidrio:{label:'Coca-Cola Vidrio Ret 1.25L · caja x9',unit:9,mixed:false,word:'cajas',tiers:[{min:1,max:6,dto:25.5,c:1015},{min:7,max:14,dto:26.6,c:910},{min:15,max:9999,dto:27.7,c:897}]},
+  ccu_ret:{label:'CCU Retornables 2.5L · pack x6 · MIXTA',unit:6,mixed:true,word:'packs',breaks:[0,4,8,12],dtoG:[5.0,10.69,16.11,21.06],cost:{pepsizero:[1583,1562,1471,1362],otros:[1583,1583,1544,1424]}}
+};
+const SCALE_OF_PROV={'COCA COLA':['cc_15','cc_vidrio'],'CCU':['ccu_ret']};
+
+// Detecta formato/empaque (unidades por pack o caja) según el nombre del producto
+// y su proveedor — mismo criterio de Marín, para que "Pedir" salga en múltiplos
+// reales de pack/caja, no en unidades sueltas cuando el proveedor no las vende así.
+function tag(nm,prov){
+  const n=(nm||'').toLowerCase();
+  function F(fmt,word,scale,role){return {fmt:fmt,scale:scale||null,role:role||null,word:word||'u'};}
+  const ret=/retorn/.test(n);
+  const s125=/1[.,]25|1¼|1 ?1\/4/.test(n);
+  const s15=/1[.,]5(?!\d)/.test(n);
+  const s16=/1[.,]6|1[.,]?600|1600/.test(n);
+  const s2=(/\b2\s?l/.test(n)||/2000\s?ml/.test(n))&&!/2[.,]5|2500/.test(n)&&!s125;
+  const s25=/2[.,]5|2500/.test(n);
+  const s3=(/\b3\s?l/.test(n)||/3000\s?ml/.test(n))&&!/6[.,]?5/.test(n);
+  const s65=/6[.,]?5\s?l/.test(n);
+  const v600=/600\s?ml/.test(n), v500=/500\s?ml/.test(n);
+  const v473=/473/.test(n), lata=/\b350\s?ml/.test(n)||/lata/.test(n), v310=/310/.test(n), v591=/591/.test(n);
+  const v300=/\b300\s?ml/.test(n), v250=/\b250\s?ml|250 ml/.test(n), v220=/220/.test(n), v200=/\b200\s?ml/.test(n);
+  const provU=(prov||'').toUpperCase();
+  if(/lipton/.test(n)&&(s15||s16))return F(6,'display');
+  if(provU==='COCA COLA' || provU==='COCA-COLA'){
+    const soda=/coca|sprite|fanta|inca/.test(n);
+    if(soda){
+      if(ret&&s125)return F(9,'caja',/coca cola/.test(n)?'cc_vidrio':null);
+      if(ret&&s2)return F(8,'caja');
+      if(ret&&s3)return F(6,'caja');
+      if(s15)return F(6,'display',/coca cola/.test(n)?'cc_15':null);
+      if(s2||s25||s3)return F(6,'display');
+      if(lata||v473||v591)return F(6,'display');
+      if(v250||v220)return F(12,'display');
+      return F(1,'u');
+    }
+    if(/monster|reign/.test(n))return F(6,'display');
+    if(/power ?ade/.test(n))return F(6,'display');
+    if(/tónica|tonica|ginger ale|schwep|shwep/.test(n))return F(6,'display');
+    if(/vital|benedictino|benedicto|aquari/.test(n)){if(s65)return F(2,'display');if(v500)return F(12,'display');if(v600)return F(6,'display');return F(6,'display');}
+    if(/kapo/.test(n))return F(24,'caja');
+    return F(1,'u');
+  }
+  if(provU==='CCU'){
+    const soda=/7up|bilz|canad|crush|kem|lim[oó]n soda|\bpap\b|pepsi|h2 ?oh/.test(n);
+    if(soda){
+      if(ret&&s25)return F(6,'caja','ccu_ret',(/pepsi/.test(n)&&/zero/.test(n))?'pepsizero':'otros');
+      if(s125)return F(9,'caja');
+      if(s15||s2||s3)return F(6,'display');
+      if(lata||v473)return F(24,'bandeja');
+      if(v600){if(/pepsi/.test(n)&&/zero/.test(n))return F(6,'display');if(/pepsi/.test(n))return F(12,'display');return F(6,'display');}
+      return F(1,'u');
+    }
+    if(/rockstar/.test(n))return F(12,'display');
+    if(/red bull|gatorlit/.test(n))return F(6,'display');
+    if(/gatorade/.test(n))return F(6,'display');
+    if(/lipton/.test(n)){if(v310||/310 ?gr/.test(n))return F(24,'bandeja');if(s15||/1l|1 l/.test(n))return F(6,'display');return F(1,'u');}
+    if(/watts/.test(n)){if(v200)return F(6,'display');if(v300)return F(24,'bandeja');if(s15||/1l|1 l/.test(n))return F(6,'display');return F(1,'u');}
+    if(/nescaf|starbucks/.test(n))return F(6,'display');
+    if(/vivo/.test(n))return F(12,'caja');
+    if(/cachantun|manantial|nestle|pura vida|agua mas|h2 ?oh/.test(n)){
+      if(/cachantun/.test(n)&&s25)return F(5,'display');
+      if(s65)return F(1,'u');
+      if(v310)return F(24,'bandeja');
+      if(v600)return F(12,'display');
+      return F(6,'display');
+    }
+    if(/sprim|zumo|candy/.test(n))return F(6,'display');
+    return F(1,'u');
+  }
+  return F(1,'u');
+}
+
+function roundPack(u,f){return f>1?Math.ceil(u/f)*f:Math.ceil(u);}
+function trendOf(it){const r7=(it.v7||0)/7,r30=(it.v30||0)/30;if(r30<=0&&r7<=0)return{k:'flat',t:'='};if(r30<=0)return{k:'up',t:'▲'};const r=r7/r30;return r>=1.2?{k:'up',t:'▲'}:r<=0.8?{k:'down',t:'▼'}:{k:'flat',t:'='};}
+
+// ---- Escalas: cuánto cuesta realmente la unidad según el volumen total pedido de
+// ese proveedor/escala en el carrito (mismo criterio que Marín) ----
+function ccuMixedPacks(){
+  let p=0;
+  (DB.items||[]).forEach(it=>{
+    if(it._scale==='ccu_ret'){
+      const cant=CART[it.ref]||0;
+      p+=Math.ceil(cant/(it._fmt||1));
+    }
+  });
+  return p;
+}
+function ccuTierIdx(packs){const b=SCALES.ccu_ret.breaks;let idx=0;for(let i=0;i<b.length;i++)if(packs>=b[i])idx=i;return idx;}
+function tierCostUn(it){
+  if(it._scale==='ccu_ret'){
+    return SCALES.ccu_ret.cost[it._role||'otros'][ccuTierIdx(ccuMixedPacks())];
+  }
+  if(it._scale && SCALES[it._scale]){
+    const cant=CART[it.ref]||0;
+    const packs=Math.ceil(cant/(it._fmt||1));
+    const t=SCALES[it._scale].tiers.find(t=>packs>=t.min&&packs<=t.max);
+    return t?t.c:(it.coste||0);
+  }
+  return it.coste||0;
+}
+
+const apState={ prov:'TODOS', search:'', cobertura: Number(localStorage.getItem('cumpas_cobertura'))||10, basis: Number(localStorage.getItem('cumpas_basis'))||7, sortBy:null, sortDir:'desc' };
 
 function apProveedores(){
   const set=new Set((DB.items||[]).map(it=>it.prov||'SIN PROVEEDOR'));
@@ -2838,7 +3066,12 @@ function apRenderProvChips(){
 
 function apItemsFiltrados(){
   let items=DB.items||[];
-  if(apState.prov!=='TODOS') items=items.filter(it=>(it.prov||'SIN PROVEEDOR')===apState.prov);
+  // Un producto pertenece al proveedor si es su proveedor PRINCIPAL, o si ese
+  // proveedor está entre sus proveedores EXTRA — así aparece bajo todos los
+  // proveedores a los que está asignado, no solo el principal.
+  if(apState.prov!=='TODOS'){
+    items=items.filter(it=>(it.prov||'SIN PROVEEDOR')===apState.prov || (it.provsExtra||[]).includes(apState.prov));
+  }
   if(apState.search.trim()){
     const palabras=apState.search.toLowerCase().trim().split(/\s+/).filter(Boolean);
     items=items.filter(it=>{
@@ -2849,19 +3082,25 @@ function apItemsFiltrados(){
   return items;
 }
 
-// Sugerido = cubrir `cobertura` días de venta futura según el ritmo de los
-// últimos 7 días, descontando el stock que ya hay. Nunca negativo.
-function apSugerido(it){
-  const ritmoDiario = (it.v7||0) / 7;
-  const necesario = Math.ceil(ritmoDiario * apState.cobertura);
-  return Math.max(0, necesario - (it.stock||0));
+// Ritmo diario de venta según la base elegida (7/14/30/90 días).
+function rateOf(it){
+  return apState.basis===7?(it.v7||0)/7 : apState.basis===14?(it.v14||0)/14 : apState.basis===90?(it.v90||0)/90 : (it.v30||0)/30;
 }
 
-// Días de cobertura actual (cuánto dura el stock al ritmo de venta de los
-// últimos 7 días) y estado semántico para colorear la fila (Urgente/Pedir/
-// Sobrestock), igual a la lógica que usa Marín.
+// Sugerido = cubrir `cobertura` días de venta futura según el ritmo elegido,
+// descontando el stock que ya hay, redondeado al múltiplo de pack/caja real del
+// producto (no unidades sueltas si el proveedor solo vende por pack/caja).
+function apSugerido(it){
+  const ritmoDiario=rateOf(it);
+  const necesario=ritmoDiario*apState.cobertura;
+  const faltante=Math.max(0, necesario-(it.stock||0));
+  return faltante>0 ? roundPack(faltante, it._fmt||1) : 0;
+}
+
+// Días de cobertura actual (cuánto dura el stock al ritmo de venta elegido) y
+// estado semántico para colorear la fila (Urgente/Pedir/Sobrestock).
 function apEstadoDe(it){
-  const ritmoDiario=(it.v7||0)/7;
+  const ritmoDiario=rateOf(it);
   const cob=ritmoDiario>0 ? (it.stock||0)/ritmoDiario : ((it.stock||0)>0 ? Infinity : 0);
   let estado='';
   if((it.stock||0)<=0 || (ritmoDiario>0 && cob<3)) estado='urgente';
@@ -2874,12 +3113,13 @@ function apRenderLista(){
   const box=document.getElementById('ap-list');
   let items=apItemsFiltrados().map(it=>{
     const {cob,estado}=apEstadoDe(it);
-    return Object.assign({}, it, { _cob:cob, _estado:estado, _sugerido:apSugerido(it) });
+    const venta=apState.basis===7?(it.v7||0):apState.basis===14?(it.v14||0):apState.basis===90?(it.v90||0):(it.v30||0);
+    return Object.assign({}, it, { _cob:cob, _estado:estado, _sugerido:apSugerido(it), _venta:venta, _trend:trendOf(it) });
   });
 
   if(apState.sortBy){
     const dir=apState.sortDir==='asc'?1:-1;
-    const key = apState.sortBy==='cob'?'_cob' : apState.sortBy==='sugerido'?'_sugerido' : apState.sortBy==='stock'?'stock' : apState.sortBy==='v7'?'v7' : 'nombre';
+    const key = apState.sortBy==='cob'?'_cob' : apState.sortBy==='sugerido'?'_sugerido' : apState.sortBy==='stock'?'stock' : apState.sortBy==='venta'?'_venta' : 'nombre';
     items=items.sort((a,b)=>{
       const va=a[key], vb=b[key];
       if(typeof va==='string') return dir*va.localeCompare(vb,'es');
@@ -2896,14 +3136,16 @@ function apRenderLista(){
     const qty=CART[it.ref]||0;
     const stockTxt=it.stock==null?'sin control':(it.stock+(it.peso?' kg':' u'));
     const badge=it._estado?`<span class="estado-badge ${it._estado}">${it._estado}</span>`:'';
+    const empaque=it._fmt>1?(' · '+it._fmt+' u/'+(it._word||'pack')):'';
+    const sugTxt=it._fmt>1?(it._sugerido+' u ('+Math.ceil(it._sugerido/it._fmt)+' '+(it._word||'pack')+(Math.ceil(it._sugerido/it._fmt)===1?'':'s')+')'):it._sugerido;
     return `<div class="ap-row ${it._estado}" data-ref="${it.ref}">
       <div class="info">
         <div class="n">${it.nombre}${badge}</div>
-        <div class="s">${it.prov} · Stock: <b>${stockTxt}</b> · ${fmtPeso(it.precio)}</div>
+        <div class="s">${it.prov} · Stock: <b>${stockTxt}</b> · ${fmtPeso(it.precio)}${empaque}</div>
         <div class="datos">
-          <span>VTA 7d: <b>${it.v7||0}</b></span>
-          <span>VTA 14d: <b>${it.v14||0}</b></span>
-          <span>Sugerido: <b class="sugerido" data-act="sugerido">${it._sugerido}</b></span>
+          <span>Vta ${apState.basis}d: <b>${it._venta}</b> <span class="trend-${it._trend.k}">${it._trend.t}</span></span>
+          <span>Cob: <b>${it._cob===Infinity?'∞':Math.round(it._cob)+'d'}</b></span>
+          <span>Sugerido: <b class="sugerido" data-act="sugerido">${sugTxt}</b></span>
         </div>
       </div>
       <div class="ap-qty">
@@ -2916,19 +3158,21 @@ function apRenderLista(){
 
   box.querySelectorAll('.ap-row').forEach(row=>{
     const ref=row.dataset.ref;
+    const it=(DB.items||[]).find(i=>i.ref===ref);
+    const paso=(it&&it._fmt>1)?it._fmt:1; // +/- avanza de a un pack/caja completo si el producto se vende así
     const input=row.querySelector('[data-act="input"]');
     row.querySelector('[data-act="menos"]').onclick=()=>{
-      const v=Math.max(0,(Number(input.value)||0)-1);
+      const v=Math.max(0,(Number(input.value)||0)-paso);
       apSetCantidad(ref,v); input.value=v||'';
     };
     row.querySelector('[data-act="mas"]').onclick=()=>{
-      const v=(Number(input.value)||0)+1;
+      const v=(Number(input.value)||0)+paso;
       apSetCantidad(ref,v); input.value=v;
     };
     input.oninput=()=>apSetCantidad(ref,Number(input.value)||0);
     const sugBtn=row.querySelector('[data-act="sugerido"]');
     sugBtn.onclick=()=>{
-      const v=Number(sugBtn.textContent)||0;
+      const v=it?apSugerido(it):0;
       apSetCantidad(ref,v); input.value=v||'';
     };
   });
@@ -2973,6 +3217,16 @@ document.getElementById('ap-cobertura').oninput=e=>{
   apRenderLista();
 };
 
+document.querySelectorAll('#ap-basis-seg [data-basis]').forEach(btn=>{
+  btn.onclick=()=>{
+    apState.basis=Number(btn.dataset.basis);
+    localStorage.setItem('cumpas_basis', apState.basis);
+    document.querySelectorAll('#ap-basis-seg [data-basis]').forEach(b=>b.classList.toggle('active',b===btn));
+    document.getElementById('ap-th-venta').innerHTML='Vta'+apState.basis+'d ▾';
+    apRenderLista();
+  };
+});
+
 document.getElementById('ap-btn-ventas').onclick=async()=>{
   const btn=document.getElementById('ap-btn-ventas');
   const txtOriginal=btn.textContent;
@@ -2997,6 +3251,8 @@ function openArmarPedido(){
   apState.prov='TODOS'; apState.search='';
   document.getElementById('ap-search').value='';
   document.getElementById('ap-cobertura').value=apState.cobertura;
+  document.querySelectorAll('#ap-basis-seg [data-basis]').forEach(b=>b.classList.toggle('active', Number(b.dataset.basis)===apState.basis));
+  document.getElementById('ap-th-venta').innerHTML='Vta'+apState.basis+'d ▾';
   apRenderProvChips();
   apRenderLista();
   abrirModal('ap-ov');
@@ -3031,22 +3287,82 @@ function renderCarrito(){
 
   if(!lineas.length){
     box.innerHTML='<div class="ap-empty">El carrito está vacío. Vuelve a "Armar pedido" y agrega productos.</div>';
+    renderEscalaVolumen();
     return;
   }
-  box.innerHTML=lineas.map(l=>`
+  let totalCosto=0;
+  box.innerHTML=lineas.map(l=>{
+    const costoUn=tierCostUn(l.it);
+    const costoLinea=Math.round(costoUn*l.cantidad);
+    totalCosto+=costoLinea;
+    const empaque=l.it._fmt>1?(' · '+Math.ceil(l.cantidad/l.it._fmt)+' '+(l.it._word||'pack')+(Math.ceil(l.cantidad/l.it._fmt)===1?'':'s')):'';
+    const dtoTxt=l.it._scale?(' · '+fmtPeso(costoUn)+'/u'):'';
+    return `
     <div class="cart-row" data-ref="${l.it.ref}">
       <div class="info">
         <div class="n">${l.it.nombre}</div>
-        <div class="s">${l.it.prov} · Cantidad: <b>${l.cantidad}</b></div>
+        <div class="s">${l.it.prov} · Cantidad: <b>${l.cantidad}</b>${empaque}${dtoTxt}</div>
       </div>
       <button class="del" data-del="${l.it.ref}">✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   box.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{
     delete CART[btn.dataset.del];
     persistCart();
     renderCarrito();
     apUpdateFab();
   });
+
+  const totEl=document.getElementById('cart-total-costo');
+  if(totEl) totEl.textContent=fmtPeso(totalCosto);
+  renderEscalaVolumen();
+}
+
+// ---- Tarjeta "Escala de volumen": muestra el descuento actual según lo que ya
+// hay en el carrito de CCU/Coca-Cola, y cuánto falta para el siguiente tramo —
+// mismo criterio que Marín, adaptado a los proveedores/productos de Argomedo455. ----
+function renderEscalaVolumen(){
+  const card=document.getElementById('cart-scale-card');
+  if(!card)return;
+  const lineas=cartLineas();
+  const provsEnCarrito=new Set(lineas.map(l=>l.it.prov));
+  let html='';
+
+  if(provsEnCarrito.has('CCU')){
+    const packs=ccuMixedPacks();
+    if(packs>0){
+      const S=SCALES.ccu_ret, idx=ccuTierIdx(packs), dtoNow=S.dtoG[idx], maxP=12;
+      const pct=Math.min(100,packs/maxP*100);
+      html+=`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:baseline"><div><div style="font-weight:800;font-size:16px">${packs} packs</div><div style="font-size:11px;color:var(--muted)">CCU retornables en el pedido</div></div><div style="text-align:right"><div style="font-weight:800;font-size:16px;color:var(--verde)">-${dtoNow}%</div><div style="font-size:11px;color:var(--muted)">dcto actual</div></div></div>
+        <div style="height:8px;border-radius:5px;background:var(--card2);margin-top:6px;overflow:hidden"><div style="height:100%;background:var(--verde);border-radius:5px;width:${pct}%"></div></div>`;
+      if(idx<3){
+        const falta=S.breaks[idx+1]-packs, nextD=S.dtoG[idx+1];
+        html+=`<div style="font-size:11.5px;color:var(--ambar);margin-top:6px">Te faltan <b>${falta} pack(s)</b> para <b>-${nextD}%</b>.</div>`;
+      }else{
+        html+=`<div style="font-size:11.5px;color:var(--verde);margin-top:6px">✓ Máximo descuento (-${S.dtoG[3]}%)</div>`;
+      }
+      html+='</div>';
+    }
+  }
+  if(provsEnCarrito.has('COCA COLA') || provsEnCarrito.has('COCA-COLA')){
+    lineas.filter(l=>l.it._scale && l.it._scale!=='ccu_ret').forEach(l=>{
+      const S=SCALES[l.it._scale];
+      const packs=Math.ceil(l.cantidad/l.it._fmt);
+      const tier=S.tiers.find(t=>packs>=t.min&&packs<=t.max)||S.tiers[0];
+      const ti=S.tiers.indexOf(tier), next=S.tiers[ti+1];
+      html+=`<div style="padding:8px 0;border-top:1px dashed var(--line)">
+        <div style="font-weight:700;font-size:12.5px">${l.it.nombre}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:3px"><span style="font-family:'JetBrains Mono';font-weight:700;font-size:12px">${packs} ${S.word}</span><span style="color:var(--verde);font-weight:700;font-size:12px">-${tier.dto}% · ${fmtPeso(tier.c)}/u</span></div>`;
+      html+=next
+        ? `<div style="font-size:11px;color:var(--ambar);margin-top:3px">+${next.min-packs} ${S.word} → -${next.dto}%</div>`
+        : `<div style="font-size:11px;color:var(--verde);margin-top:3px">✓ Máximo descuento</div>`;
+      html+='</div>';
+    });
+  }
+
+  if(!html){ card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  document.getElementById('cart-scale-body').innerHTML=html;
 }
 
 document.getElementById('btn-clear-cart').onclick=()=>{
@@ -3073,13 +3389,19 @@ document.getElementById('btn-copy-wa').onclick=()=>{
 
   const fecha=new Date().toLocaleDateString('es-CL');
   let txt=`*Los Cumpas Mini Market*\nPedido · ${fecha}\n\n`;
+  let totalGeneral=0;
   Object.keys(porProveedor).sort().forEach(prov=>{
     txt+=`*Proveedor: ${prov}*\n`;
+    let totalProv=0;
     porProveedor[prov].forEach(l=>{
-      txt+=`• ${l.it.nombre} — ${l.cantidad} ${l.it.peso?'kg':'und'}\n`;
+      const empaque=l.it._fmt>1?(' ('+Math.ceil(l.cantidad/l.it._fmt)+' '+(l.it._word||'pack')+(Math.ceil(l.cantidad/l.it._fmt)===1?'':'s')+')'):'';
+      txt+=`• ${l.it.nombre} — ${l.cantidad} ${l.it.peso?'kg':'und'}${empaque}\n`;
+      totalProv+=tierCostUn(l.it)*l.cantidad;
     });
-    txt+='\n';
+    totalGeneral+=totalProv;
+    txt+=`Subtotal: ${fmtPeso(Math.round(totalProv))}\n\n`;
   });
+  txt+=`*Total del pedido: ${fmtPeso(Math.round(totalGeneral))}*`;
 
   const btn=document.getElementById('btn-copy-wa');
   const ok=()=>{
@@ -3226,6 +3548,14 @@ function vencAbrirDetalle(id){
     `<button class="venc-estado-btn" data-estado="${e}">${vencIconoEstado(e)} ${e}</button>`
   ).join('');
 
+  // "Aplicar descuento" solo tiene sentido si el lote sigue activo (no descuento_activo
+  // ya aplicado, y no cerrado) — el flujo de gestión de un descuento ya aplicado vive
+  // en la pestaña Descuentos, no acá.
+  const btnDesc = document.getElementById('venc-detalle-aplicar-desc-btn');
+  const cerrado = VENC_ESTADOS_CIERRE.includes(lote.estado);
+  btnDesc.classList.toggle('hidden', !!lote.descuento_activo || cerrado);
+  btnDesc.onclick = () => vencAbrirAplicarDescuento(lote);
+
   document.getElementById('venc-retiro').classList.remove('on');
   document.getElementById('venc-retirar-chk').checked = false;
   document.getElementById('venc-retiro-cant').value = lote.cantidad;
@@ -3303,7 +3633,9 @@ function vencSetVista(vista){
   document.querySelectorAll('#venc-ov > .venc-tabs > .venc-tab').forEach(t => t.classList.toggle('active', t.dataset.vista === vista));
   document.getElementById('venc-view-revision').classList.toggle('hidden', vista !== 'revision');
   document.getElementById('venc-view-pendientes').classList.toggle('hidden', vista !== 'pendientes');
+  document.getElementById('venc-view-descuentos').classList.toggle('hidden', vista !== 'descuentos');
   if(vista === 'pendientes') vencCargarPendientes();
+  else if(vista === 'descuentos') vencCargarDescuentos();
 }
 
 // Tabs de ESTADO (Activos / Todos) — segundo grupo, dentro de #venc-view-revision.
@@ -3487,6 +3819,179 @@ document.getElementById('venc-n-guardar').onclick = async () => {
 };
 
 // ============================================================
+//  MÓDULO: DESCUENTOS ACTIVOS
+//  Aplicar un precio rebajado a un lote por vencer, y hacer
+//  seguimiento de cuánto se vende o queda en merma hasta agotarlo
+//  o cerrarlo manualmente. Los lotes vencidos con descuento aún
+//  activo se revierten solos (precio normal restaurado) por el
+//  Cron Trigger, sin acción del usuario.
+// ============================================================
+const vencDescState = { lista: [], loteActual: null };
+
+async function vencCargarDescuentos(){
+  const box = document.getElementById('venc-desc-list');
+  box.innerHTML = '<div class="ap-empty">Cargando…</div>';
+  try{
+    const res = await fetch(SYNC_URL + '?action=descuentos_activos');
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || 'Error al cargar descuentos');
+    vencDescState.lista = j.lista || [];
+    document.getElementById('venc-badge-descuentos').classList.toggle('hidden', !vencDescState.lista.length);
+    document.getElementById('venc-badge-descuentos').textContent = vencDescState.lista.length;
+    if(!vencDescState.lista.length){ box.innerHTML = '<div class="ap-empty">Sin descuentos activos por ahora.</div>'; return; }
+    box.innerHTML = vencDescState.lista.map(l => {
+      const gestionado = (l.cantVendida || 0) + (l.cantMerma || 0);
+      const restante = Math.max(0, l.cantidad - gestionado);
+      const diasTxt = l.diasRestantes == null ? 'sin fecha' : (l.diasRestantes < 0 ? 'vencido' : l.diasRestantes + 'd restantes');
+      return `<div class="venc-row" data-id="${l.id}">
+        <div class="info">
+          <div class="n">${l.nombre}</div>
+          <div class="s">${fmtPeso(l.precioOriginal)} → <b style="color:var(--ambar)">${fmtPeso(l.precioAplicado)}</b> · quedan ${restante} de ${l.cantidad} ${l.unidad} · ${diasTxt}</div>
+        </div>
+        <div class="venc-chip proximo">🏷️</div>
+      </div>`;
+    }).join('');
+    box.querySelectorAll('.venc-row').forEach(row => {
+      row.onclick = () => vencAbrirGestionDescuento(Number(row.dataset.id));
+    });
+  }catch(e){
+    box.innerHTML = '<div class="ap-empty">⚠️ No se pudo cargar.</div>';
+  }
+}
+
+// ---- Aplicar descuento (desde el detalle de un lote en Revisión/Pendientes) ----
+function vencAbrirAplicarDescuento(lote){
+  vencState.loteActual = lote;
+  const chip = lote.urgencia ? VENC_LABELS[lote.urgencia](lote.diasRestantes) : '';
+  document.getElementById('venc-aplicar-desc-info').innerHTML =
+    `<div class="n">${lote.producto}</div>
+     <div class="s">${lote.cantidad} ${lote.unidad}${lote.fecha_vencimiento ? ' · vence ' + lote.fecha_vencimiento + (chip ? ' · ' + chip : '') : ''}</div>`;
+  const it = (DB.items || []).find(i => i.ref === lote.sku);
+  document.getElementById('venc-aplicar-desc-precio').value = '';
+  document.getElementById('venc-aplicar-desc-margen').textContent = it ? ('Precio actual: ' + fmtPeso(it.precio) + ' · Costo: ' + fmtPeso(it.coste)) : '';
+  const savedResp = localStorage.getItem('cumpas_responsable') || '';
+  document.getElementById('venc-aplicar-desc-responsable').value = savedResp;
+  cerrarModal('venc-detalle-ov');
+  abrirModal('venc-aplicar-desc-ov');
+  document.getElementById('venc-aplicar-desc-precio').focus();
+}
+document.getElementById('venc-aplicar-desc-close').onclick = () => cerrarModal('venc-aplicar-desc-ov');
+
+document.getElementById('venc-aplicar-desc-guardar').onclick = async () => {
+  const lote = vencState.loteActual; if(!lote) return;
+  const precio = Number(document.getElementById('venc-aplicar-desc-precio').value) || 0;
+  const responsable = document.getElementById('venc-aplicar-desc-responsable').value.trim();
+  if(!precio || precio <= 0){ showToast('⚠️ Ingresa un precio válido'); return; }
+  if(!responsable){ showToast('⚠️ Indica el usuario responsable'); return; }
+  if(!confirm(`¿Aplicar precio rebajado de ${fmtPeso(precio)} a "${lote.producto}"? Se sincroniza de inmediato con Loyverse.`)) return;
+
+  const btn = document.getElementById('venc-aplicar-desc-guardar');
+  btn.disabled = true; btn.textContent = 'Aplicando…';
+  try{
+    localStorage.setItem('cumpas_responsable', responsable);
+    const res = await fetch(SYNC_URL, {method:'POST', body: JSON.stringify({
+      action: 'aplicar_descuento_vencimiento',
+      payload: { id: lote.id, precio, responsable }
+    })});
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || 'No se pudo aplicar el descuento');
+    const it = (DB.items || []).find(i => i.ref === lote.sku);
+    if(it){ it.precio = j.precioAplicado; persist(); }
+    showToast('🏷️ Descuento aplicado: ' + fmtPeso(j.precioOriginal) + ' → ' + fmtPeso(j.precioAplicado));
+    cerrarModal('venc-aplicar-desc-ov');
+    vencCargar();
+  }catch(e){
+    showToast('⚠️ ' + e.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Aplicar descuento y sincronizar';
+  }
+};
+
+// ---- Gestionar un descuento ya activo (venta/merma parcial, o cierre) ----
+function vencAbrirGestionDescuento(id){
+  const lote = vencDescState.lista.find(l => l.id === id);
+  if(!lote) return;
+  vencDescState.loteActual = lote;
+
+  const gestionado = (lote.cantVendida || 0) + (lote.cantMerma || 0);
+  const restante = Math.max(0, lote.cantidad - gestionado);
+  document.getElementById('venc-gestion-desc-info').innerHTML =
+    `<div class="n">${lote.nombre}</div>
+     <div class="s">${fmtPeso(lote.precioOriginal)} → <b style="color:var(--ambar)">${fmtPeso(lote.precioAplicado)}</b><br>
+     Vendido: ${lote.cantVendida || 0} · Merma: ${lote.cantMerma || 0} · Quedan: <b>${restante} ${lote.unidad}</b> de ${lote.cantidad}</div>`;
+
+  document.getElementById('venc-gd-vendida').value = '';
+  document.getElementById('venc-gd-merma').value = '';
+  document.getElementById('venc-gd-unidad-lbl-1').textContent = lote.unidad;
+  document.getElementById('venc-gd-unidad-lbl-2').textContent = lote.unidad;
+  const savedResp = localStorage.getItem('cumpas_responsable') || '';
+  document.getElementById('venc-gd-responsable').value = savedResp;
+
+  abrirModal('venc-gestion-desc-ov');
+}
+document.getElementById('venc-gestion-desc-close').onclick = () => cerrarModal('venc-gestion-desc-ov');
+
+document.getElementById('venc-gd-vendida-menos').onclick = () => { const i = document.getElementById('venc-gd-vendida'); i.value = Math.max(0, (Number(i.value)||0) - 1); };
+document.getElementById('venc-gd-vendida-mas').onclick = () => { const i = document.getElementById('venc-gd-vendida'); i.value = (Number(i.value)||0) + 1; };
+document.getElementById('venc-gd-merma-menos').onclick = () => { const i = document.getElementById('venc-gd-merma'); i.value = Math.max(0, (Number(i.value)||0) - 1); };
+document.getElementById('venc-gd-merma-mas').onclick = () => { const i = document.getElementById('venc-gd-merma'); i.value = (Number(i.value)||0) + 1; };
+
+document.getElementById('venc-gd-guardar').onclick = async () => {
+  const lote = vencDescState.loteActual; if(!lote) return;
+  const cantidadVendida = Number(document.getElementById('venc-gd-vendida').value) || 0;
+  const cantidadMerma = Number(document.getElementById('venc-gd-merma').value) || 0;
+  const responsable = document.getElementById('venc-gd-responsable').value.trim();
+  if(cantidadVendida <= 0 && cantidadMerma <= 0){ showToast('⚠️ Indica una cantidad vendida o en merma'); return; }
+  if(!responsable){ showToast('⚠️ Indica el usuario responsable'); return; }
+
+  const btn = document.getElementById('venc-gd-guardar');
+  btn.disabled = true; btn.textContent = 'Guardando…';
+  try{
+    localStorage.setItem('cumpas_responsable', responsable);
+    const res = await fetch(SYNC_URL, {method:'POST', body: JSON.stringify({
+      action: 'registrar_gestion_descuento',
+      payload: { id: lote.id, cantidadVendida, cantidadMerma, responsable }
+    })});
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || 'No se pudo registrar la gestión');
+    if(j.avisoStock) showToast(j.avisoStock);
+    showToast(j.cerrado ? '✓ Lote agotado y cerrado' : '✓ Gestión registrada — quedan ' + Math.max(0, j.cantidadTotal - j.cantVendida - j.cantMerma) + ' ' + lote.unidad);
+    cerrarModal('venc-gestion-desc-ov');
+    vencCargarDescuentos();
+  }catch(e){
+    showToast('⚠️ ' + e.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Registrar gestión';
+  }
+};
+
+document.getElementById('venc-gd-cerrar').onclick = async () => {
+  const lote = vencDescState.loteActual; if(!lote) return;
+  const responsable = document.getElementById('venc-gd-responsable').value.trim() || localStorage.getItem('cumpas_responsable') || '';
+  if(!responsable){ showToast('⚠️ Indica el usuario responsable'); return; }
+  if(!confirm(`¿Cerrar la gestión de "${lote.nombre}" aunque no se haya agotado el lote?`)) return;
+
+  const btn = document.getElementById('venc-gd-cerrar');
+  btn.disabled = true; btn.textContent = 'Cerrando…';
+  try{
+    localStorage.setItem('cumpas_responsable', responsable);
+    const res = await fetch(SYNC_URL, {method:'POST', body: JSON.stringify({
+      action: 'cerrar_gestion_descuento',
+      payload: { id: lote.id, responsable }
+    })});
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || 'No se pudo cerrar la gestión');
+    showToast('✓ Gestión cerrada');
+    cerrarModal('venc-gestion-desc-ov');
+    vencCargarDescuentos();
+  }catch(e){
+    showToast('⚠️ ' + e.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Cerrar gestión (sin agotar el lote)';
+  }
+};
+
+// ============================================================
 //  TARJETA "REPORTES" Y ACCIONES RÁPIDAS DEL INICIO
 //  Reportes es solo un acceso visual por ahora (no hay módulo de
 //  reportes implementado todavía) — se lo digo explícitamente al
@@ -3563,6 +4068,7 @@ function abrirFichaProducto(ref){
   if(esProveedorConIvaFactura(it.prov)){
     showToast('🧾 '+it.prov+': factura con IVA incluido — modo "Con IVA" activado');
   }
+  fpCargarProveedoresExtra(ref);
   // Si se llega desde otra sección (Proveedores, Crear producto por duplicado), hay
   // que cerrar esa sección anterior y registrar 'buscar' en su lugar — así el botón
   // Atrás vuelve a Inicio, no a la sección de origen ya cerrada.
@@ -3580,7 +4086,84 @@ function abrirFichaProducto(ref){
 }
 
 // ============================================================
-//  CALCULADORA DE PRECIO (dentro de la ficha de producto)
+//  PROVEEDORES ADICIONALES (dentro de la ficha de producto)
+//  Un producto tiene un proveedor PRINCIPAL (campo de arriba) y,
+//  opcionalmente, proveedores EXTRA — se guardan/quitan al toque,
+//  sin esperar a "Guardar cambios" (a diferencia del resto de la
+//  ficha), porque son una relación aparte, no un campo del producto.
+// ============================================================
+const fpProvExtraState = { lista: [] };
+
+async function fpCargarProveedoresExtra(sku){
+  document.getElementById('fp-prov-extra-chips').innerHTML = '<span style="font-size:11.5px;color:var(--muted)">Cargando…</span>';
+  try{
+    const res = await fetch(SYNC_URL + '?action=ficha_producto&sku=' + encodeURIComponent(sku));
+    const j = await res.json();
+    fpProvExtraState.lista = (j && j.ok && j.item && j.item.proveedoresExtra) ? j.item.proveedoresExtra : [];
+  }catch(e){
+    fpProvExtraState.lista = [];
+  }
+  fpRenderProveedoresExtra();
+}
+
+function fpRenderProveedoresExtra(){
+  const box = document.getElementById('fp-prov-extra-chips');
+  if(!fpProvExtraState.lista.length){
+    box.innerHTML = '<span style="font-size:11.5px;color:var(--muted)">Sin proveedores adicionales.</span>';
+    return;
+  }
+  box.innerHTML = fpProvExtraState.lista.map(p =>
+    `<span class="chip-removible">${p.nombre}<button type="button" data-quitar="${p.nombre.replace(/"/g,'&quot;')}" aria-label="Quitar">✕</button></span>`
+  ).join('');
+  box.querySelectorAll('[data-quitar]').forEach(btn => {
+    btn.onclick = () => fpQuitarProveedorExtra(btn.dataset.quitar);
+  });
+}
+
+comboboxInit('fp-prov-extra-input', 'fp-prov-extra-results', () => PROV_SEC.proveedores, 'crear_proveedor', (valor) => {
+  fpAgregarProveedorExtra(valor);
+  document.getElementById('fp-prov-extra-input').value = ''; // limpia para poder seguir agregando otro
+});
+
+async function fpAgregarProveedorExtra(nombre){
+  nombre = (nombre || '').trim();
+  if(!nombre || !fpState.sku) return;
+  if(fpProvExtraState.lista.some(p => p.nombre === nombre)){ showToast('Ya está agregado ese proveedor.'); return; }
+  const principal = document.getElementById('fp-proveedor').value.trim();
+  if(nombre === principal){ showToast('Ese ya es el proveedor principal.'); return; }
+  try{
+    const res = await fetch(SYNC_URL, {method:'POST', body: JSON.stringify({action:'agregar_proveedor_extra', payload:{sku:fpState.sku, proveedor:nombre}})});
+    const j = await res.json();
+    if(j && j.ok){
+      fpProvExtraState.lista.push({ nombre });
+      fpRenderProveedoresExtra();
+      showToast('✓ Proveedor adicional agregado: ' + nombre);
+    }else{
+      showToast('❌ ' + ((j && j.error) || 'No se pudo agregar el proveedor'));
+    }
+  }catch(e){
+    showToast('❌ Error de conexión al agregar proveedor');
+  }
+}
+
+async function fpQuitarProveedorExtra(nombre){
+  if(!fpState.sku) return;
+  try{
+    const res = await fetch(SYNC_URL, {method:'POST', body: JSON.stringify({action:'quitar_proveedor_extra', payload:{sku:fpState.sku, proveedor:nombre}})});
+    const j = await res.json();
+    if(j && j.ok){
+      fpProvExtraState.lista = fpProvExtraState.lista.filter(p => p.nombre !== nombre);
+      fpRenderProveedoresExtra();
+      showToast('✓ Proveedor adicional quitado: ' + nombre);
+    }else{
+      showToast('❌ ' + ((j && j.error) || 'No se pudo quitar el proveedor'));
+    }
+  }catch(e){
+    showToast('❌ Error de conexión al quitar proveedor');
+  }
+}
+
+
 //  Simula un costo y/o margen nuevos, con precio recalculado en
 //  tiempo real — sin guardar nada hasta que se toque "Aplicar" (que
 //  solo copia los valores al formulario) y luego "Guardar cambios".

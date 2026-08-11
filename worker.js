@@ -154,6 +154,49 @@ async function asegurarTablas(env) {
     // ya existía.
   }
 
+  // Migración: columnas de "Descuentos activos" en `vencimientos` — un lote con
+  // descuento_activo=1 tiene su precio ya rebajado en Loyverse y se hace
+  // seguimiento de cuánto de esa cantidad se vendió o quedó en merma, hasta
+  // cerrarse (manual o automático al agotarse o al vencer la fecha).
+  const columnasDescuento = [
+    "descuento_activo INTEGER DEFAULT 0",
+    "precio_original REAL",
+    "precio_aplicado REAL",
+    "cant_vendida_desc REAL DEFAULT 0",
+    "cant_merma_desc REAL DEFAULT 0",
+    "fecha_descuento_aplicado TEXT",
+    "motivo_cierre TEXT",
+    "merma_id INTEGER"
+  ];
+  for (const col of columnasDescuento) {
+    try {
+      await run(env, `ALTER TABLE vencimientos ADD COLUMN ${col}`);
+    } catch (e) {
+      // ya existía.
+    }
+  }
+
+  // Tabla de mermas — necesaria para que "Descuentos activos" pueda registrar la
+  // parte de un lote que termina en merma (no vendida) usando el mismo mecanismo
+  // que el resto de la app, sin llevar un conteo paralelo que no aparezca en
+  // ningún reporte. Estructura mínima suficiente para este flujo.
+  await run(env, `CREATE TABLE IF NOT EXISTS mermas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT,
+    sku TEXT,
+    producto TEXT,
+    categoria TEXT,
+    unidad TEXT,
+    lote TEXT,
+    cantidad REAL,
+    costo_unitario REAL,
+    costo_total REAL,
+    motivo TEXT,
+    estado_costo TEXT,
+    responsable TEXT,
+    origen TEXT
+  )`);
+
   // Catálogos reutilizables de proveedores y sectores — permiten buscar y crear
   // nuevos registros desde el formulario sin salir de él, y que queden disponibles
   // para elegir la próxima vez (Módulo 3: Proveedores y sectores).
@@ -164,6 +207,17 @@ async function asegurarTablas(env) {
   await run(env, `CREATE TABLE IF NOT EXISTS sectores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nombre TEXT UNIQUE
+  )`);
+
+  // Proveedores ADICIONALES de un producto — `productos.proveedor` sigue siendo el
+  // proveedor principal (compatibilidad con Recepción, Crear producto, etc.); esta
+  // tabla permite asignar proveedores extra al mismo SKU (un producto puede
+  // comprarse a más de un proveedor). El producto aparece en Armar pedido y
+  // Proveedores para TODOS sus proveedores asignados (principal + extras).
+  await run(env, `CREATE TABLE IF NOT EXISTS producto_proveedor_extra (
+    sku TEXT NOT NULL,
+    proveedor_id INTEGER NOT NULL REFERENCES proveedores(id),
+    PRIMARY KEY (sku, proveedor_id)
   )`);
 
   // Registro de eventos de Webhook ya procesados (Loyverse → Worker). Evita aplicar
@@ -896,13 +950,24 @@ async function catalogoCompacto(env) {
      FROM productos ORDER BY nombre`
   ).all();
 
-  const [v7, v14] = await Promise.all([ventasPorSku(env, 7), ventasPorSku(env, 14)]);
+  const [v7, v14, v30, v90] = await Promise.all([
+    ventasPorSku(env, 7), ventasPorSku(env, 14), ventasPorSku(env, 30), ventasPorSku(env, 90)
+  ]);
+
+  // Proveedores EXTRA por sku (además del principal) — mapa sku -> [nombres], para
+  // que Armar pedido pueda mostrar un producto bajo todos sus proveedores asignados.
+  const { results: extrasRows } = await env.DB.prepare(
+    "SELECT pe.sku, pv.nombre FROM producto_proveedor_extra pe JOIN proveedores pv ON pv.id = pe.proveedor_id"
+  ).all();
+  const extrasPorSku = {};
+  extrasRows.forEach(r => { (extrasPorSku[r.sku] = extrasPorSku[r.sku] || []).push(r.nombre); });
 
   return results.map(p => ({
     ref: p.sku,
     nombre: p.nombre,
     cat: p.categoria || "",
     prov: p.proveedor || "SIN PROVEEDOR",
+    provsExtra: extrasPorSku[p.sku] || [],
     sector: p.sector || "",
     barcode: p.barcode || "",
     precio: p.precio || 0,
@@ -912,7 +977,9 @@ async function catalogoCompacto(env) {
     track: !!p.track_stock,
     iva: !!p.con_iva,
     v7: v7[p.sku] || 0,
-    v14: v14[p.sku] || 0
+    v14: v14[p.sku] || 0,
+    v30: v30[p.sku] || 0,
+    v90: v90[p.sku] || 0
   }));
 }
 
@@ -1233,6 +1300,188 @@ async function accionVencimientoEstado(env, payload) {
 }
 
 // ============================================================
+//  DESCUENTOS ACTIVOS (lotes de vencimiento con precio rebajado)
+//  Flujo: aplicar descuento (rebaja el precio en Loyverse y marca
+//  el lote) → gestionar venta/merma parcial → cierre (manual o
+//  automático al agotarse la cantidad, o al vencer sin venderse).
+// ============================================================
+
+const MOTIVOS_MERMA_VALIDOS = ["vencido", "dañado", "robo", "otro"];
+
+// Registro de merma mínimo — usado por el flujo de Descuentos activos para
+// contabilizar la parte de un lote que no se logra vender antes de vencer.
+async function accionMerma(env, payload) {
+  payload = payload || {};
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", String(payload.sku || "").trim());
+  if (!it) throw new Error("SKU no encontrado en el catálogo: " + payload.sku);
+
+  const cantidad = Number(payload.cantidad);
+  if (!cantidad || cantidad <= 0) throw new Error("Cantidad inválida para " + it.nombre);
+
+  const unidad = it.sold_by_weight ? "kg" : "un";
+  const costoUnit = it.costo || 0;
+  const costoTotal = Math.round(cantidad * costoUnit);
+  const motivo = MOTIVOS_MERMA_VALIDOS.includes(payload.motivo) ? payload.motivo : "otro";
+  const origen = payload.origen === "vencimiento" ? "vencimiento" : "manual";
+  const fecha = fechaDDMMAAAA();
+
+  const insertRes = await run(env,
+    `INSERT INTO mermas (fecha, sku, producto, categoria, unidad, lote, cantidad, costo_unitario, costo_total, motivo, estado_costo, responsable, origen)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    fecha, it.sku, it.nombre, it.categoria, unidad, payload.lote || "", cantidad,
+    costoUnit, costoTotal, motivo, costoUnit ? "OK" : "⚠️ SIN COSTO", payload.responsable || "", origen);
+
+  const out = {
+    filaIndex: insertRes.meta.last_row_id, fecha, sku: it.sku, nombre: it.nombre,
+    cantidad, costoUnitario: costoUnit, costoTotal, motivo
+  };
+
+  // Descuenta stock en Loyverse (con el mismo tope-en-0 que el resto de la app) —
+  // si falla, la merma ya quedó guardada igual, solo se avisa para revisarlo a mano.
+  try {
+    const res = await sumarStockLoyverse(env, it, -cantidad);
+    if (res.ok) out.nuevoStock = res.despues;
+    else out.avisoStock = "⚠️ No se pudo descontar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+  } catch (e) {
+    out.avisoStock = "⚠️ No se pudo descontar el stock en Loyverse. Revísalo a mano.";
+  }
+
+  return out;
+}
+
+// POST { action:'aplicar_descuento_vencimiento', payload:{id,precio,responsable} }
+// Reutiliza accionEditarProducto para sincronizar el precio con Loyverse (misma
+// función que usa Ficha de producto) — acá solo se decide CUÁNDO llamarla y qué
+// guardar en vencimientos, sin reimplementar nada de la comunicación con Loyverse.
+async function accionAplicarDescuentoVencimiento(env, payload) {
+  payload = payload || {};
+  const id = Number(payload.id);
+  if (!id) throw new Error("Falta el id del lote");
+  const lote = await get(env, "SELECT * FROM vencimientos WHERE id = ?", id);
+  if (!lote) throw new Error("Lote no encontrado");
+  if (lote.descuento_activo) throw new Error("Este lote ya tiene un descuento activo");
+
+  const precio = Number(payload.precio);
+  if (!precio || precio <= 0) throw new Error("Precio inválido");
+
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", lote.sku);
+  if (!it) throw new Error("SKU no encontrado en el catálogo: " + lote.sku);
+  const precioOriginal = it.precio;
+
+  const resPrecio = await accionEditarProducto(env, { sku: lote.sku, precio, responsable: payload.responsable || "" });
+
+  await run(env,
+    `UPDATE vencimientos SET descuento_activo=1, precio_original=?, precio_aplicado=?, cant_vendida_desc=0, cant_merma_desc=0, fecha_descuento_aplicado=? WHERE id=?`,
+    precioOriginal, resPrecio.precio, fechaHoraDDMMAAAA(), id);
+
+  return { ok: true, sku: lote.sku, nombre: lote.producto, precioOriginal, precioAplicado: resPrecio.precio };
+}
+
+// GET /?action=descuentos_activos — lista de lotes con descuento aplicado y
+// todavía en gestión (sin cerrar).
+async function repDescuentosActivos(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT * FROM vencimientos WHERE descuento_activo = 1 AND sku IS NOT NULL ORDER BY (fecha_vencimiento = '') ASC, fecha_vencimiento ASC"
+  ).all();
+  return results.map(r => ({
+    id: r.id, sku: r.sku, nombre: r.producto, categoria: r.categoria, unidad: r.unidad,
+    lote: r.lote, cantidad: r.cantidad, fechaVencimiento: r.fecha_vencimiento,
+    precioOriginal: r.precio_original, precioAplicado: r.precio_aplicado,
+    cantVendida: r.cant_vendida_desc || 0, cantMerma: r.cant_merma_desc || 0,
+    fechaDescuentoAplicado: r.fecha_descuento_aplicado,
+    diasRestantes: diasRestantes(r.fecha_vencimiento)
+  }));
+}
+
+// POST { action:'registrar_gestion_descuento', payload:{id,cantidadVendida,cantidadMerma,responsable} }
+// Anota cantidad vendida y/o en merma sobre un lote con descuento activo, SIN
+// cerrarlo — salvo que con este movimiento se agote la cantidad total del lote
+// (vendida+merma >= cantidad), en cuyo caso se cierra automático a Historial.
+async function accionRegistrarGestionDescuento(env, payload) {
+  payload = payload || {};
+  const id = Number(payload.id);
+  if (!id) throw new Error("Falta el id del lote");
+  const lote = await get(env, "SELECT * FROM vencimientos WHERE id = ?", id);
+  if (!lote) throw new Error("Lote no encontrado");
+  if (!lote.descuento_activo) throw new Error("Este lote no tiene un descuento activo");
+
+  const sumaVendida = Math.max(0, Number(payload.cantidadVendida) || 0);
+  const sumaMerma = Math.max(0, Number(payload.cantidadMerma) || 0);
+  if (sumaVendida <= 0 && sumaMerma <= 0) throw new Error("Indica una cantidad vendida o en merma");
+
+  const nuevaVendida = (Number(lote.cant_vendida_desc) || 0) + sumaVendida;
+  const nuevaMerma = (Number(lote.cant_merma_desc) || 0) + sumaMerma;
+
+  let avisoStockMerma = null;
+  if (sumaMerma > 0) {
+    try {
+      const resMerma = await accionMerma(env, {
+        sku: lote.sku, cantidad: sumaMerma, motivo: "vencido", origen: "vencimiento",
+        responsable: payload.responsable || ""
+      });
+      if (resMerma.avisoStock) avisoStockMerma = resMerma.avisoStock;
+    } catch (e) {
+      avisoStockMerma = "⚠️ La merma no se pudo registrar del todo: " + e.message;
+    }
+  }
+
+  await run(env, "UPDATE vencimientos SET cant_vendida_desc=?, cant_merma_desc=? WHERE id=?", nuevaVendida, nuevaMerma, id);
+
+  const totalGestionado = nuevaVendida + nuevaMerma;
+  if (totalGestionado >= Number(lote.cantidad)) {
+    const cierre = await accionCerrarGestionDescuento(env, { id, responsable: payload.responsable || "", motivo: "agotado" });
+    return { ...cierre, cerrado: true, cantVendida: nuevaVendida, cantMerma: nuevaMerma, cantidadTotal: lote.cantidad, avisoStock: avisoStockMerma };
+  }
+  return { ok: true, sku: lote.sku, cantVendida: nuevaVendida, cantMerma: nuevaMerma, cantidadTotal: lote.cantidad, cerrado: false, avisoStock: avisoStockMerma };
+}
+
+// POST { action:'cerrar_gestion_descuento', payload:{id,responsable} } — cierre
+// manual explícito, o automático cuando se agota la cantidad. Pasa el lote a
+// Historial (estado='Revisado', igual que el resto de cierres) conservando los
+// acumulados de vendido/merma.
+async function accionCerrarGestionDescuento(env, payload) {
+  payload = payload || {};
+  const id = Number(payload.id);
+  if (!id) throw new Error("Falta el id del lote");
+  const lote = await get(env, "SELECT * FROM vencimientos WHERE id = ?", id);
+  if (!lote) throw new Error("Lote no encontrado");
+  if (!lote.descuento_activo) throw new Error("Este lote no tiene un descuento activo");
+
+  const motivo = payload.motivo === "agotado" ? "descuento_agotado" : "descuento_cerrado_manual";
+  await run(env,
+    "UPDATE vencimientos SET estado='Revisado', descuento_activo=0, motivo_cierre=?, fecha_revision=?, revisado_por=? WHERE id=?",
+    motivo, fechaHoraDDMMAAAA(), payload.responsable || "", id);
+
+  return { ok: true, sku: lote.sku, nombre: lote.producto, estado: "Revisado", motivo };
+}
+
+// Corre desde scheduled() (mismo cron de las 8:00/15:00) — un lote con
+// descuento_activo=1 cuya fecha_vencimiento ya pasó se considera "no se vendió a
+// tiempo ni con rebaja": se restaura el precio normal en Loyverse y se cierra a
+// Historial. No se vuelve a aplicar descuento sobre ese lote.
+async function chequearYRevertirDescuentosVencidos(env) {
+  const { results: rows } = await env.DB.prepare("SELECT * FROM vencimientos WHERE descuento_activo = 1 AND sku IS NOT NULL").all();
+  let revertidos = 0;
+  for (const row of rows) {
+    const dias = diasRestantes(row.fecha_vencimiento);
+    if (dias == null || dias >= 0) continue; // sin fecha, o todavía no vence — sigue en Descuentos activos
+    try {
+      if (row.precio_original != null) {
+        await accionEditarProducto(env, { sku: row.sku, precio: row.precio_original, responsable: "sistema (auto-reversión por vencimiento)" });
+      }
+      await run(env,
+        "UPDATE vencimientos SET estado='Revisado', descuento_activo=0, motivo_cierre='vencido_con_descuento', fecha_revision=?, revisado_por=? WHERE id=?",
+        fechaHoraDDMMAAAA(), "sistema (auto-reversión por vencimiento)", row.id);
+      revertidos++;
+    } catch (e) {
+      await logMsg(env, "⚠️ Error al revertir descuento vencido de " + row.producto + ": " + e.message);
+    }
+  }
+  if (revertidos) await logMsg(env, "↩️ " + revertidos + " descuento(s) revertido(s) por vencimiento (precio normal restaurado)");
+  return revertidos;
+}
+
+// ============================================================
 //  SINCRONIZACIÓN MANUAL DE VENTAS (Módulo 4 — Armar pedido)
 //  El día a día se alimenta solo con el webhook receipts.update
 //  (tiempo real, sin golpear la API). Esta función es para el
@@ -1407,6 +1656,10 @@ async function buscarPorBarcode(env, barcode) {
 async function fichaProducto(env, sku) {
   const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
   if (!it) throw new Error("Producto no encontrado: " + sku);
+  const { results: extras } = await env.DB.prepare(
+    "SELECT pv.id, pv.nombre FROM producto_proveedor_extra pe JOIN proveedores pv ON pv.id = pe.proveedor_id WHERE pe.sku = ? ORDER BY pv.nombre"
+  ).bind(sku).all();
+  it.proveedoresExtra = extras;
   return it;
 }
 
@@ -1505,34 +1758,83 @@ async function accionEliminarProducto(env, payload) {
 }
 
 // ============================================================
-//  MÓDULO PROVEEDORES — listado con conteo, y productos de uno
+//  MÓDULO PROVEEDORES — listado con conteo, y productos de uno.
+//  Un producto puede tener un proveedor PRINCIPAL (productos.proveedor)
+//  y proveedores EXTRA (producto_proveedor_extra) — el conteo y el
+//  listado consideran ambos, sin contar dos veces el mismo SKU si
+//  por error apareciera en los dos a la vez.
 // ============================================================
 async function listaProveedoresConConteo(env) {
-  // LEFT JOIN desde la tabla `proveedores` (catálogo de nombres) hacia `productos`:
-  // así aparecen también los proveedores creados pero sin ningún producto asignado
-  // todavía (total=0) — son justo los candidatos a eliminar desde la app.
+  // LEFT JOIN desde la tabla `proveedores` (catálogo de nombres) hacia `productos`
+  // (principal) y `producto_proveedor_extra` (adicionales), combinados con UNION
+  // y contados con DISTINCT sku — así aparecen también los proveedores creados
+  // pero sin ningún producto asignado todavía (total=0).
   const { results } = await env.DB.prepare(
-    `SELECT proveedor, total FROM (
-       SELECT pr.nombre as proveedor, COUNT(p.sku) as total
-       FROM proveedores pr
-       LEFT JOIN productos p ON p.proveedor = pr.nombre
-       GROUP BY pr.nombre
+    `SELECT proveedor, COUNT(DISTINCT sku) as total FROM (
+       SELECT pr.nombre as proveedor, p.sku as sku FROM proveedores pr LEFT JOIN productos p ON p.proveedor = pr.nombre
+       UNION
+       SELECT pr.nombre as proveedor, pe.sku as sku FROM proveedores pr JOIN producto_proveedor_extra pe ON pe.proveedor_id = pr.id
        UNION ALL
-       SELECT 'SIN PROVEEDOR' as proveedor, COUNT(*) as total
-       FROM productos WHERE proveedor IS NULL OR proveedor = ''
+       SELECT 'SIN PROVEEDOR' as proveedor, sku FROM productos WHERE proveedor IS NULL OR proveedor = ''
      )
+     GROUP BY proveedor
      ORDER BY CASE WHEN proveedor='SIN PROVEEDOR' THEN 1 ELSE 0 END, proveedor COLLATE NOCASE`
   ).all();
-  return results;
+  // El LEFT JOIN sin match deja sku=NULL — se filtra ese caso de la cuenta pero se
+  // conserva el proveedor en la lista (total=0), igual que antes.
+  return results.map(r => ({ proveedor: r.proveedor, total: r.total }));
 }
 
 async function productosDeProveedor(env, proveedor) {
   proveedor = String(proveedor || "").trim();
   const esSinProveedor = !proveedor || proveedor === "SIN PROVEEDOR";
-  const { results } = esSinProveedor
-    ? await env.DB.prepare("SELECT sku, nombre, barcode, precio, costo, stock, sold_by_weight, track_stock FROM productos WHERE proveedor IS NULL OR proveedor = '' ORDER BY nombre").all()
-    : await env.DB.prepare("SELECT sku, nombre, barcode, precio, costo, stock, sold_by_weight, track_stock FROM productos WHERE proveedor = ? ORDER BY nombre").bind(proveedor).all();
+  if (esSinProveedor) {
+    const { results } = await env.DB.prepare(
+      "SELECT sku, nombre, barcode, precio, costo, stock, sold_by_weight, track_stock FROM productos WHERE proveedor IS NULL OR proveedor = '' ORDER BY nombre"
+    ).all();
+    return results;
+  }
+  const { results } = await env.DB.prepare(
+    `SELECT DISTINCT p.sku, p.nombre, p.barcode, p.precio, p.costo, p.stock, p.sold_by_weight, p.track_stock
+     FROM productos p
+     LEFT JOIN producto_proveedor_extra pe ON pe.sku = p.sku
+     LEFT JOIN proveedores pv ON pv.id = pe.proveedor_id
+     WHERE p.proveedor = ? OR pv.nombre = ?
+     ORDER BY p.nombre`
+  ).bind(proveedor, proveedor).all();
   return results;
+}
+
+// POST { action:'agregar_proveedor_extra', payload:{sku,proveedor} } — asigna un
+// proveedor ADICIONAL a un producto (además de su proveedor principal). Crea el
+// proveedor en el catálogo si no existía todavía, igual que el proveedor principal.
+async function accionAgregarProveedorExtra(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  const nombre = String(payload.proveedor || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  if (!nombre) throw new Error("Falta el nombre del proveedor");
+  const it = await get(env, "SELECT sku FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("Producto no encontrado: " + sku);
+
+  await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", nombre);
+  const prov = await get(env, "SELECT id FROM proveedores WHERE nombre = ?", nombre);
+  await run(env, "INSERT OR IGNORE INTO producto_proveedor_extra (sku, proveedor_id) VALUES (?, ?)", sku, prov.id);
+  return { sku, proveedor: nombre };
+}
+
+// POST { action:'quitar_proveedor_extra', payload:{sku,proveedor} } — quita un
+// proveedor adicional de un producto (no toca el proveedor principal).
+async function accionQuitarProveedorExtra(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  const nombre = String(payload.proveedor || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  if (!nombre) throw new Error("Falta el nombre del proveedor");
+  const prov = await get(env, "SELECT id FROM proveedores WHERE nombre = ?", nombre);
+  if (!prov) return { sku, proveedor: nombre }; // no existía, nada que quitar
+  await run(env, "DELETE FROM producto_proveedor_extra WHERE sku = ? AND proveedor_id = ?", sku, prov.id);
+  return { sku, proveedor: nombre };
 }
 
 async function accionCrearProducto(env, payload) {
@@ -1881,6 +2183,37 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // GET /?action=descuentos_activos  →  lista de lotes con descuento aplicado
+      // y todavía en gestión (sin cerrar).
+      if (action === "descuentos_activos") {
+        const lista = await repDescuentosActivos(env);
+        return json({ ok: true, lista });
+      }
+
+      // POST { action:'aplicar_descuento_vencimiento', payload:{id,precio,responsable} }
+      // → rebaja el precio en Loyverse y marca el lote con descuento activo.
+      if (action === "aplicar_descuento_vencimiento") {
+        const resultado = await accionAplicarDescuentoVencimiento(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'registrar_gestion_descuento', payload:{id,cantidadVendida,cantidadMerma,responsable} }
+      // → anota venta/merma parcial sobre un lote con descuento activo (cierra
+      //   automático si se agota la cantidad total).
+      if (action === "registrar_gestion_descuento") {
+        const resultado = await accionRegistrarGestionDescuento(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'cerrar_gestion_descuento', payload:{id,responsable} } →
+      // cierre manual de un lote con descuento activo, sin esperar a que se agote.
+      if (action === "cerrar_gestion_descuento") {
+        const resultado = await accionCerrarGestionDescuento(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
       // GET /?action=sync_ventas[&dias=14]  →  trae recibos recientes de Loyverse y
       // los guarda en `ventas`. SOLO manual (botón "Actualizar ventas" en Armar pedido)
       // — el día a día lo cubre el webhook receipts.update, no hay polling automático.
@@ -1899,11 +2232,26 @@ export default {
         return json({ ok: true, lista });
       }
 
-      // GET /?action=ficha_producto&sku=XXXX  →  ficha completa de un producto.
+      // GET /?action=ficha_producto&sku=XXXX  →  ficha completa de un producto
+      // (incluye proveedoresExtra: proveedores adicionales, además del principal).
       if (action === "ficha_producto") {
         const sku = url.searchParams.get("sku") || "";
         const it = await fichaProducto(env, sku);
         return json({ ok: true, item: it });
+      }
+
+      // POST { action:'agregar_proveedor_extra', payload:{sku,proveedor} } → asigna
+      // un proveedor ADICIONAL a un producto (no reemplaza el principal).
+      if (action === "agregar_proveedor_extra") {
+        const resultado = await accionAgregarProveedorExtra(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'quitar_proveedor_extra', payload:{sku,proveedor} } → quita
+      // un proveedor adicional de un producto.
+      if (action === "quitar_proveedor_extra") {
+        const resultado = await accionQuitarProveedorExtra(env, payload);
+        return json({ ok: true, ...resultado });
       }
 
       // POST { action:'editar_producto', payload:{sku,...} }  →  edita nombre, barcode,
@@ -1972,7 +2320,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
@@ -1991,6 +2339,7 @@ export default {
     try {
       await asegurarTablas(env);
       await chequearYNotificarVencimientos(env);
+      await chequearYRevertirDescuentosVencidos(env);
       // Espacio reservado para futuros chequeos automáticos (ej. riesgo de quiebre
       // de stock, cuando exista la clasificación ABC) — se agregan acá mismo.
     } catch (e) {
