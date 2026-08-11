@@ -295,7 +295,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .ap-row.urgente{border-left-color:var(--rojo);background:var(--rojo-bg)}
 .ap-row.pedir{border-left-color:var(--verde)}
 .ap-row.sobrestock{border-left-color:var(--violeta)}
-.ap-row .estado-badge{flex:none;font-size:9px;font-weight:800;padding:2px 6px;border-radius:6px;text-transform:uppercase;margin-left:6px}
+.ap-row .estado-badge{flex:none;font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:20px;text-transform:uppercase;margin-left:6px;letter-spacing:.2px}
 .ap-row .estado-badge.urgente{background:var(--rojo);color:#fff}
 .ap-row .estado-badge.pedir{background:var(--verde);color:#fff}
 .ap-row .estado-badge.sobrestock{background:var(--violeta);color:#fff}
@@ -4080,6 +4080,117 @@ function vencRenderProgreso(){
   badgeRev.textContent = urgentes;
 }
 
+// ============================================================
+//  ACCIONES RÁPIDAS EN LÍNEA — botones directo en cada tarjeta de lote
+//  (Vendido/Merma/Retirar/Fecha/Eliminar), sin tener que tocar la fila y
+//  abrir el modal de detalle. El detalle (vencAbrirDetalle) sigue existiendo
+//  y se abre al tocar el nombre/subtítulo, para las opciones menos comunes
+//  (Desechado, Descuento recibido desde Lista, etc.) — no se quitó nada,
+//  solo se adelantaron las acciones más usadas.
+// ============================================================
+function vencResponsableRapido(){
+  let r = localStorage.getItem('cumpas_responsable') || '';
+  if(!r){
+    r = (prompt('¿Quién hace este cambio?') || '').trim();
+    if(r) localStorage.setItem('cumpas_responsable', r);
+  }
+  return r;
+}
+function vencRecargarVistaActual(){
+  if(vencState.vista === 'pendientes') vencCargarPendientes();
+  else if(vencState.vista === 'descuentos') vencCargarDescuentos();
+  else vencCargar();
+}
+async function vencAccionRapida(id, estado, opts){
+  opts = opts || {};
+  const responsable = vencResponsableRapido();
+  if(!responsable){ showToast('Falta indicar el responsable'); return; }
+  if(!confirm('¿Marcar este lote como "' + estado + '"' + (opts.retirarStock ? ' y descontar del stock' : '') + '?')) return;
+  try{
+    const payload = { id, estado, responsable };
+    if(opts.retirarStock){ payload.retirarStock = true; if(opts.cantidadRetiro != null) payload.cantidadRetiro = opts.cantidadRetiro; }
+    const res = await fetch(SYNC_URL, { method: 'POST', body: JSON.stringify({ action: 'vencimiento_estado', payload }) });
+    const j = await res.json();
+    if(j && j.ok){
+      showToast(j.avisoStock || ('✓ Lote actualizado a "' + estado + '"'));
+      vencRecargarVistaActual();
+    }else showToast('❌ ' + ((j && j.error) || 'No se pudo actualizar'));
+  }catch(e){ showToast('❌ Error de conexión'); }
+}
+async function vencEliminarRapido(id){
+  const responsable = vencResponsableRapido();
+  if(!confirm('¿Eliminar este lote de Vencimientos? No se puede deshacer.')) return;
+  try{
+    const res = await fetch(SYNC_URL, { method: 'POST', body: JSON.stringify({ action: 'vencimiento_eliminar', payload: { id, responsable } }) });
+    const j = await res.json();
+    if(j && j.ok){ showToast('✓ Lote eliminado'); vencRecargarVistaActual(); }
+    else showToast('❌ ' + ((j && j.error) || 'No se pudo eliminar'));
+  }catch(e){ showToast('❌ Error de conexión'); }
+}
+function vencToggleFecha(id, fechaActual){
+  const box = document.getElementById('venc-editbox-' + id);
+  if(!box) return;
+  const wasHidden = box.classList.contains('hidden');
+  box.classList.toggle('hidden');
+  if(wasHidden){
+    const p = (fechaActual || '').split('/');
+    document.getElementById('venc-ef-dd-' + id).value = p[0] || '';
+    document.getElementById('venc-ef-mm-' + id).value = p[1] || '';
+    document.getElementById('venc-ef-aaaa-' + id).value = p[2] || '';
+  }
+}
+async function vencGuardarFechaRapida(id){
+  const fecha = fechaSegmentadaTexto('venc-ef-dd-' + id, 'venc-ef-mm-' + id, 'venc-ef-aaaa-' + id);
+  if(!fecha){ showToast('Completa la fecha (DD/MM/AAAA)'); return; }
+  const responsable = vencResponsableRapido();
+  try{
+    const res = await fetch(SYNC_URL, { method: 'POST', body: JSON.stringify({ action: 'vencimiento_fecha', payload: { id, fechaVencimiento: fecha, responsable } }) });
+    const j = await res.json();
+    if(j && j.ok){ showToast('✓ Fecha actualizada'); vencRecargarVistaActual(); }
+    else showToast('❌ ' + ((j && j.error) || 'No se pudo guardar'));
+  }catch(e){ showToast('❌ Error de conexión'); }
+}
+function vencMermaRapida(l){
+  irASeccion('mermas');
+  setTimeout(()=>{ mmPrefill(l.sku, l.cantidad, 'vencido'); }, 100);
+}
+const VENC_MINI_BTN = 'width:auto;flex:1;min-width:64px;height:34px;padding:0 6px;font-size:11.5px';
+function vencBotonesFecha(id){
+  return `<div class="hidden" id="venc-editbox-${id}" style="margin-top:8px;display:flex;gap:6px;align-items:center">
+    <input id="venc-ef-dd-${id}" class="fecha-seg" inputmode="numeric" maxlength="2" placeholder="DD" style="width:38px">
+    <span>/</span>
+    <input id="venc-ef-mm-${id}" class="fecha-seg" inputmode="numeric" maxlength="2" placeholder="MM" style="width:38px">
+    <span>/</span>
+    <input id="venc-ef-aaaa-${id}" class="fecha-seg" inputmode="numeric" maxlength="4" placeholder="AAAA" style="width:58px">
+    <button type="button" class="btn-primary venc-ef-guardar" data-id="${id}" style="width:auto;flex:1;height:34px;font-size:11.5px">Guardar</button>
+  </div>`;
+}
+function vencWireAccionesRapidas(box, lista){
+  box.querySelectorAll('[data-abrir]').forEach(el => {
+    el.onclick = () => vencAbrirDetalle(Number(el.dataset.abrir));
+  });
+  box.querySelectorAll('[data-act="vendido"]').forEach(b => b.onclick = () => vencAccionRapida(Number(b.dataset.id), 'Revisado'));
+  box.querySelectorAll('[data-act="retirar"]').forEach(b => b.onclick = () => vencAccionRapida(Number(b.dataset.id), 'Retirado'));
+  box.querySelectorAll('[data-act="cambiado"]').forEach(b => {
+    const l = lista.find(x => x.id === Number(b.dataset.id));
+    b.onclick = () => vencAccionRapida(Number(b.dataset.id), 'Cambiado', { retirarStock: true, cantidadRetiro: l ? l.cantidad : undefined });
+  });
+  box.querySelectorAll('[data-act="merma"]').forEach(b => {
+    const l = lista.find(x => x.id === Number(b.dataset.id));
+    if(l) b.onclick = () => vencMermaRapida(l);
+  });
+  box.querySelectorAll('[data-act="descuento"]').forEach(b => {
+    const l = lista.find(x => x.id === Number(b.dataset.id));
+    if(l) b.onclick = () => vencAbrirAplicarDescuento(l);
+  });
+  box.querySelectorAll('[data-eliminar]').forEach(b => b.onclick = () => vencEliminarRapido(Number(b.dataset.eliminar)));
+  box.querySelectorAll('[data-fecha]').forEach(b => {
+    const l = lista.find(x => x.id === Number(b.dataset.fecha));
+    b.onclick = () => vencToggleFecha(Number(b.dataset.fecha), l ? l.fecha_vencimiento : '');
+  });
+  box.querySelectorAll('.venc-ef-guardar').forEach(b => b.onclick = () => vencGuardarFechaRapida(Number(b.dataset.id)));
+}
+
 function vencRender(){
   const box = document.getElementById('venc-list');
   if(!vencState.listaFiltrada.length){
@@ -4090,18 +4201,24 @@ function vencRender(){
   box.innerHTML = vencState.listaFiltrada.map(l => {
     const chip = VENC_LABELS[l.urgencia](l.diasRestantes);
     const cambio = CATEGORIAS_CAMBIO.has(l.categoria) ? ' · 🔄 gestionar por cambio con proveedor' : '';
-    return `<div class="venc-row ${l.urgencia}" data-id="${l.id}">
-      <div class="info">
+    return `<div class="venc-row ${l.urgencia}" style="flex-direction:column;align-items:stretch;cursor:default">
+      <div class="info" data-abrir="${l.id}" style="cursor:pointer">
         <div class="n">${l.producto}</div>
         <div class="s">${l.cantidad} ${l.unidad} · lote del ${l.fecha_ingreso}${l.fecha_vencimiento ? ' · vence ' + l.fecha_vencimiento : ''} · ${l.estado}${cambio}</div>
       </div>
-      <div class="venc-chip ${l.urgencia}">${chip}</div>
+      <div class="venc-chip ${l.urgencia}" style="align-self:flex-start;margin:6px 0">${chip}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" class="btn-secondary" data-act="vendido" data-id="${l.id}" style="${VENC_MINI_BTN};color:var(--verde);border-color:var(--verde)">✓ Vendido</button>
+        <button type="button" class="btn-secondary" data-act="merma" data-id="${l.id}" style="${VENC_MINI_BTN};color:var(--rojo);border-color:var(--rojo)">🗑 Merma</button>
+        <button type="button" class="btn-secondary" data-act="retirar" data-id="${l.id}" style="${VENC_MINI_BTN}">📤 Retirar</button>
+        <button type="button" class="btn-secondary" data-fecha="${l.id}" style="${VENC_MINI_BTN}">✏️ Fecha</button>
+        <button type="button" class="btn-secondary" data-eliminar="${l.id}" style="${VENC_MINI_BTN};color:var(--muted)">✕ Eliminar</button>
+      </div>
+      ${vencBotonesFecha(l.id)}
     </div>`;
   }).join('');
 
-  box.querySelectorAll('.venc-row').forEach(row => {
-    row.onclick = () => vencAbrirDetalle(Number(row.dataset.id));
-  });
+  vencWireAccionesRapidas(box, vencState.listaFiltrada);
 }
 
 function vencAbrirDetalle(id){
@@ -4262,19 +4379,22 @@ async function vencCargarPendientes(){
     document.getElementById('venc-badge-pendientes').classList.toggle('hidden', !lista.length);
     document.getElementById('venc-badge-pendientes').textContent = lista.length;
     if(!lista.length){ box.innerHTML = '<div class="ap-empty">Sin lotes pendientes de reposición 🎉</div>'; return; }
-    box.innerHTML = lista.map(l => `<div class="venc-row" data-id="${l.id}">
-      <div class="info">
+    vencState.lista = lista; // para que vencAbrirDetalle encuentre el lote
+    box.innerHTML = lista.map(l => `<div class="venc-row" style="flex-direction:column;align-items:stretch;cursor:default">
+      <div class="info" data-abrir="${l.id}" style="cursor:pointer">
         <div class="n">${l.producto}</div>
         <div class="s">${l.cantidad} ${l.unidad} · retirado el ${l.fecha_retiro || l.fecha_revision || '—'}</div>
       </div>
-      <div class="venc-chip sin_fecha">Pendiente</div>
+      <div class="venc-chip sin_fecha" style="align-self:flex-start;margin:6px 0">Pendiente</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" class="btn-secondary" data-act="cambiado" data-id="${l.id}" style="${VENC_MINI_BTN};color:var(--verde);border-color:var(--verde)">✓ Cambiado</button>
+        <button type="button" class="btn-secondary" data-act="descuento" data-id="${l.id}" style="${VENC_MINI_BTN}">🏷️ Descuento</button>
+        <button type="button" class="btn-secondary" data-fecha="${l.id}" style="${VENC_MINI_BTN}">✏️ Fecha</button>
+        <button type="button" class="btn-secondary" data-eliminar="${l.id}" style="${VENC_MINI_BTN};color:var(--muted)">✕ Eliminar</button>
+      </div>
+      ${vencBotonesFecha(l.id)}
     </div>`).join('');
-    box.querySelectorAll('.venc-row').forEach(row => {
-      row.onclick = () => {
-        vencState.lista = lista; // para que vencAbrirDetalle encuentre el lote
-        vencAbrirDetalle(Number(row.dataset.id));
-      };
-    });
+    vencWireAccionesRapidas(box, lista);
   }catch(e){
     box.innerHTML = '<div class="ap-empty">⚠️ No se pudo cargar.</div>';
   }
@@ -5085,6 +5205,22 @@ function mmReset(){
 }
 
 function openMermas(){ mmReset(); abrirModal('mm-ov'); document.getElementById('mm-search').focus(); }
+
+// Prefill desde el botón "Merma" de Vencimientos: selecciona el producto, precarga
+// la cantidad del lote y el motivo, dejando solo el responsable por completar.
+function mmPrefill(sku, cantidad, motivoDefault){
+  mmReset();
+  mmPick(sku);
+  if(cantidad){
+    document.getElementById('mm-cantidad').value = cantidad;
+    mmCalcTotal();
+  }
+  if(motivoDefault){
+    const btn = document.querySelector('.motivo-chip[data-m="' + motivoDefault + '"]');
+    if(btn) btn.click();
+  }
+  mmValidar();
+}
 
 document.getElementById('mm-close').onclick=()=>irASeccion('inicio');
 document.getElementById('mm-search').oninput=e=>mmRenderResults(buscarProductos(e.target.value));
