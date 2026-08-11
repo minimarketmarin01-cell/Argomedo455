@@ -577,6 +577,15 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 
+  <button class="menu-card mermas" id="btn-riesgo">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+    <div class="txt">
+      <div class="t">Riesgo de quiebre</div>
+      <div class="s">Productos de alta rotación (clase A/B) con cobertura urgente o sin stock</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+  </button>
+
   <button class="menu-card pedido" id="btn-proveedores">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
     <div class="txt">
@@ -951,6 +960,41 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
       <div class="total-box" id="cat-consumo-total">Cargando…</div>
       <div id="cat-consumo-list" style="margin-top:8px"></div>
     </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: RIESGO DE QUIEBRE ===== -->
+<div class="ov hidden" id="rz-ov">
+  <div class="ov-head">
+    <h3>📉 Riesgo de quiebre</h3>
+    <button class="ov-close" id="rz-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="field">
+      <div class="total-box" id="rz-lbl">—</div>
+    </div>
+    <div class="field">
+      <div class="cat" style="color:var(--muted);font-size:11.5px;line-height:1.4">Productos <b>A</b> o <b>B</b> (los que más venden, según Precio sugerido/ABC) con cobertura urgente o sin stock — alta rotación que se puede quedar sin vender por falta de reposición a tiempo.</div>
+    </div>
+    <div class="field">
+      <button type="button" class="btn-secondary" id="rz-activar-push">🔔 Activar avisos en este celular (8 AM y 3 PM)</button>
+    </div>
+    <div class="field">
+      <div class="search-row">
+        <select id="rz-prov-filtro" style="flex:1;min-width:0;height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-size:13px">
+          <option value="">🏢 Todos los proveedores</option>
+        </select>
+        <select id="rz-clase-filtro" style="width:130px;flex:none;height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-size:13px">
+          <option value="AB">Clase A y B</option>
+          <option value="A">Solo clase A</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <button type="button" class="btn-secondary" id="rz-ver-excluidos" style="border-style:dashed">🚫 Ver productos excluidos<span id="rz-excl-count"></span></button>
+      <div id="rz-excluidos-box" class="hidden" style="margin-top:8px"></div>
+    </div>
+    <div id="rz-list"></div>
   </div>
 </div>
 
@@ -1909,6 +1953,7 @@ async function cargarCatalogo(silencioso){
     persist();
     cargarABC(); // no bloquea la carga del catálogo — se refresca aparte, en segundo plano
     if(!CATEGORIAS_CAMBIO.size) cargarCategoriasCambio();
+    if(!RIESGO_EXCLUIDOS.size) cargarRiesgoExcluidos();
     // "Sincronizado hace X" refleja qué tan fresco es lo que se ve en pantalla, no
     // solo la última vez que se tocó el botón manual — así que se marca acá, en
     // TODA carga exitosa del catálogo (incluida la automática cada pocos segundos
@@ -2097,7 +2142,7 @@ function cerrarModal(id){ document.getElementById(id).classList.add('hidden'); }
 //  history.back() y pushState al encadenar aperturas/cierres).
 // ============================================================
 let seccionActual='inicio';
-const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov', mermas:'mm-ov', llegadas:'ll-ov', abc:'abcr-ov', sincosto:'sc-ov', categorias:'cat-ov' };
+const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov', mermas:'mm-ov', llegadas:'ll-ov', abc:'abcr-ov', sincosto:'sc-ov', categorias:'cat-ov', riesgo:'rz-ov' };
 history.replaceState({ cumpasSeccion:'inicio' }, '', location.pathname);
 
 function cerrarSeccionActual(){
@@ -2127,6 +2172,7 @@ function abrirSeccionVisual(seccion){
   else if(seccion==='abc') openABCResumen();
   else if(seccion==='sincosto') openSinCosto();
   else if(seccion==='categorias') openCategorias();
+  else if(seccion==='riesgo') openRiesgoQuiebre();
 }
 
 function actualizarNavActiva(){
@@ -5484,6 +5530,147 @@ async function openCategorias(){
 }
 document.getElementById('cat-close').onclick=()=>irASeccion('inicio');
 document.getElementById('btn-categorias').onclick=()=>irASeccion('categorias');
+
+// ============================================================
+//  RIESGO DE QUIEBRE — productos de alta rotación (clase ABC A o B) con
+//  cobertura urgente o sin stock. Se calcula en el navegador reutilizando
+//  apEstadoDe() (el mismo cálculo que ya usa Armar pedido), igual que hace
+//  Marín con su rzCalcular — no se duplica el cálculo en el servidor,
+//  salvo en el cron (worker.js) que no tiene DB.items.
+// ============================================================
+let RIESGO_EXCLUIDOS=new Set();
+async function cargarRiesgoExcluidos(){
+  try{
+    const res=await fetch(SYNC_URL+'?action=riesgo_excluidos');
+    const j=await res.json();
+    if(j&&j.ok) RIESGO_EXCLUIDOS=new Set(j.skus||[]);
+  }catch(e){ /* silencioso: la exclusión simplemente no se aplica hasta la próxima carga */ }
+}
+function rzCalcular(soloClaseA){
+  return (DB.items||[]).filter(it=>{
+    if(!it.abc) return false; // sin clasificación ABC calculada todavía
+    const clase=it.abc.clase;
+    if(soloClaseA?clase!=='A':(clase!=='A'&&clase!=='B')) return false;
+    if(RIESGO_EXCLUIDOS.has(it.ref)) return false;
+    return apEstadoDe(it).estado==='urgente';
+  });
+}
+function renderRiesgoQuiebre(){
+  const soloA=document.getElementById('rz-clase-filtro').value==='A';
+  let lista=rzCalcular(soloA);
+
+  const selProv=document.getElementById('rz-prov-filtro');
+  const provActual=selProv.value;
+  const provs=[...new Set(lista.map(it=>it.prov||'SIN PROVEEDOR'))].sort((a,b)=>a.localeCompare(b,'es'));
+  selProv.innerHTML='<option value="">🏢 Todos los proveedores</option>'+provs.map(p=>`<option value="${p.replace(/"/g,'&quot;')}">${p}</option>`).join('');
+  if(provs.includes(provActual)) selProv.value=provActual;
+  const provFiltro=selProv.value;
+  if(provFiltro) lista=lista.filter(it=>(it.prov||'SIN PROVEEDOR')===provFiltro);
+
+  document.getElementById('rz-lbl').textContent=lista.length+' producto'+(lista.length===1?'':'s')+' en riesgo de quiebre';
+
+  const box=document.getElementById('rz-list');
+  if(!lista.length){ box.innerHTML='<div class="ap-empty">Sin productos en riesgo por ahora 🎉</div>'; return; }
+  box.innerHTML=lista.map(it=>{
+    const {cob}=apEstadoDe(it);
+    const stockTxt=it.stock==null?'sin control':(it.stock+(it.peso?' kg':' u'));
+    const provTxt=(it.prov||'SIN PROVEEDOR').replace(/"/g,'&quot;');
+    return `<div class="result-item" style="cursor:default">
+      <div class="n" style="display:flex;align-items:center;gap:6px">${it.nombre}<span style="background:var(--card2);border-radius:6px;padding:1px 6px;font-weight:800;font-size:10px">${it.abc.clase}</span></div>
+      <div class="s">${it.prov} · ${stockTxt} en stock · ${cob===Infinity?'∞':Math.round(cob)+'d'} de cobertura</div>
+      <div class="search-row" style="margin-top:8px">
+        <input type="text" inputmode="decimal" value="${it.stock||0}" id="rz-stock-${it.ref}" style="max-width:110px">
+        <button class="btn-secondary rz-guardar-stock" data-ref="${it.ref}" style="width:auto;padding:0 12px;flex:1">Guardar stock</button>
+      </div>
+      <button type="button" class="btn-secondary rz-ir-pedido" data-prov="${provTxt}" style="width:100%;margin-top:8px">🛒 Ir al pedido de ${it.prov}</button>
+      <button type="button" class="btn-secondary rz-excluir" data-ref="${it.ref}" style="width:100%;margin-top:6px;color:var(--muted)">🚫 Excluir de esta lista</button>
+    </div>`;
+  }).join('');
+
+  box.querySelectorAll('.rz-guardar-stock').forEach(b=>b.onclick=()=>rzGuardarStock(b.dataset.ref));
+  box.querySelectorAll('.rz-ir-pedido').forEach(b=>b.onclick=()=>{
+    apState.prov=b.dataset.prov;
+    irASeccion('pedidos');
+    setTimeout(()=>{ apRenderProvChips(); apRenderLista(); },100);
+  });
+  box.querySelectorAll('.rz-excluir').forEach(b=>b.onclick=()=>rzExcluir(b.dataset.ref,true));
+}
+async function rzGuardarStock(ref){
+  const inp=document.getElementById('rz-stock-'+ref);
+  const valor=Number(inp.value);
+  if(isNaN(valor)||valor<0){ showToast('Escribe una cantidad válida (0 o mayor)'); return; }
+  const btn=document.querySelector('.rz-guardar-stock[data-ref="'+ref+'"]');
+  if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'ajustar_stock',payload:{
+      sku:ref, modo:'exacto', cantidadExacta:valor, motivo:'Corrección desde Riesgo de quiebre',
+      responsable:localStorage.getItem('cumpas_responsable')||'Riesgo de quiebre'
+    }})});
+    const j=await res.json();
+    if(j&&j.ok){
+      const it=(DB.items||[]).find(i=>i.ref===ref);
+      if(it){ it.stock=valor; persist(); }
+      showToast('✅ Stock actualizado');
+      renderRiesgoQuiebre();
+    }else{
+      showToast('❌ '+((j&&j.error)||'No se pudo guardar'));
+      if(btn){ btn.disabled=false; btn.textContent='Guardar stock'; }
+    }
+  }catch(e){
+    showToast('❌ Error de conexión');
+    if(btn){ btn.disabled=false; btn.textContent='Guardar stock'; }
+  }
+}
+async function rzExcluir(ref,excluido){
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'riesgo_excluir',payload:{sku:ref,excluido}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      if(excluido) RIESGO_EXCLUIDOS.add(ref); else RIESGO_EXCLUIDOS.delete(ref);
+      showToast(excluido?'🚫 Excluido de Riesgo de quiebre':'✅ Vuelve a aparecer en Riesgo de quiebre');
+      renderRiesgoQuiebre();
+      renderRiesgoExcluidosBox();
+    }else{ showToast('❌ No se pudo guardar'); }
+  }catch(e){ showToast('❌ Error de conexión'); }
+}
+function renderRiesgoExcluidosBox(){
+  const badge=document.getElementById('rz-excl-count');
+  const box=document.getElementById('rz-excluidos-box');
+  const skus=[...RIESGO_EXCLUIDOS];
+  badge.textContent=skus.length?(' ('+skus.length+')'):'';
+  if(box.classList.contains('hidden')) return;
+  if(!skus.length){ box.innerHTML='<div class="ap-empty">Sin productos excluidos.</div>'; return; }
+  box.innerHTML=skus.map(ref=>{
+    const it=(DB.items||[]).find(i=>i.ref===ref);
+    const nombre=it?it.nombre:ref;
+    return `<div class="result-item" style="cursor:default;display:flex;justify-content:space-between;align-items:center">
+      <span>${nombre}</span>
+      <button type="button" class="btn-secondary rz-reincluir" data-ref="${ref}" style="width:auto;padding:0 10px">↺ Reincluir</button>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('.rz-reincluir').forEach(b=>b.onclick=()=>rzExcluir(b.dataset.ref,false));
+}
+async function openRiesgoQuiebre(){
+  document.getElementById('rz-clase-filtro').value='AB';
+  document.getElementById('rz-prov-filtro').value='';
+  document.getElementById('rz-excluidos-box').classList.add('hidden');
+  if(!RIESGO_EXCLUIDOS.size) await cargarRiesgoExcluidos();
+  renderRiesgoQuiebre();
+  renderRiesgoExcluidosBox();
+}
+document.getElementById('rz-close').onclick=()=>irASeccion('inicio');
+document.getElementById('rz-activar-push').onclick=()=>{
+  const card=document.getElementById('btn-notificaciones');
+  if(card) card.click();
+};
+document.getElementById('rz-prov-filtro').onchange=renderRiesgoQuiebre;
+document.getElementById('rz-clase-filtro').onchange=renderRiesgoQuiebre;
+document.getElementById('rz-ver-excluidos').onclick=()=>{
+  const box=document.getElementById('rz-excluidos-box');
+  box.classList.toggle('hidden');
+  if(!box.classList.contains('hidden')) renderRiesgoExcluidosBox();
+};
+document.getElementById('btn-riesgo').onclick=()=>irASeccion('riesgo');
 
 // ============================================================
 //  NOTIFICACIONES PUSH
