@@ -197,6 +197,25 @@ async function asegurarTablas(env) {
     origen TEXT
   )`);
 
+  // "Recién llegado": stock que subió directo en Loyverse (no por Recibir mercadería
+  // ni por un ajuste hecho desde la app) y todavía no tiene fecha de vencimiento
+  // asignada. Se llena sola desde el webhook inventory_levels.update (ver
+  // aplicarCambiosInventario) comparando el stock nuevo contra el que ya había en D1.
+  await run(env, `CREATE TABLE IF NOT EXISTS llegadas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_deteccion TEXT,
+    sku TEXT,
+    nombre TEXT,
+    categoria TEXT,
+    unidad TEXT,
+    stock_antes REAL,
+    stock_despues REAL,
+    aumento REAL,
+    estado TEXT DEFAULT 'pendiente',
+    fecha_vencimiento_asignada TEXT,
+    fecha_resolucion TEXT
+  )`);
+
   // Catálogos reutilizables de proveedores y sectores — permiten buscar y crear
   // nuevos registros desde el formulario sin salir de él, y que queden disponibles
   // para elegir la próxima vez (Módulo 3: Proveedores y sectores).
@@ -814,18 +833,93 @@ async function marcarEventoProcesado(env, eventId, tipo) {
 
 // Aplica cambios de stock recibidos por webhook (inventory_levels.update).
 // Solo toca `stock`, no vuelve a tocar precio/nombre/etc.
+//
+// De paso detecta "Recién llegado": si el stock SUBE y ese aumento no lo hizo la
+// app (Recibir mercadería, ajuste, etc. ya dejan el valor nuevo escrito en D1
+// ANTES de que llegue el eco del webhook — ver sumarStockLoyverse), entonces
+// alguien cargó stock directo en Loyverse sin pasar por la app, y por lo tanto
+// sin fecha de vencimiento. Se guarda en `llegadas` para que el módulo "Recién
+// llegado" lo muestre y se le pueda asignar fecha o ignorar.
 async function aplicarCambiosInventario(env, niveles) {
   if (!niveles || !niveles.length) return 0;
   const { storeId } = await obtenerStoreId(env);
   let actualizados = 0;
   for (const nivel of niveles) {
     if (nivel.store_id && nivel.store_id !== storeId) continue; // otra tienda, no nos afecta
-    const fila = await get(env, "SELECT sku FROM productos WHERE variant_id = ?", nivel.variant_id);
+    const fila = await get(env, "SELECT sku, nombre, categoria, sold_by_weight, stock FROM productos WHERE variant_id = ?", nivel.variant_id);
     if (!fila) continue; // producto no está en D1 todavía (ej. creado fuera de la app) — un sync completo lo traerá
-    await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", nivel.in_stock, fila.sku);
+    const stockAntes = Number(fila.stock) || 0;
+    const stockDespues = Number(nivel.in_stock) || 0;
+    await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", stockDespues, fila.sku);
     actualizados++;
+
+    if (stockDespues > stockAntes) {
+      const aumento = Math.round((stockDespues - stockAntes) * 1000) / 1000;
+      const unidad = fila.sold_by_weight ? "kg" : "un";
+      const pendiente = await get(env, "SELECT id, aumento FROM llegadas WHERE sku = ? AND estado = 'pendiente'", fila.sku);
+      if (pendiente) {
+        // Ya había una llegada sin resolver de este mismo producto — se acumula
+        // en vez de crear una fila nueva, para no duplicar el aviso.
+        await run(env,
+          "UPDATE llegadas SET aumento = ?, stock_despues = ?, fecha_deteccion = ? WHERE id = ?",
+          Math.round((Number(pendiente.aumento) + aumento) * 1000) / 1000, stockDespues, fechaDDMMAAAA(), pendiente.id);
+      } else {
+        await run(env,
+          `INSERT INTO llegadas (fecha_deteccion, sku, nombre, categoria, unidad, stock_antes, stock_despues, aumento, estado)
+           VALUES (?,?,?,?,?,?,?,?,'pendiente')`,
+          fechaDDMMAAAA(), fila.sku, fila.nombre, fila.categoria, unidad, stockAntes, stockDespues, aumento);
+      }
+    }
   }
   return actualizados;
+}
+
+// Lista de "llegadas" pendientes (stock que subió directo en Loyverse, sin fecha
+// de vencimiento todavía), más nuevas primero por tamaño de aumento.
+async function repLlegadasPendientes(env) {
+  const { results: rows } = await env.DB.prepare("SELECT * FROM llegadas WHERE estado = 'pendiente' ORDER BY aumento DESC").all();
+  return rows.map(r => ({
+    filaIndex: r.id, fecha: r.fecha_deteccion, sku: r.sku, nombre: r.nombre, categoria: r.categoria,
+    unidad: r.unidad, stockAntes: r.stock_antes, stockDespues: r.stock_despues, aumento: r.aumento
+  }));
+}
+
+// Le asigna fecha de vencimiento a una llegada: crea el lote en `vencimientos`
+// con la cantidad detectada. NO vuelve a tocar el stock en Loyverse — ese stock
+// ya está sumado desde que se detectó la llegada.
+async function accionAsignarLlegada(env, payload) {
+  payload = payload || {};
+  const fi = Number(payload.filaIndex);
+  if (!fi) throw new Error("Falta filaIndex");
+  const row = await get(env, "SELECT * FROM llegadas WHERE id = ?", fi);
+  if (!row) throw new Error("Llegada no encontrada");
+  if (row.estado !== "pendiente") throw new Error("Esta llegada ya fue resuelta");
+
+  const fechaTxt = String(payload.fechaVencimiento || "").trim();
+  if (!fechaTxt || !parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha de vencimiento inválida (usa DD/MM/AAAA)");
+
+  const insertRes = await run(env,
+    `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, fecha_revision, revisado_por)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    row.fecha_deteccion, row.sku, row.nombre, row.categoria, row.unidad, "", row.aumento, fechaTxt, "Pendiente", "", "");
+
+  await run(env, "UPDATE llegadas SET estado='asignado', fecha_vencimiento_asignada=?, fecha_resolucion=? WHERE id=?",
+    fechaTxt, fechaDDMMAAAA(), fi);
+
+  return { ok: true, filaIndex: fi, loteId: insertRes.meta.last_row_id };
+}
+
+// Descarta una llegada sin asignarle fecha (ej. producto que no requiere control
+// de vencimiento). No toca stock ni crea lote.
+async function accionIgnorarLlegada(env, payload) {
+  payload = payload || {};
+  const fi = Number(payload.filaIndex);
+  if (!fi) throw new Error("Falta filaIndex");
+  const row = await get(env, "SELECT id, estado FROM llegadas WHERE id = ?", fi);
+  if (!row) throw new Error("Llegada no encontrada");
+  if (row.estado !== "pendiente") throw new Error("Esta llegada ya fue resuelta");
+  await run(env, "UPDATE llegadas SET estado='ignorado', fecha_resolucion=? WHERE id=?", fechaDDMMAAAA(), fi);
+  return { ok: true, filaIndex: fi };
 }
 
 // Aplica ventas recibidas por webhook (receipts.update): guarda una fila por
@@ -2284,6 +2378,30 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // GET /?action=llegadas → productos con stock que subió directo en Loyverse
+      // (sin pasar por Recibir mercadería ni un ajuste de la app) y todavía no
+      // tienen fecha de vencimiento asignada.
+      if (action === "llegadas") {
+        const lista = await repLlegadasPendientes(env);
+        return json({ ok: true, llegadas: lista });
+      }
+
+      // POST { action:'asignar_llegada', payload:{filaIndex,fechaVencimiento} } →
+      // crea el lote de vencimiento para esa llegada (el stock ya estaba sumado).
+      if (action === "asignar_llegada") {
+        const resultado = await accionAsignarLlegada(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'ignorar_llegada', payload:{filaIndex} } → descarta la
+      // llegada sin asignarle fecha.
+      if (action === "ignorar_llegada") {
+        const resultado = await accionIgnorarLlegada(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
       // GET /?action=descuentos_activos  →  lista de lotes con descuento aplicado
       // y todavía en gestión (sin cerrar).
       if (action === "descuentos_activos") {
@@ -2421,7 +2539,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);

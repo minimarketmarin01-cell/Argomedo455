@@ -91,6 +91,7 @@ button{font-family:inherit}
 .menu-card.venc .ico{background:var(--ambar-bg);color:var(--ambar)}
 .menu-card.reportes .ico{background:var(--violeta-bg);color:var(--violeta)}
 .menu-card.mermas .ico{background:var(--rojo-bg);color:var(--rojo)}
+.menu-card.llegadas .ico{background:var(--violeta-bg);color:var(--violeta)}
 .menu-card .txt{flex:1;min-width:0}
 .menu-card .txt .t{font-family:'Manrope';font-weight:800;font-size:14.5px;color:var(--ink)}
 .menu-card .txt .s{font-size:11.5px;color:var(--muted);margin-top:1px;line-height:1.3}
@@ -540,6 +541,15 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 
+  <button class="menu-card llegadas" id="btn-llegadas">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg></div>
+    <div class="txt">
+      <div class="t">Recién llegado<span class="venc-badge hidden" id="ll-badge"></span></div>
+      <div class="s">Stock nuevo cargado directo en Loyverse, sin fecha de vencimiento</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+  </button>
+
   <button class="menu-card pedido" id="btn-proveedores">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
     <div class="txt">
@@ -796,6 +806,18 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   </div>
   <div class="ov-foot">
     <button class="btn-primary" id="mm-guardar" disabled>Guardar merma</button>
+  </div>
+</div>
+
+<!-- ===== MODAL: RECIÉN LLEGADO (stock cargado directo en Loyverse, sin fecha) ===== -->
+<div class="ov hidden" id="ll-ov">
+  <div class="ov-head">
+    <h3>📦 Recién llegado</h3>
+    <button class="ov-close" id="ll-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="ap-empty" style="text-align:left;color:var(--muted);font-size:12px;margin-bottom:10px;padding:0" id="ll-lbl">Cargando…</div>
+    <div id="ll-list"></div>
   </div>
 </div>
 
@@ -1539,6 +1561,21 @@ async function actualizarStatPorVencer(){
   el.textContent=r.ok?String(r.lista.length):'—';
 }
 
+// Misma idea de cache corta (10s) para "Recién llegado" — la usan tanto
+// "Requiere atención" como el badge de la tarjeta del menú.
+let _llegadasResumenCache=null;
+async function obtenerLlegadasResumen(){
+  if(_llegadasResumenCache && (Date.now()-_llegadasResumenCache.ts)<10000) return _llegadasResumenCache;
+  try{
+    const res=await fetch(SYNC_URL+'?action=llegadas');
+    const j=await res.json();
+    _llegadasResumenCache={ ts:Date.now(), ok:!!(j&&j.ok), lista:(j&&j.ok)?(j.llegadas||[]):[] };
+  }catch(e){
+    _llegadasResumenCache={ ts:Date.now(), ok:false, lista:(_llegadasResumenCache&&_llegadasResumenCache.lista)||[] };
+  }
+  return _llegadasResumenCache;
+}
+
 // ============================================================
 //  "REQUIERE ATENCIÓN" (pantalla Inicio) — mismos cálculos que ya usan
 //  Armar pedido (quiebre de stock vía apEstadoDe) y Vencimientos (lotes
@@ -1559,10 +1596,15 @@ async function renderAtencion(){
   const vencidos=lotes.filter(l=>l.urgencia==='vencido' && l.estado==='Pendiente').length;
   const porVencer=lotes.filter(l=>(l.urgencia==='urgente'||l.urgencia==='proximo') && l.estado==='Pendiente').length;
 
+  const rl=await obtenerLlegadasResumen();
+  const llegadas=(rl.lista||[]).length;
+  llUpdateBadge(llegadas);
+
   const items=[];
   if(quiebres>0) items.push({ n:quiebres, t:'Productos en quiebre', s:'Sin stock o menos de 3 días de cobertura', cls:'', go:()=>irASeccion('pedidos') });
   if(vencidos>0) items.push({ n:vencidos, t:'Lotes vencidos', s:'Gestionar cambio, descuento o merma', cls:'', go:()=>irASeccion('vencimientos') });
   if(porVencer>0) items.push({ n:porVencer, t:'Por vencer pronto', s:'Revisar en los próximos días', cls:'warn', go:()=>irASeccion('vencimientos') });
+  if(llegadas>0) items.push({ n:llegadas, t:'Recién llegado', s:'Stock nuevo sin fecha de vencimiento', cls:'', go:()=>irASeccion('llegadas') });
 
   if(!items.length){
     titleEl.classList.add('hidden');
@@ -1579,7 +1621,7 @@ async function renderAtencion(){
   // resumen de "cosas por revisar", no del estado de la suscripción push.
   const badge=document.getElementById('top-notif-badge');
   if(badge){
-    const total=quiebres+vencidos+porVencer;
+    const total=quiebres+vencidos+porVencer+llegadas;
     if(total>0){ badge.textContent=total>99?'99+':String(total); badge.classList.remove('hidden'); }
     else badge.classList.add('hidden');
   }
@@ -1913,7 +1955,7 @@ function cerrarModal(id){ document.getElementById(id).classList.add('hidden'); }
 //  history.back() y pushState al encadenar aperturas/cierres).
 // ============================================================
 let seccionActual='inicio';
-const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov', mermas:'mm-ov' };
+const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov', mermas:'mm-ov', llegadas:'ll-ov' };
 history.replaceState({ cumpasSeccion:'inicio' }, '', location.pathname);
 
 function cerrarSeccionActual(){
@@ -1939,6 +1981,7 @@ function abrirSeccionVisual(seccion){
   else if(seccion==='proveedores') openProveedoresVisual();
   else if(seccion==='crear') openCrearProductoVisual();
   else if(seccion==='mermas') openMermas();
+  else if(seccion==='llegadas') openLlegadas();
 }
 
 function actualizarNavActiva(){
@@ -4908,6 +4951,91 @@ document.getElementById('mm-ver-historial').onclick=async()=>{
 };
 
 document.getElementById('btn-mermas').onclick=()=>irASeccion('mermas');
+
+// ============================================================
+//  RECIÉN LLEGADO — stock que subió directo en Loyverse (fuera de
+//  Recibir mercadería o un ajuste de la app) y todavía no tiene fecha
+//  de vencimiento. El backend lo detecta solo desde el webhook de
+//  inventario (ver aplicarCambiosInventario en worker.js); acá solo se
+//  lista, se le asigna fecha (crea el lote, sin volver a tocar stock)
+//  o se ignora.
+// ============================================================
+function openLlegadas(){ llLoad(); }
+document.getElementById('ll-close').onclick=()=>irASeccion('inicio');
+
+async function llLoad(){
+  const box=document.getElementById('ll-list'), lbl=document.getElementById('ll-lbl');
+  box.innerHTML=''; lbl.textContent='Cargando…';
+  try{
+    const res=await fetch(SYNC_URL+'?action=llegadas');
+    const j=await res.json();
+    if(!j||!j.ok){ lbl.textContent='⚠️ No se pudo cargar.'; return; }
+    _llegadasResumenCache={ ts:Date.now(), ok:true, lista:j.llegadas||[] };
+    llUpdateBadge(j.llegadas.length);
+    llRender(j.llegadas);
+  }catch(e){ lbl.textContent='⚠️ Error de conexión.'; }
+}
+
+function llRender(lst){
+  const box=document.getElementById('ll-list'), lbl=document.getElementById('ll-lbl');
+  if(!lst.length){
+    lbl.textContent='Sin llegadas pendientes por fechar 🎉';
+    box.innerHTML='';
+    return;
+  }
+  lbl.textContent=lst.length+' producto'+(lst.length===1?'':'s')+' con stock nuevo, esperando fecha de vencimiento';
+  box.innerHTML=lst.map(it=>`
+    <div class="venc-row" style="flex-direction:column;align-items:stretch;gap:8px;cursor:default" data-i="${it.filaIndex}">
+      <div class="info">
+        <div class="n">${it.nombre}</div>
+        <div class="s">${it.categoria} · +${it.aumento} ${it.unidad} (${it.stockAntes} → ${it.stockDespues}) · detectado ${it.fecha}</div>
+      </div>
+      <div class="fecha-row" style="display:flex;gap:6px;align-items:center">
+        <input id="ll-fecha-dd-${it.filaIndex}" class="fecha-seg" inputmode="numeric" maxlength="2" placeholder="DD" style="width:44px">
+        <span>/</span>
+        <input id="ll-fecha-mm-${it.filaIndex}" class="fecha-seg" inputmode="numeric" maxlength="2" placeholder="MM" style="width:44px">
+        <span>/</span>
+        <input id="ll-fecha-aaaa-${it.filaIndex}" class="fecha-seg" inputmode="numeric" maxlength="4" placeholder="AAAA" style="width:64px">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="btn-primary ll-guardar" data-i="${it.filaIndex}" style="width:auto;flex:1;height:38px">Guardar fecha</button>
+        <button type="button" class="btn-secondary ll-ignorar" data-i="${it.filaIndex}" style="width:auto;flex:none;height:38px;padding:0 14px">Ignorar</button>
+      </div>
+    </div>`).join('');
+
+  lst.forEach(it=>wireFechaSegmentada('ll-fecha-dd-'+it.filaIndex,'ll-fecha-mm-'+it.filaIndex,'ll-fecha-aaaa-'+it.filaIndex));
+  box.querySelectorAll('.ll-guardar').forEach(b=>b.onclick=()=>llGuardarFecha(b.dataset.i));
+  box.querySelectorAll('.ll-ignorar').forEach(b=>b.onclick=()=>llIgnorar(b.dataset.i));
+}
+
+async function llGuardarFecha(filaIndex){
+  const fecha=fechaSegmentadaTexto('ll-fecha-dd-'+filaIndex,'ll-fecha-mm-'+filaIndex,'ll-fecha-aaaa-'+filaIndex);
+  if(!fecha){ showToast('Completa la fecha de vencimiento (DD/MM/AAAA)'); return; }
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'asignar_llegada',payload:{filaIndex:Number(filaIndex),fechaVencimiento:fecha}})});
+    const j=await res.json();
+    if(j&&j.ok){ showToast('✅ Lote creado en Vencimientos'); llLoad(); }
+    else showToast('❌ '+((j&&j.error)||'No se pudo guardar'));
+  }catch(e){ showToast('❌ Error de conexión'); }
+}
+
+async function llIgnorar(filaIndex){
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'ignorar_llegada',payload:{filaIndex:Number(filaIndex)}})});
+    const j=await res.json();
+    if(j&&j.ok){ llLoad(); }
+    else showToast('❌ '+((j&&j.error)||'No se pudo ignorar'));
+  }catch(e){ showToast('❌ Error de conexión'); }
+}
+
+function llUpdateBadge(n){
+  const b=document.getElementById('ll-badge');
+  if(!b)return;
+  if(n>0){ b.textContent=n>99?'99+':String(n); b.classList.remove('hidden'); }
+  else b.classList.add('hidden');
+}
+
+document.getElementById('btn-llegadas').onclick=()=>irASeccion('llegadas');
 
 // ============================================================
 //  NOTIFICACIONES PUSH
