@@ -1650,6 +1650,41 @@ async function accionVencimientoEstado(env, payload) {
   return out;
 }
 
+// POST { action:'vencimiento_eliminar', payload:{id,responsable} } → elimina un lote
+// de vencimientos (ej. se cargó por error). No toca stock ni Loyverse — si el lote ya
+// sumó stock al recibirse, esa parte se corrige por separado con un ajuste de stock.
+async function accionEliminarLoteVencimiento(env, payload) {
+  payload = payload || {};
+  const id = Number(payload.id);
+  if (!id) throw new Error("Falta el id del lote");
+  const lote = await get(env, "SELECT * FROM vencimientos WHERE id = ?", id);
+  if (!lote) throw new Error("Lote no encontrado");
+  await run(env, "DELETE FROM vencimientos WHERE id = ?", id);
+  await run(env,
+    `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    fechaHoraDDMMAAAA(), "vencimiento_eliminado", lote.sku, lote.producto, lote.categoria, null, null,
+    "Lote eliminado de Vencimientos (" + lote.cantidad + " " + lote.unidad + ", vencía " + (lote.fecha_vencimiento || "sin fecha") + ")",
+    payload.responsable || "");
+  return { id };
+}
+
+// POST { action:'vencimiento_fecha', payload:{id,fechaVencimiento,responsable} } → corrige
+// la fecha de vencimiento de un lote ya creado. No toca stock ni estado, salvo que el
+// lote estuviera "Sin fecha": ahí pasa a "Pendiente" porque ya tiene una fecha real.
+async function accionEditarFechaVencimiento(env, payload) {
+  payload = payload || {};
+  const id = Number(payload.id);
+  if (!id) throw new Error("Falta el id del lote");
+  const fechaTxt = String(payload.fechaVencimiento || "").trim();
+  if (!fechaTxt || !parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha inválida (usa DD/MM/AAAA)");
+  const lote = await get(env, "SELECT id, estado FROM vencimientos WHERE id = ?", id);
+  if (!lote) throw new Error("Lote no encontrado");
+  const nuevoEstado = lote.estado === "Sin fecha" ? "Pendiente" : lote.estado;
+  await run(env, "UPDATE vencimientos SET fecha_vencimiento = ?, estado = ? WHERE id = ?", fechaTxt, nuevoEstado, id);
+  return { id, fechaVencimiento: fechaTxt, estado: nuevoEstado };
+}
+
 // ============================================================
 //  DESCUENTOS ACTIVOS (lotes de vencimiento con precio rebajado)
 //  Flujo: aplicar descuento (rebaja el precio en Loyverse y marca
@@ -2608,6 +2643,22 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'vencimiento_eliminar', payload:{id,responsable} } → borra un
+      // lote de vencimientos (no toca stock ni Loyverse).
+      if (action === "vencimiento_eliminar") {
+        const resultado = await accionEliminarLoteVencimiento(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'vencimiento_fecha', payload:{id,fechaVencimiento,responsable} }
+      // → corrige la fecha de vencimiento de un lote ya creado.
+      if (action === "vencimiento_fecha") {
+        const resultado = await accionEditarFechaVencimiento(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
       // POST { action:'registrar_merma', payload:{sku,cantidad,costoManual,motivo,responsable,lote} }
       // → registra una merma (pérdida): guarda el registro en `mermas` con el costo
       //   de Loyverse (o el digitado a mano si el producto no lo tiene cargado) y
@@ -2864,7 +2915,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
