@@ -32,6 +32,10 @@
   --ambar:#B8791A;--ambar-bg:#FBF1DF;
   --verde:#2E9E5B;--verde-bg:#E7F7EE;
   --violeta:#7A5CC0;--violeta-bg:#F0EBFA;
+  /* Verde oscuro — mismo matiz que --verde, solo más profundo, para el
+     encabezado/barra inferior de Armar pedido (referencia de diseño). */
+  --verde-d:#1F6B41;--verde-d2:#164F30;
+  --verde-grad:linear-gradient(120deg,var(--verde-d),var(--verde-d2));
 
   --sh-card:0 1px 3px rgba(11,26,51,.06),0 3px 10px rgba(11,26,51,.05);
   --sh-float:0 8px 24px rgba(11,26,51,.14);
@@ -265,7 +269,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .chip-removible{display:inline-flex;align-items:center;gap:6px;padding:6px 8px 6px 12px;border-radius:16px;background:var(--cielo-tint);border:1.5px solid var(--cielo);color:var(--cielo-d);font-weight:700;font-size:12px}
 .chip-removible button{width:18px;height:18px;flex:none;border-radius:50%;border:none;background:var(--cielo-d);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .ap-search{padding:0 16px 10px}
-.ap-list{padding:0 16px 90px}
+.ap-list{padding:0 16px 96px}
 .ap-row{display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card)}
 .ap-thumb{width:44px;height:44px;flex:none;border-radius:10px;background:var(--card2);overflow:hidden;display:flex;align-items:center;justify-content:center}
 .ap-thumb img{width:100%;height:100%;object-fit:cover;display:block}
@@ -281,8 +285,6 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .ap-row .margen-line{display:flex;align-items:center;gap:6px;margin-top:3px}
 .ap-row .margen-line .margen{font-size:11px;font-weight:700;color:var(--verde);font-family:'JetBrains Mono',monospace}
 .ap-row .abc-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:5px;background:var(--card2);color:var(--ink);font-weight:800;font-size:9.5px}
-.ap-row .datos{display:flex;align-items:center;gap:10px;margin-top:6px;font-size:10.5px;color:var(--muted)}
-.ap-row .datos b{color:var(--ink);font-family:'JetBrains Mono',monospace}
 /* Badge de cobertura (COB): mismos 3 estados que ya usa la app (urgente/pedir/
    sobrestock lo del borde de la fila), pero acá coloreado solo por umbral de
    días — pedido explícito: 🔴<3d 🟡3-7d 🟢>7d, independiente del estado general. */
@@ -290,12 +292,35 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .cob-badge.urgente{background:var(--rojo-bg);color:var(--rojo)}
 .cob-badge.pedir{background:var(--ambar-bg);color:var(--ambar)}
 .cob-badge.suficiente{background:var(--verde-bg);color:var(--verde)}
+/* ---- Columnas de métricas (COB/STK/VTA) — a la derecha del nombre/precio,
+   alineadas con el encabezado "COB · STK · VTA". Envueltas junto con
+   .ap-right en .ap-side para que, si no cabe todo en una línea, bajen juntas
+   en vez de quebrarse cada una por separado. ---- */
+.ap-row{flex-wrap:wrap}
+.ap-side{display:flex;align-items:center;gap:14px;margin-left:auto}
+.ap-metrics{display:flex;align-items:center;gap:12px;flex:none}
+.ap-col-cob{display:flex;flex-direction:column;align-items:center;gap:4px}
+.ap-col-stk{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap}
+.ap-col-vta{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:40px;padding:4px 7px;border-radius:9px;background:var(--card2)}
+.ap-col-vta-lbl{font-size:8px;color:var(--muted);text-transform:uppercase;font-weight:800;letter-spacing:.03em}
+.ap-col-vta b{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ink)}
 .ap-right{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:7px}
 .ap-right .sug-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
 .ap-right .sug-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:700}
-.ap-right .sugerido{cursor:pointer;font-weight:800;color:var(--verde);background:var(--verde-bg);border:1.5px solid var(--verde);border-radius:9px;padding:4px 10px;font-size:13px;font-family:'JetBrains Mono',monospace;white-space:nowrap}
+.ap-right .sugerido{cursor:pointer;font-weight:800;color:var(--verde-d);background:var(--verde-bg);border:1.5px solid var(--verde);border-radius:9px;padding:4px 10px;font-size:13px;font-family:'JetBrains Mono',monospace;white-space:nowrap}
 .ap-right .sugerido:active{opacity:.75}
 .ap-right .empaque-note{font-size:9.5px;color:var(--muted);text-align:right;max-width:110px}
+
+/* ---- Rediseño visual de Armar pedido (tomando de referencia una paleta
+   verde oscuro para cabecera/barra inferior, igual estructura de columnas
+   COB · STK · VTA) — solo estética, ninguna función/cálculo cambia. ---- */
+#ap-ov .ov-head{background:var(--verde-grad);border-bottom:none}
+#ap-ov .ov-head h3{color:#fff}
+#ap-ov .ov-close{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.32);color:#fff}
+#ap-ov #ap-scan{background:#fff;border-color:var(--line);color:var(--ink)}
+#ap-basis-seg .toggle-btn.active{background:var(--verde-d);border-color:var(--verde-d);color:#fff}
+#ap-ov .chip-removible{background:var(--verde-bg);border-color:var(--verde);color:var(--verde-d)}
+#ap-ov .chip-removible button{background:var(--verde-d)}
 
 .ap-legend{display:flex;gap:14px;padding:8px 16px 0;font-size:11px;color:var(--muted)}
 .ap-legend span{display:inline-flex;align-items:center;gap:5px}
@@ -329,7 +354,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   #cart-ov:not(.hidden){ left:62%; right:0; border-left:1px solid var(--line); box-shadow:-6px 0 18px rgba(11,26,51,.06); }
   #ap-ov .ov-body, #ap-ov .ov-foot,
   #cart-ov .ov-body, #cart-ov .ov-foot{ max-width:none }
-  #ap-cart-fab{ display:none !important } /* el panel fijo reemplaza al botón flotante */
+  #ap-bottombar{ display:none !important } /* el panel fijo reemplaza a la barra inferior */
   .ap-thead{ padding-left:16px; padding-right:16px }
   .ap-row{ padding:10px 14px }
 }
@@ -376,12 +401,18 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .venc-progress-bar div{height:100%;background:var(--verde);border-radius:5px;transition:width .3s ease;width:0%}
 #venc-progress-lbl{flex:none;font-size:11px;color:var(--muted);font-weight:700;white-space:nowrap}
 
-/* Botón flotante del carrito — barra fija inferior con cantidad de
-   productos + total de unidades + flecha que invita a expandir. */
-.cart-fab{position:fixed;left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right));bottom:calc(14px + env(safe-area-inset-bottom));z-index:270;height:54px;padding:0 18px;border-radius:16px;background:var(--brand-grad);color:#fff;border:none;font-size:14px;font-weight:800;box-shadow:var(--sh-float);cursor:pointer;display:flex;align-items:center;gap:8px;justify-content:center}
-.cart-fab:active{transform:scale(.98)}
-.cart-fab .badge{background:#fff;color:var(--cielo-d);border-radius:10px;padding:1px 7px;font-size:12px;font-family:'JetBrains Mono'}
-.cart-fab .fab-up{margin-left:auto;opacity:.85;font-size:12px}
+/* Barra inferior fija del pedido — reemplaza el botón flotante: siempre
+   visible mientras haya productos elegidos, con el resumen (tocar = abre el
+   carrito con el detalle editable) y el botón de confirmar a mano. */
+.ap-bottombar{position:fixed;left:0;right:0;bottom:0;z-index:270;background:var(--verde-grad);padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:flex;align-items:center;gap:10px;box-shadow:var(--sh-float)}
+.ap-bb-info{flex:1;min-width:0;background:none;border:none;color:#fff;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:2px;padding:4px 2px}
+.ap-bb-info:active{opacity:.85}
+.ap-bb-lbl{font-size:10px;color:rgba(255,255,255,.78);font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.ap-bb-count{font-size:14.5px;font-weight:800;display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ap-bb-units{font-size:11px;font-weight:700;background:rgba(255,255,255,.2);padding:2px 8px;border-radius:10px;font-family:'JetBrains Mono',monospace;flex:none}
+.ap-bb-confirm{flex:none;height:48px;padding:0 16px;border-radius:12px;background:#fff;color:var(--verde-d);border:none;font-weight:800;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.ap-bb-confirm:active{transform:scale(.97)}
+.ap-bb-confirm.copied{background:var(--verde);color:#fff}
 
 /* Panel del carrito */
 .cart-body{padding:0}
@@ -1231,7 +1262,13 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   <div class="ov-body" style="padding-top:0" id="ap-body">
     <div class="ap-list" id="ap-list"></div>
   </div>
-  <button class="cart-fab hidden" id="ap-cart-fab">🛒 <span id="ap-cart-count" class="badge">0</span> productos<span id="ap-cart-units" class="badge">0 u</span><span class="fab-up">▲</span></button>
+  <div class="ap-bottombar hidden" id="ap-bottombar">
+    <button type="button" class="ap-bb-info" id="ap-bb-info">
+      <span class="ap-bb-lbl">Productos en pedido</span>
+      <span class="ap-bb-count">🛒 <span id="ap-cart-count">0</span> productos <span id="ap-cart-units" class="ap-bb-units">0 u</span></span>
+    </button>
+    <button type="button" class="ap-bb-confirm" id="ap-bb-confirm">✅ Confirmar pedido</button>
+  </div>
 </div>
 
 <!-- ===== PANEL: CARRITO DEL PEDIDO ===== -->
@@ -1242,7 +1279,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   </div>
   <div class="ov-body">
     <div class="cart-summary"><span id="cart-prov-txt">Proveedor: —</span><span id="cart-total-txt">0 productos</span></div>
-    <button type="button" class="btn-secondary" id="btn-ingresar-sugeridos" style="color:var(--verde);border-color:var(--verde);margin-top:0;margin-bottom:10px">✓ Ingresar sugeridos (de lo filtrado)</button>
+    <button type="button" class="btn-secondary" id="btn-ingresar-sugeridos" style="color:var(--verde);border-color:var(--verde);margin-top:0;margin-bottom:10px">⬇️ Ingresar sugeridos (de lo filtrado)</button>
     <div class="cart-body" id="cart-body"></div>
     <div class="field hidden" id="cart-scale-card" style="background:var(--cielo-tint);border:1.5px solid var(--cielo);border-radius:12px;padding:12px;margin-top:10px">
       <label style="color:var(--cielo-d)">⚡ Escala de volumen</label>
@@ -1254,8 +1291,8 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
       <span>Costo total del pedido</span>
       <span id="cart-total-costo" class="mono">$0</span>
     </div>
-    <button class="btn-wa" id="btn-copy-wa">📋 Copiar pedido para WhatsApp</button>
-    <button class="btn-secondary" id="btn-clear-cart" style="color:var(--rojo);border-color:var(--rojo)">Vaciar carrito</button>
+    <button class="btn-wa" id="btn-copy-wa">✅ Confirmar pedido (copia a WhatsApp)</button>
+    <button class="btn-secondary" id="btn-clear-cart" style="color:var(--rojo);border-color:var(--rojo)">🗑️ Vaciar carrito</button>
   </div>
 </div>
 
@@ -3946,23 +3983,31 @@ function apRenderLista(){
           ${it.coste>0?`<span class="costo">C ${fmtPeso(it.coste)}</span>`:''}
         </div>
         ${(margen||abcBadge)?`<div class="margen-line">${margen?`<span class="margen">${margen} margen</span>`:''}${abcBadge}</div>`:''}
-        <div class="datos">
-          <span>STK <b>${stockTxt}</b></span>
-          <span>VTA <b>${it._venta}</b> <span class="trend-${it._trend.k}">${it._trend.t}</span></span>
-          <span class="cob-badge ${cobClase}">${cobTxt}</span>
-        </div>
       </div>
-      <div class="ap-right">
-        <div class="sug-wrap">
-          <span class="sug-lbl">Sugerido</span>
-          <b class="sugerido" data-act="sugerido">${sugTxt}</b>
+      <div class="ap-side">
+        <div class="ap-metrics">
+          <div class="ap-col-cob">
+            <span class="cob-badge ${cobClase}">${cobTxt}</span>
+            <span class="ap-col-stk">STK ${stockTxt}</span>
+          </div>
+          <div class="ap-col-vta">
+            <span class="ap-col-vta-lbl">VTA</span>
+            <b>${it._venta}</b>
+            <span class="trend-${it._trend.k}">${it._trend.t}</span>
+          </div>
         </div>
-        <div class="ap-qty">
-          <button class="ap-qty-btn" data-act="menos">−</button>
-          <input type="text" inputmode="decimal" value="${qty||''}" placeholder="0" data-act="input">
-          <button class="ap-qty-btn" data-act="mas">+</button>
+        <div class="ap-right">
+          <div class="sug-wrap">
+            <span class="sug-lbl">Sugerido</span>
+            <b class="sugerido" data-act="sugerido">${sugTxt}</b>
+          </div>
+          <div class="ap-qty">
+            <button class="ap-qty-btn" data-act="menos">−</button>
+            <input type="text" inputmode="decimal" value="${qty||''}" placeholder="0" data-act="input">
+            <button class="ap-qty-btn" data-act="mas">+</button>
+          </div>
+          ${empaque?`<div class="empaque-note">${empaque}</div>`:''}
         </div>
-        ${empaque?`<div class="empaque-note">${empaque}</div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -4015,11 +4060,11 @@ function apSetCantidad(ref,cantidad){
 function apUpdateFab(){
   const n=Object.keys(CART).length;
   const totalU=Object.values(CART).reduce((s,c)=>s+(Number(c)||0),0);
-  const fab=document.getElementById('ap-cart-fab');
+  const bar=document.getElementById('ap-bottombar');
   document.getElementById('ap-cart-count').textContent=n;
   const unidadesEl=document.getElementById('ap-cart-units');
   if(unidadesEl) unidadesEl.textContent=(Math.round(totalU*10)/10)+' u';
-  fab.classList.toggle('hidden',n===0);
+  bar.classList.toggle('hidden',n===0);
   // Si el panel del carrito ya está visible (overlay en celular, panel fijo en
   // tablet/POS), lo mantenemos sincronizado en vivo sin que el usuario lo reabra.
   if(!document.getElementById('cart-ov').classList.contains('hidden')) renderCarrito();
@@ -4099,7 +4144,7 @@ function openArmarPedido(){
   revisarActualizacionCatalogo();
 }
 document.getElementById('ap-close').onclick=()=>irASeccion('inicio');
-document.getElementById('ap-cart-fab').onclick=openCarrito;
+document.getElementById('ap-bb-info').onclick=openCarrito;
 
 // ============================================================
 //  CARRITO DEL PEDIDO + COPIAR A WHATSAPP
@@ -4261,11 +4306,12 @@ function apIngresarSugeridos(){
 }
 document.getElementById('btn-ingresar-sugeridos').onclick=apIngresarSugeridos;
 
-// Copiar a WhatsApp cuenta como "confirmar" el pedido: al copiar con éxito se
-// vacía TODO el carrito (de todos los proveedores, no solo el que se está
-// viendo) — mismo criterio que Marín. Se pide confirmación antes porque es
-// una acción que no se puede deshacer.
-document.getElementById('btn-copy-wa').onclick=()=>{
+// Confirmar pedido = copiar a WhatsApp: al copiar con éxito se vacía TODO el
+// carrito (de todos los proveedores, no solo el que se está viendo) — mismo
+// criterio que Marín. Se pide confirmación antes porque es una acción que no
+// se puede deshacer. Un solo botón hace las dos cosas (copiar + confirmar);
+// se llama desde el botón del carrito Y desde el botón de la barra inferior.
+function apConfirmarPedido(btnQueDisparo){
   const lineas=cartLineas();
   if(!lineas.length){ showToast('No hay productos en el carrito'); return; }
   if(!confirm('Se copiará el mensaje para WhatsApp y se vaciará todo el carrito (de todos los proveedores). ¿Confirmar pedido?')) return;
@@ -4294,11 +4340,9 @@ document.getElementById('btn-copy-wa').onclick=()=>{
   });
   txt+=`*Total del pedido: ${fmtPeso(Math.round(totalGeneral))}*`;
 
-  const btn=document.getElementById('btn-copy-wa');
   const ok=()=>{
     showToast('✓ Pedido copiado — pégalo en WhatsApp · carrito vaciado');
-    btn.classList.add('copied');
-    setTimeout(()=>btn.classList.remove('copied'),1400);
+    if(btnQueDisparo){ btnQueDisparo.classList.add('copied'); setTimeout(()=>btnQueDisparo.classList.remove('copied'),1400); }
     CART={};
     persistCart();
     renderCarrito();
@@ -4314,7 +4358,9 @@ document.getElementById('btn-copy-wa').onclick=()=>{
     const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select();
     document.execCommand('copy'); ta.remove(); ok();
   }
-};
+}
+document.getElementById('btn-copy-wa').onclick=()=>apConfirmarPedido(document.getElementById('btn-copy-wa'));
+document.getElementById('ap-bb-confirm').onclick=()=>apConfirmarPedido(document.getElementById('ap-bb-confirm'));
 
 // ============================================================
 //  NAVEGACIÓN
