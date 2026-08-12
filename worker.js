@@ -153,6 +153,20 @@ async function asegurarTablas(env) {
     // ya existía.
   }
 
+  // Mínimo de pedido / empaque configurado a mano por producto (módulo Proveedores
+  // → Configuración) — mismo mecanismo que usa Marín 376: 0/NULL en una columna
+  // significa "sin override para eso"; si multiplo y empaque quedan en 0 se borra
+  // la fila entera (ver accionGuardarMultiploProducto). Pisa el cálculo automático
+  // de empaque que hace tag() en el frontend (por nombre de producto) cuando el
+  // dueño necesita fijar un mínimo real de compra al proveedor.
+  await run(env, `CREATE TABLE IF NOT EXISTS config_multiplo_producto (
+    sku TEXT PRIMARY KEY,
+    multiplo INTEGER,
+    empaque INTEGER,
+    palabra TEXT,
+    actualizado_en TEXT
+  )`);
+
   // Migración: fecha_retiro en `vencimientos` — distingue el momento en que un
   // lote se retiró físicamente de la góndola (estado "Retirado", pendiente de que
   // el proveedor lo cambie o se confirme como merma) del momento en que se cierra
@@ -1293,6 +1307,41 @@ async function manejarWebhookLoyverse(request, env, url) {
   }
 
   return json({ ok: true, ...resultado });
+}
+
+// ============================================================
+//  MÍNIMO DE PEDIDO / EMPAQUE MANUAL POR PRODUCTO — mismo código que
+//  Marín 376 (config_multiplo_producto / guardar_multiplo_producto):
+//  multiplo = mínimo de pedido en UNIDADES (pisa el fmt automático del
+//  frontend); empaque = cuántas unidades trae 1 caja/display; palabra =
+//  cómo se llama el pack ("caja"/"display").
+// ============================================================
+async function accionGuardarMultiploProducto(env, payload) {
+  const sku = String((payload && payload.sku) || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  const multiplo = Math.round(Number((payload && payload.multiplo) || 0));
+  const empaque = Math.round(Number((payload && payload.empaque) || 0));
+  const palabra = String((payload && payload.palabra) || "").trim().toLowerCase().slice(0, 30);
+  if (multiplo > 0 || empaque > 0) {
+    await run(env,
+      `INSERT INTO config_multiplo_producto (sku, multiplo, empaque, palabra, actualizado_en) VALUES (?,?,?,?,?)
+       ON CONFLICT(sku) DO UPDATE SET multiplo=excluded.multiplo, empaque=excluded.empaque, palabra=excluded.palabra, actualizado_en=excluded.actualizado_en`,
+      sku, multiplo, empaque > 0 ? empaque : null, (empaque > 0 && palabra) ? palabra : null, fechaHoraDDMMAAAA());
+  } else {
+    await run(env, "DELETE FROM config_multiplo_producto WHERE sku = ?", sku);
+  }
+  return { sku, multiplo: multiplo > 0 ? multiplo : null, empaque: empaque > 0 ? empaque : null, palabra: (empaque > 0 && palabra) ? palabra : null };
+}
+
+async function obtenerMultiplosProducto(env) {
+  const { results } = await env.DB.prepare("SELECT sku, multiplo, empaque, palabra FROM config_multiplo_producto").all();
+  const multiplos = {}, empaques = {}, palabras = {};
+  (results || []).forEach(r => {
+    if (r.multiplo) multiplos[r.sku] = r.multiplo;
+    if (r.empaque) empaques[r.sku] = r.empaque;
+    if (r.palabra) palabras[r.sku] = r.palabra;
+  });
+  return { multiplos, empaques, palabras };
 }
 
 // ============================================================
@@ -2556,7 +2605,12 @@ export default {
       // Loyverse) — esto es lo que el frontend carga una vez al abrir la app.
       if (action === "catalogo") {
         const items = await catalogoCompacto(env);
-        return json({ ok: true, items, total: items.length });
+        // Mínimos/empaques de pedido configurados a mano (Proveedores → Configuración)
+        // — se mandan siempre junto al catálogo para que el frontend los aplique sin
+        // pedir nada aparte, mismo criterio que usa Marín 376.
+        let multiplos = {}, empaques = {}, palabras = {};
+        try { ({ multiplos, empaques, palabras } = await obtenerMultiplosProducto(env)); } catch (e) { /* tabla recién creada, sin filas todavía */ }
+        return json({ ok: true, items, total: items.length, multiplos, empaques, palabras });
       }
 
       // GET /?action=ultima_actualizacion  →  devuelve solo la marca de tiempo del
@@ -2888,6 +2942,14 @@ export default {
         return json({ ok: true, lista });
       }
 
+      // POST { action:'guardar_multiplo_producto', payload:{sku,multiplo,empaque,palabra} }
+      // → mínimo de pedido / empaque manual de un producto (Proveedores → Configuración).
+      // multiplo=0 y empaque=0 borra el override (vuelve al cálculo automático del frontend).
+      if (action === "guardar_multiplo_producto") {
+        const resultado = await accionGuardarMultiploProducto(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
       // POST { action:'eliminar_proveedor', payload:{nombre} }  →  borra un proveedor
       // del catálogo, solo si no tiene productos asignados.
       if (action === "eliminar_proveedor") {
@@ -2925,7 +2987,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir, guardar_multiplo_producto. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
