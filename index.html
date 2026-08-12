@@ -260,10 +260,6 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .scan-hint{position:absolute;bottom:calc(30px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.6)}
 
 /* ===== ARMAR PEDIDO: selector de proveedor + tabla + carrito ===== */
-.prov-select{display:flex;gap:8px;overflow-x:auto;padding:0 16px 10px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-.prov-select::-webkit-scrollbar{display:none}
-.prov-chip{flex:none;padding:8px 14px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12.5px;cursor:pointer;white-space:nowrap}
-.prov-chip.active{border-color:var(--cielo);background:var(--cielo);color:#fff}
 .chip-removible{display:inline-flex;align-items:center;gap:6px;padding:6px 8px 6px 12px;border-radius:16px;background:var(--cielo-tint);border:1.5px solid var(--cielo);color:var(--cielo-d);font-weight:700;font-size:12px}
 .chip-removible button{width:18px;height:18px;flex:none;border-radius:50%;border:none;background:var(--cielo-d);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .ap-search{padding:0 16px 10px}
@@ -1114,9 +1110,14 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <button class="ov-close" id="ap-close" aria-label="Cerrar">✕</button>
   </div>
   <div style="padding:12px 0 0">
-    <div class="ap-search" style="padding:0 16px">
-      <input id="ap-search" placeholder="Buscar producto…" style="width:100%;height:44px;padding:0 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-size:14px">
+    <div class="ap-search" style="padding:0 16px 10px">
+      <div class="search-row">
+        <input id="ap-search" placeholder="Proveedor o producto…" autocomplete="off" style="height:46px;padding:0 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-size:14px">
+        <button class="scan-btn" id="ap-scan" type="button" aria-label="Escanear código">📷</button>
+      </div>
+      <div class="results" id="ap-search-menu"></div>
     </div>
+    <div id="ap-prov-chip" style="padding:0 16px 4px"></div>
   </div>
   <div class="ap-toolbar" style="display:flex;align-items:center;gap:8px;padding:10px 16px 0;flex-wrap:wrap">
     <div class="toggle-row" id="ap-basis-seg" style="margin:0;flex:none;width:auto">
@@ -1129,7 +1130,6 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <input id="ap-cobertura" type="number" inputmode="numeric" value="10" style="width:56px;height:34px;text-align:center;border:1.5px solid var(--line);border-radius:8px;font-size:13px">
     <button id="ap-btn-ventas" style="margin-left:auto;height:34px;padding:0 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--cielo-d);font-weight:700;font-size:12px;white-space:nowrap">🔄 Actualizar ventas</button>
   </div>
-  <div class="prov-select" id="ap-prov-select"></div>
   <div class="ap-legend">
     <span><i class="d-urgente"></i>Urgente</span>
     <span><i class="d-pedir"></i>Pedir</span>
@@ -1703,11 +1703,17 @@ function restaurarSnapshot(){
       document.getElementById('fp-search').dispatchEvent(new Event('input',{bubbles:true}));
     }
   }else if(snap.seccion==='pedidos' && snap.ap){
-    if(snap.ap.prov){ apState.prov=snap.ap.prov; apRenderProvChips(); }
+    // Con el modelo if/else (texto manda sobre proveedor) solo uno de los dos
+    // puede estar activo a la vez — restaurar ambos a la vez reproduciría el
+    // mismo AND fantasma del bug original.
     if(snap.ap.search){
+      apState.search=snap.ap.search;
       const el=document.getElementById('ap-search');
-      if(el){ el.value=snap.ap.search; apState.search=snap.ap.search; }
+      if(el) el.value=snap.ap.search;
+    }else if(snap.ap.prov){
+      apState.prov=snap.ap.prov;
     }
+    apSyncProvChip();
     apRenderLista();
   }else if(snap.seccion==='proveedores' && snap.pv && snap.pv.search){
     document.getElementById('pv-search').value=snap.pv.search;
@@ -3616,34 +3622,90 @@ function apProveedores(){
   return ['TODOS', ...Array.from(set).sort()];
 }
 
-function apRenderProvChips(){
-  const cont=document.getElementById('ap-prov-select');
-  cont.innerHTML=apProveedores().map(p=>
-    `<button class="prov-chip${p===apState.prov?' active':''}" data-p="${p}">${p==='TODOS'?'Todos':p}</button>`
-  ).join('');
-  cont.querySelectorAll('[data-p]').forEach(el=>el.onclick=()=>{
-    apState.prov=el.dataset.p;
-    apRenderProvChips();
-    apRenderLista();
-  });
-}
-
+// ============================================================
+//  COMBO UNIFICADO "Proveedor o producto" — reemplaza el buscador de
+//  texto + fila de chips separados. Con texto escrito, el texto manda
+//  sobre TODO el catálogo (nombre/SKU/código de barras), sin importar
+//  qué proveedor esté "recordado"; sin texto, manda el proveedor
+//  elegido. Elegir un proveedor del menú siempre limpia el texto, así
+//  nunca queda un AND fantasma bloqueando el resultado (bug original:
+//  escribir "ag" y tocar "Agrosuper" daba lista vacía).
+// ============================================================
 function apItemsFiltrados(){
-  let items=DB.items||[];
+  const q=apState.search.trim();
+  if(q){
+    const palabras=q.toLowerCase().split(/\s+/).filter(Boolean);
+    return (DB.items||[]).filter(it=>{
+      const nom=(it.nombre||'').toLowerCase();
+      const ref=String(it.ref||'');
+      const bc=it.barcode?String(it.barcode):'';
+      return palabras.every(p=>nom.includes(p)||ref.includes(p)||bc.includes(p));
+    });
+  }
+  if(apState.prov==='TODOS') return DB.items||[];
   // Un producto pertenece al proveedor si es su proveedor PRINCIPAL, o si ese
   // proveedor está entre sus proveedores EXTRA — así aparece bajo todos los
   // proveedores a los que está asignado, no solo el principal.
-  if(apState.prov!=='TODOS'){
-    items=items.filter(it=>(it.prov||'SIN PROVEEDOR')===apState.prov || (it.provsExtra||[]).includes(apState.prov));
+  return (DB.items||[]).filter(it=>(it.prov||'SIN PROVEEDOR')===apState.prov || (it.provsExtra||[]).includes(apState.prov));
+}
+
+function apCloseSearchMenu(){
+  const box=document.getElementById('ap-search-menu');
+  if(box) box.innerHTML='';
+}
+
+// Chip removible con el proveedor activo — solo se muestra si hay un proveedor
+// específico elegido (no "Todos") y no hay texto escrito en ese momento.
+function apSyncProvChip(){
+  const cont=document.getElementById('ap-prov-chip');
+  if(!cont) return;
+  if(apState.prov!=='TODOS' && !apState.search.trim()){
+    cont.innerHTML=`<span class="chip-removible">${apState.prov}<button type="button" id="ap-prov-chip-x" aria-label="Quitar filtro">✕</button></span>`;
+    document.getElementById('ap-prov-chip-x').onclick=()=>apPickProv('TODOS');
+  }else{
+    cont.innerHTML='';
   }
-  if(apState.search.trim()){
-    const palabras=apState.search.toLowerCase().trim().split(/\s+/).filter(Boolean);
-    items=items.filter(it=>{
-      const nom=(it.nombre||'').toLowerCase();
-      return palabras.every(p=>nom.includes(p)||String(it.ref).includes(p));
+}
+
+function apRenderSearchMenu(filterText){
+  const box=document.getElementById('ap-search-menu');
+  if(!box) return;
+  const q=(filterText||'').toLowerCase().trim();
+  const provs=apProveedores().filter(p=>p!=='TODOS');
+  const provsFiltrados=q?provs.filter(p=>p.toLowerCase().includes(q)):provs;
+  let html='';
+  if(!q || 'todos los proveedores'.includes(q)){
+    html+=`<div class="result-item" data-p="TODOS"><div class="n">Todos los proveedores</div></div>`;
+  }
+  html+=provsFiltrados.map(p=>`<div class="result-item" data-p="${p.replace(/"/g,'&quot;')}"><div class="n">${p}</div></div>`).join('');
+  if(q && !provsFiltrados.length){
+    const hayProductos=(DB.items||[]).some(it=>(it.nombre||'').toLowerCase().includes(q));
+    if(hayProductos) html+=`<div class="result-item" style="cursor:default;color:var(--muted)">Sin proveedores — mostrando productos abajo ↓</div>`;
+  }
+  box.innerHTML=html;
+  box.querySelectorAll('[data-p]').forEach(el=>el.onclick=()=>apPickProv(el.dataset.p));
+}
+
+function apPickProv(prov){
+  const carritoVacioAntes=Object.keys(CART).length===0;
+  apState.prov=prov;
+  apState.search='';
+  const inp=document.getElementById('ap-search');
+  if(inp) inp.value='';
+  apCloseSearchMenu();
+  if(inp) inp.blur();
+  apSyncProvChip();
+  // Autocarga sugeridos SOLO si se eligió un proveedor específico (no "Todos") y
+  // el carrito estaba vacío antes de elegirlo — nunca pisa cantidades ya
+  // editadas a mano, ni autocarga al elegir "Todos" (no hay un único proveedor
+  // al que aplicarle sugeridos).
+  if(carritoVacioAntes && prov!=='TODOS'){
+    apItemsFiltrados().forEach(it=>{
+      const sug=apSugerido(it);
+      if(sug>0) apSetCantidad(it.ref, sug);
     });
   }
-  return items;
+  apRenderLista();
 }
 
 // Ritmo diario de venta según la base elegida (7/14/30/90 días).
@@ -3790,7 +3852,26 @@ function apUpdateFab(){
 
 document.getElementById('ap-search').oninput=e=>{
   apState.search=e.target.value;
+  apRenderSearchMenu(apState.search);
+  apSyncProvChip();
   apRenderLista();
+};
+document.getElementById('ap-search').onfocus=()=>apRenderSearchMenu(apState.search);
+document.addEventListener('click', e=>{
+  const searchBox=document.getElementById('ap-search');
+  const menu=document.getElementById('ap-search-menu');
+  if(!searchBox||!menu) return;
+  if(e.target!==searchBox && !menu.contains(e.target) && !searchBox.contains(e.target)) apCloseSearchMenu();
+});
+document.getElementById('ap-scan').onclick=()=>{
+  openScanner(code=>{
+    apState.search=code;
+    const inp=document.getElementById('ap-search');
+    if(inp) inp.value=code;
+    apCloseSearchMenu();
+    apSyncProvChip();
+    apRenderLista();
+  });
 };
 
 document.getElementById('ap-cobertura').oninput=e=>{
@@ -3832,10 +3913,11 @@ const esPantallaAncha=()=>window.matchMedia('(min-width:900px)').matches;
 function openArmarPedido(){
   apState.prov='TODOS'; apState.search='';
   document.getElementById('ap-search').value='';
+  apCloseSearchMenu();
+  apSyncProvChip();
   document.getElementById('ap-cobertura').value=apState.cobertura;
   document.querySelectorAll('#ap-basis-seg [data-basis]').forEach(b=>b.classList.toggle('active', Number(b.dataset.basis)===apState.basis));
   document.getElementById('ap-th-venta').innerHTML='Vta'+apState.basis+'d ▾';
-  apRenderProvChips();
   apRenderLista();
   abrirModal('ap-ov');
   if(esPantallaAncha()){ renderCarrito(); abrirModal('cart-ov'); } // panel fijo estilo tablet/POS
@@ -5749,8 +5831,15 @@ function renderRiesgoQuiebre(){
   box.querySelectorAll('.rz-guardar-stock').forEach(b=>b.onclick=()=>rzGuardarStock(b.dataset.ref));
   box.querySelectorAll('.rz-ir-pedido').forEach(b=>b.onclick=()=>{
     apState.prov=b.dataset.prov;
+    apState.search='';
     irASeccion('pedidos');
-    setTimeout(()=>{ apRenderProvChips(); apRenderLista(); },100);
+    setTimeout(()=>{
+      const inp=document.getElementById('ap-search');
+      if(inp) inp.value='';
+      apCloseSearchMenu();
+      apSyncProvChip();
+      apRenderLista();
+    },100);
   });
   box.querySelectorAll('.rz-excluir').forEach(b=>b.onclick=()=>rzExcluir(b.dataset.ref,true));
 }
