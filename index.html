@@ -100,7 +100,8 @@ button{font-family:inherit}
 
 /* ===== Resumen del catálogo cargado (3 tarjetas con ícono) ===== */
 .stats-row{display:flex;gap:8px;padding:0 16px;max-width:520px;margin:0 auto 12px}
-.stat{flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 10px;box-shadow:var(--sh-card)}
+.stat{flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 10px;box-shadow:var(--sh-card);cursor:pointer;transition:transform .12s ease}
+.stat:active{transform:scale(.97)}
 .stat .stat-ico{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;margin-bottom:8px}
 .stat .stat-ico svg{width:16px;height:16px}
 .stat.c-cielo .stat-ico{background:var(--cielo-tint);color:var(--cielo-d)}
@@ -212,6 +213,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .toggle-row{display:flex;gap:6px;margin-bottom:8px}
 .toggle-btn{flex:1;padding:9px;border-radius:10px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12px;cursor:pointer}
 .toggle-btn.active{border-color:var(--cielo);background:var(--cielo-tint);color:var(--cielo-d)}
+.pvp-cfg-reset{padding:7px 10px;border-radius:9px;border:1.5px solid var(--ambar);background:var(--ambar-bg);color:var(--ambar);font-weight:700;font-size:11.5px;cursor:pointer;white-space:nowrap}
 
 .qty-row{display:flex;align-items:center;gap:8px}
 .qty-btn{width:46px;height:46px;flex:none;border-radius:12px;background:var(--card2);border:1.5px solid var(--line);color:var(--ink);font-size:22px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer}
@@ -439,6 +441,11 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .fp-hist-row .f{color:var(--muted);flex:none;font-family:'JetBrains Mono';font-size:10.5px}
 .fp-hist-row .m{color:var(--ink);text-align:right}
 .fp-hist-empty{font-size:12px;color:var(--muted);padding:8px 0}
+/* Fila genérica clave/valor (usada en Reportes → Más vendidos) */
+.fp-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line2);font-size:12.5px}
+.fp-row:last-child{border-bottom:none}
+.fp-row .k{color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fp-row .v{color:var(--muted);font-weight:700;flex:none;font-family:'JetBrains Mono'}
 
 /* ===== Recepción: vista en 2 etapas (solo buscador → detalle al elegir) ===== */
 .mm-picked{display:none;padding:12px;background:var(--cielo-tint);border:1.5px solid var(--cielo);border-radius:12px;margin-top:8px}
@@ -478,15 +485,15 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 
 <!-- Resumen rápido, solo visible cuando el catálogo ya cargó -->
 <div class="stats-row hidden" id="stats-row">
-  <div class="stat c-cielo">
+  <div class="stat c-cielo" id="stat-total-card" role="button" tabindex="0">
     <div class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div>
     <div class="n mono" id="stat-total">—</div><div class="l">Productos</div>
   </div>
-  <div class="stat c-verde">
+  <div class="stat c-verde" id="stat-proveedores-card" role="button" tabindex="0">
     <div class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7h20"/><path d="M3 7v13a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7"/><path d="M2 7 4 3h16l2 4"/><path d="M9 12h6"/></svg></div>
     <div class="n mono" id="stat-proveedores">—</div><div class="l">Proveedores</div>
   </div>
-  <div class="stat c-ambar">
+  <div class="stat c-ambar" id="stat-porvencer-card" role="button" tabindex="0">
     <div class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/></svg></div>
     <div class="n mono" id="stat-porvencer">—</div><div class="l">Por vencer</div>
   </div>
@@ -1032,6 +1039,41 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   </div>
 </div>
 
+<!-- ===== MODAL: REPORTES (resumen operativo + accesos a los reportes detallados) ===== -->
+<div class="ov hidden" id="rp-ov">
+  <div class="ov-head">
+    <h3>📊 Reportes</h3>
+    <button class="ov-close" id="rp-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="ov-body">
+    <div class="load-banner" id="rp-loading"><div class="spin"></div><span>Calculando reportes…</span></div>
+    <div id="rp-content" class="hidden">
+      <div class="quick-title" style="margin-top:0">Catálogo</div>
+      <div class="fp-kpi-grid" style="grid-template-columns:1fr 1fr">
+        <div class="fp-kpi destacado"><div class="fp-kpi-lbl">Valor de stock</div><div class="fp-kpi-val" id="rp-valor-stock">—</div></div>
+        <div class="fp-kpi"><div class="fp-kpi-lbl">Productos</div><div class="fp-kpi-val" id="rp-total-productos">—</div></div>
+        <div class="fp-kpi"><div class="fp-kpi-lbl">Sin costo</div><div class="fp-kpi-val" id="rp-sin-costo">—</div></div>
+        <div class="fp-kpi"><div class="fp-kpi-lbl">Sin proveedor</div><div class="fp-kpi-val" id="rp-sin-prov">—</div></div>
+      </div>
+
+      <div class="quick-title">Ventas (últimos 30 días)</div>
+      <div class="resumen-box" id="rp-ventas-resumen" style="margin-bottom:8px"></div>
+      <div id="rp-top-vendidos"></div>
+
+      <div class="quick-title">Mermas (últimos 30 días)</div>
+      <div class="resumen-box" id="rp-mermas-resumen"></div>
+
+      <div class="quick-title">Otros reportes</div>
+      <div class="field">
+        <button type="button" class="btn-secondary" id="rp-ir-abc" style="margin-bottom:8px">📊 Precio sugerido (ABC) — ver reporte completo</button>
+        <button type="button" class="btn-secondary" id="rp-ir-sincosto" style="margin-bottom:8px">🏷️ Sin costo — ver productos afectados</button>
+        <button type="button" class="btn-secondary" id="rp-ir-categorias" style="margin-bottom:8px">📦 Categorías — cambio y consumo interno</button>
+        <button type="button" class="btn-secondary" id="rp-ir-vencimientos">⏰ Vencimientos — revisar lotes por vencer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ===== ESCÁNER DE CÁMARA (reutilizable) ===== -->
 <div id="scanner-ov" class="hidden">
   <video id="scanner-video" autoplay playsinline muted></video>
@@ -1546,6 +1588,11 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <h3 id="pvp-titulo">🏢 Proveedor</h3>
     <button class="ov-close" id="pvp-close" aria-label="Cerrar">✕</button>
   </div>
+  <div class="toggle-row" id="pvp-modo-row" style="margin:10px 16px 0;max-width:520px;width:calc(100% - 32px);margin-left:auto;margin-right:auto">
+    <button type="button" class="toggle-btn active" id="pvp-tab-productos" data-modo="productos">Productos</button>
+    <button type="button" class="toggle-btn" id="pvp-tab-config" data-modo="config">🧮 Mínimos de pedido</button>
+  </div>
+  <div class="field hidden" id="pvp-config-hint" style="max-width:520px;margin:8px auto 0;width:calc(100% - 32px);font-size:11.5px;color:var(--muted)">Define cuánto pedir como mínimo a este proveedor por producto — pisa el cálculo automático por nombre.</div>
   <div class="ov-body" id="pvp-lista"></div>
 </div>
 
@@ -2034,12 +2081,19 @@ async function cargarCatalogo(silencioso){
     const j=await res.json();
     if(!j||!j.ok) throw new Error((j&&j.error)||'Respuesta inválida del servidor');
     DB.items=j.items||[];
+    // Mínimo de pedido / empaque configurados a mano (Proveedores → Configuración,
+    // mismo mecanismo que Marín 376: config_multiplo_producto) — pisan el cálculo
+    // automático de tag() cuando el dueño fijó un valor real para ese producto.
+    DB.multiplosProducto=j.multiplos||{};
+    DB.empaquesProducto=j.empaques||{};
+    DB.palabrasProducto=j.palabras||{};
     // Formato/empaque (unidades por pack o caja) y escala de descuento por volumen,
     // calculados una vez al cargar — evita recalcular con regex en cada render de
     // la tabla (que puede tener miles de filas).
     DB.items.forEach(it=>{
       const t=tag(it.nombre, it.prov);
       it._fmt=t.fmt; it._scale=t.scale; it._role=t.role; it._word=t.word;
+      aplicarMultiploManual(it);
       it.abc=ABC_BY_SKU[it.ref]||null;
     });
     persist();
@@ -2234,7 +2288,7 @@ function cerrarModal(id){ document.getElementById(id).classList.add('hidden'); }
 //  history.back() y pushState al encadenar aperturas/cierres).
 // ============================================================
 let seccionActual='inicio';
-const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov', mermas:'mm-ov', llegadas:'ll-ov', abc:'abcr-ov', sincosto:'sc-ov', categorias:'cat-ov', riesgo:'rz-ov' };
+const SECCION_MODAL={ pedidos:'ap-ov', recepcion:'rc-ov', vencimientos:'venc-ov', buscar:'fp-ov', proveedores:'pv-ov', crear:'cp-ov', mermas:'mm-ov', llegadas:'ll-ov', abc:'abcr-ov', sincosto:'sc-ov', categorias:'cat-ov', riesgo:'rz-ov', reportes:'rp-ov' };
 history.replaceState({ cumpasSeccion:'inicio' }, '', location.pathname);
 
 function cerrarSeccionActual(){
@@ -2265,6 +2319,7 @@ function abrirSeccionVisual(seccion){
   else if(seccion==='sincosto') openSinCosto();
   else if(seccion==='categorias') openCategorias();
   else if(seccion==='riesgo') openRiesgoQuiebre();
+  else if(seccion==='reportes') openReportesVisual();
 }
 
 function actualizarNavActiva(){
@@ -3663,6 +3718,16 @@ function tag(nm,prov){
 }
 
 function roundPack(u,f){return f>1?Math.ceil(u/f)*f:Math.ceil(u);}
+
+// Aplica el mínimo de pedido / empaque configurado a mano (Proveedores →
+// Configuración, tabla config_multiplo_producto) sobre un item ya "tageado" por
+// tag() — mismo criterio que Marín 376: el empaque manual pisa el automático por
+// nombre, y el mínimo (it._min) se usa como piso en apSugerido().
+function aplicarMultiploManual(it){
+  const fmtManual=(DB.empaquesProducto||{})[it.ref];
+  if(fmtManual){ it._fmt=fmtManual; it._word=(DB.palabrasProducto||{})[it.ref]||it._word; }
+  it._min=(DB.multiplosProducto||{})[it.ref]||0;
+}
 function trendOf(it){const r7=(it.v7||0)/7,r30=(it.v30||0)/30;if(r30<=0&&r7<=0)return{k:'flat',t:'='};if(r30<=0)return{k:'up',t:'▲'};const r=r7/r30;return r>=1.2?{k:'up',t:'▲'}:r<=0.8?{k:'down',t:'▼'}:{k:'flat',t:'='};}
 
 // ---- Escalas: cuánto cuesta realmente la unidad según el volumen total pedido de
@@ -3796,7 +3861,11 @@ function apSugerido(it){
   const ritmoDiario=rateOf(it);
   const necesario=ritmoDiario*apState.cobertura;
   const faltante=Math.max(0, necesario-(it.stock||0));
-  return faltante>0 ? roundPack(faltante, it._fmt||1) : 0;
+  let sugerido=faltante>0 ? roundPack(faltante, it._fmt||1) : 0;
+  // Mínimo de pedido manual (Proveedores → Configuración): si hace falta pedir
+  // algo, nunca menos que el mínimo fijado para este producto.
+  if(sugerido>0 && it._min>0 && sugerido<it._min) sugerido=roundPack(it._min, it._fmt||1);
+  return sugerido;
 }
 
 // Días de cobertura actual (cuánto dura el stock al ritmo de venta elegido) y
@@ -4888,12 +4957,56 @@ document.getElementById('venc-gd-cerrar').onclick = async () => {
 };
 
 // ============================================================
-//  TARJETA "REPORTES" Y ACCIONES RÁPIDAS DEL INICIO
-//  Reportes es solo un acceso visual por ahora (no hay módulo de
-//  reportes implementado todavía) — se lo digo explícitamente al
-//  usuario en vez de simular una función que no existe.
+//  MÓDULO: REPORTES — resumen operativo calculado con datos que ya
+//  están cargados en el catálogo (DB.items: stock/costo/precio/v30)
+//  más un fetch liviano a historial_mermas(dias=30). No inventa datos
+//  nuevos: todo sale de tablas/endpoints que ya existían.
 // ============================================================
-document.getElementById('btn-reportes').onclick = () => showToast('📊 Reportes — próximamente');
+function openReportes(){ irASeccion('reportes'); }
+async function openReportesVisual(){
+  document.getElementById('rp-loading').classList.remove('hidden');
+  document.getElementById('rp-content').classList.add('hidden');
+  abrirModal('rp-ov');
+
+  const items=DB.items||[];
+  const valorStock=items.reduce((s,it)=>s+((it.track&&it.stock>0&&it.coste>0)?it.stock*it.coste:0),0);
+  const sinCosto=items.filter(it=>it.track&&!(it.coste>0)).length;
+  const sinProv=items.filter(it=>!it.prov||it.prov==='SIN PROVEEDOR').length;
+  document.getElementById('rp-valor-stock').textContent=fmtPeso(Math.round(valorStock));
+  document.getElementById('rp-total-productos').textContent=items.length;
+  document.getElementById('rp-sin-costo').textContent=sinCosto;
+  document.getElementById('rp-sin-prov').textContent=sinProv;
+
+  const totalV30=items.reduce((s,it)=>s+(it.v30||0),0);
+  document.getElementById('rp-ventas-resumen').innerHTML='Unidades vendidas: <b>'+Math.round(totalV30)+'</b>';
+  const top5=items.slice().filter(it=>(it.v30||0)>0).sort((a,b)=>(b.v30||0)-(a.v30||0)).slice(0,5);
+  document.getElementById('rp-top-vendidos').innerHTML=top5.length
+    ?('<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;margin:2px 0 6px">Más vendidos</div>'+
+       top5.map(it=>`<div class="fp-row"><span class="k">${it.nombre}</span><span class="v">${Math.round(it.v30)} u</span></div>`).join(''))
+    :'';
+
+  try{
+    const res=await fetch(SYNC_URL+'?action=historial_mermas&dias=30&limit=500');
+    const j=await res.json();
+    if(j&&j.ok){
+      document.getElementById('rp-mermas-resumen').innerHTML=
+        'Eventos: <b>'+(j.total||0)+'</b> · Unidades: <b>'+Math.round(j.totalCantidad||0)+'</b> · Costo perdido: <b>'+fmtPeso(Math.round(j.totalCosto||0))+'</b>';
+    }else{
+      document.getElementById('rp-mermas-resumen').textContent='No se pudo cargar el resumen de mermas.';
+    }
+  }catch(e){
+    document.getElementById('rp-mermas-resumen').textContent='No se pudo cargar el resumen de mermas.';
+  }
+
+  document.getElementById('rp-loading').classList.add('hidden');
+  document.getElementById('rp-content').classList.remove('hidden');
+}
+document.getElementById('rp-close').onclick=()=>irASeccion('inicio');
+document.getElementById('btn-reportes').onclick=openReportes;
+document.getElementById('rp-ir-abc').onclick=()=>irASeccion('abc');
+document.getElementById('rp-ir-sincosto').onclick=()=>irASeccion('sincosto');
+document.getElementById('rp-ir-categorias').onclick=()=>irASeccion('categorias');
+document.getElementById('rp-ir-vencimientos').onclick=()=>irASeccion('vencimientos');
 
 document.getElementById('qa-nuevo').onclick = () => openCrearProducto();
 document.getElementById('qa-buscar').onclick = openFichaBuscar;
@@ -5397,29 +5510,220 @@ function openProveedores(){ irASeccion('proveedores'); }
 document.getElementById('pv-close').onclick=()=>irASeccion('inicio');
 document.getElementById('btn-proveedores').onclick=openProveedores;
 
+// Tarjetas informativas de Inicio (Productos/Proveedores/Por vencer) — antes eran
+// solo un número decorativo, ahora cada una lleva a la pantalla correspondiente.
+document.getElementById('stat-total-card').onclick=()=>openFichaBuscar();
+document.getElementById('stat-proveedores-card').onclick=()=>openProveedores();
+document.getElementById('stat-porvencer-card').onclick=()=>irASeccion('vencimientos');
+document.querySelectorAll('#stat-total-card,#stat-proveedores-card,#stat-porvencer-card').forEach(el=>{
+  el.addEventListener('keydown',ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); el.click(); } });
+});
+
+const pvpState={ proveedor:'', lista:[], modo:'productos' };
+
 async function openProductosProveedor(proveedor){
   document.getElementById('pvp-titulo').textContent='🏢 '+proveedor;
+  pvpState.proveedor=proveedor;
+  pvpState.modo='productos';
+  document.getElementById('pvp-tab-productos').classList.add('active');
+  document.getElementById('pvp-tab-config').classList.remove('active');
+  document.getElementById('pvp-config-hint').classList.add('hidden');
   const box=document.getElementById('pvp-lista');
   box.innerHTML='<div class="load-banner"><div class="spin"></div><span>Cargando productos…</span></div>';
   abrirModal('pvp-ov');
   try{
     const res=await fetch(SYNC_URL+'?action=productos_proveedor&proveedor='+encodeURIComponent(proveedor));
     const j=await res.json();
-    const lista=(j&&j.ok)?(j.lista||[]):[];
-    if(!lista.length){ box.innerHTML='<div class="ap-empty">Este proveedor no tiene productos.</div>'; return; }
-    box.innerHTML=lista.map(p=>{
-      const stockTxt=p.stock==null?'sin control':(p.stock+(p.sold_by_weight?' kg':' u'));
-      return `<div class="ap-row" data-ref="${p.sku}" style="cursor:pointer">
-        <div class="info"><div class="n">${p.nombre}</div><div class="s">Stock: <b>${stockTxt}</b> · ${fmtPeso(p.precio)}</div></div>
-        <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><polyline points="9 18 15 12 9 6"/></svg></div>
-      </div>`;
-    }).join('');
-    box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>{ cerrarModal('pvp-ov'); abrirFichaProducto(el.dataset.ref); });
+    pvpState.lista=(j&&j.ok)?(j.lista||[]):[];
+    pvpRender();
   }catch(e){
     box.innerHTML='<div class="ap-empty">⚠️ No se pudo cargar los productos.</div>';
   }
 }
+function pvpRender(){
+  if(pvpState.modo==='config') pvpRenderConfig();
+  else pvpRenderProductos();
+}
+function pvpRenderProductos(){
+  const box=document.getElementById('pvp-lista');
+  if(!pvpState.lista.length){ box.innerHTML='<div class="ap-empty">Este proveedor no tiene productos.</div>'; return; }
+  box.innerHTML=pvpState.lista.map(p=>{
+    const stockTxt=p.stock==null?'sin control':(p.stock+(p.sold_by_weight?' kg':' u'));
+    return `<div class="ap-row" data-ref="${p.sku}" style="cursor:pointer">
+      <div class="info"><div class="n">${p.nombre}</div><div class="s">Stock: <b>${stockTxt}</b> · ${fmtPeso(p.precio)}</div></div>
+      <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><polyline points="9 18 15 12 9 6"/></svg></div>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>{ cerrarModal('pvp-ov'); abrirFichaProducto(el.dataset.ref); });
+}
 document.getElementById('pvp-close').onclick=()=>cerrarModal('pvp-ov');
+document.getElementById('pvp-tab-productos').onclick=()=>{
+  pvpState.modo='productos';
+  document.getElementById('pvp-tab-productos').classList.add('active');
+  document.getElementById('pvp-tab-config').classList.remove('active');
+  document.getElementById('pvp-config-hint').classList.add('hidden');
+  pvpRender();
+};
+document.getElementById('pvp-tab-config').onclick=()=>{
+  pvpState.modo='config';
+  document.getElementById('pvp-tab-config').classList.add('active');
+  document.getElementById('pvp-tab-productos').classList.remove('active');
+  document.getElementById('pvp-config-hint').classList.remove('hidden');
+  pvpRender();
+};
+
+// ============================================================
+//  PROVEEDORES → "Mínimos de pedido" — mismo código/lógica que
+//  Marín 376 (_gpFilaConfig / _gpCfg* / guardar_multiplo_producto),
+//  adaptado a las clases de Argomedo455 (.toggle-row/.toggle-btn en
+//  vez de .fc-tabs, .ap-qty/.ap-qty-btn en vez de .qstep/.qbtn).
+//  Toggle Und/Caja/Display + stepper + empaque, con guardado
+//  automático (debounce 500ms) — no hay botón "Guardar" aparte.
+// ============================================================
+function pvpRenderConfig(){
+  const box=document.getElementById('pvp-lista');
+  if(!pvpState.lista.length){ box.innerHTML='<div class="ap-empty">Este proveedor no tiene productos.</div>'; return; }
+  box.innerHTML=pvpState.lista.map(p=>{
+    const it=(DB.items||[]).find(x=>x.ref===p.sku)||{ref:p.sku,nombre:p.nombre,_fmt:1,_word:'caja',_min:0};
+    return pvpFilaConfig(it);
+  }).join('');
+}
+function pvpFilaConfig(it){
+  const tienePack=(it._fmt||1)>1;
+  const modo=tienePack?'pack':'und';
+  const val=modo==='pack'?Math.round((it._min||0)/it._fmt):(it._min||0);
+  const palabra=it._word==='display'?'display':'caja';
+  const tieneOverride=!!((DB.multiplosProducto&&DB.multiplosProducto[it.ref])||(DB.empaquesProducto&&DB.empaquesProducto[it.ref]));
+  return `
+    <div class="ap-row" data-cfg-ref="${it.ref}" data-cfg-modo="${modo}" data-cfg-palabra="${palabra}" style="flex-direction:column;align-items:stretch;gap:8px;cursor:default">
+      <div class="n" style="font-weight:700">${it.nombre}</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div class="toggle-row" style="margin:0;width:auto">
+          <button type="button" class="toggle-btn ${modo==='und'?'active':''}" data-cfg-unidad="und" style="padding:7px 10px;flex:none">Und</button>
+          <button type="button" class="toggle-btn ${modo==='pack'&&palabra==='caja'?'active':''}" data-cfg-unidad="caja" style="padding:7px 10px;flex:none">Caja</button>
+          <button type="button" class="toggle-btn ${modo==='pack'&&palabra==='display'?'active':''}" data-cfg-unidad="display" style="padding:7px 10px;flex:none">Display</button>
+        </div>
+        <div class="ap-qty">
+          <button type="button" class="ap-qty-btn" data-cfg-d="-1">−</button>
+          <input type="text" inputmode="numeric" pattern="[0-9]*" data-cfg-num value="${val}">
+          <button type="button" class="ap-qty-btn" data-cfg-d="1">+</button>
+        </div>
+        ${tieneOverride?`<button type="button" class="pvp-cfg-reset" data-cfg-reset="${it.ref}">↺ Automático</button>`:''}
+      </div>
+      <div data-cfg-caption style="display:${modo==='pack'?'flex':'none'};align-items:center;gap:6px;font-size:11px;color:var(--muted)">
+        <span data-cfg-caption-lbl>1 ${palabra} =</span>
+        <input type="text" inputmode="numeric" pattern="[0-9]*" data-cfg-empaque value="${tienePack?it._fmt:''}" placeholder="?" style="width:44px;padding:5px 2px;text-align:center;border:1px solid var(--line);border-radius:7px;font-family:'JetBrains Mono';font-size:11.5px">
+        <span>und</span>
+      </div>
+    </div>`;
+}
+function pvpCfgFmtActual(fila){
+  const inp=fila.querySelector('[data-cfg-empaque]');
+  const n=inp?Math.round(Number(inp.value)):0;
+  return n>0?n:1;
+}
+function pvpCfgCambiarUnidad(fila,valor){
+  const modoNuevo=valor==='und'?'und':'pack';
+  const palabraNueva=valor==='und'?fila.dataset.cfgPalabra:valor;
+  const modoActual=fila.dataset.cfgModo;
+  if(modoActual===modoNuevo&&fila.dataset.cfgPalabra===palabraNueva)return;
+  if(modoActual!==modoNuevo){
+    const fmt=pvpCfgFmtActual(fila);
+    const input=fila.querySelector('[data-cfg-num]');
+    const actualUnd=modoActual==='pack'?Math.round(Number(input.value)||0)*fmt:Math.round(Number(input.value)||0);
+    input.value=modoNuevo==='pack'?Math.round(actualUnd/fmt):actualUnd;
+  }
+  const veniaDeUnd=modoActual==='und'&&modoNuevo==='pack';
+  fila.dataset.cfgModo=modoNuevo;
+  fila.dataset.cfgPalabra=palabraNueva;
+  fila.querySelectorAll('[data-cfg-unidad]').forEach(b=>b.classList.toggle('active',b.dataset.cfgUnidad===valor));
+  const caption=fila.querySelector('[data-cfg-caption]');
+  if(caption){
+    caption.style.display=modoNuevo==='pack'?'flex':'none';
+    const lbl=caption.querySelector('[data-cfg-caption-lbl]');
+    if(lbl)lbl.textContent='1 '+palabraNueva+' =';
+  }
+  if(veniaDeUnd){
+    const empaqueInput=fila.querySelector('[data-cfg-empaque]');
+    if(empaqueInput){empaqueInput.focus();empaqueInput.select();}
+  }
+  pvpCfgProgramarGuardado(fila);
+}
+function pvpCfgAjustar(fila,delta){
+  const input=fila.querySelector('[data-cfg-num]');
+  const nuevo=Math.max(0,(Math.round(Number(input.value))||0)+delta);
+  input.value=nuevo;
+  pvpCfgProgramarGuardado(fila);
+}
+function pvpCfgProgramarGuardado(fila){
+  clearTimeout(fila._cfgDebounceTimer);
+  fila._cfgDebounceTimer=setTimeout(()=>{
+    const ref=fila.dataset.cfgRef;
+    const modo=fila.dataset.cfgModo;
+    const empaqueExistente=(DB.empaquesProducto&&DB.empaquesProducto[ref])||0;
+    const fmtActual=modo==='pack'?pvpCfgFmtActual(fila):(empaqueExistente||1);
+    const empaqueAGuardar=modo==='pack'?fmtActual:empaqueExistente;
+    const palabraExistente=(DB.palabrasProducto&&DB.palabrasProducto[ref])||null;
+    const palabra=modo==='pack'?(fila.dataset.cfgPalabra||'caja'):palabraExistente;
+    const input=fila.querySelector('[data-cfg-num]');
+    const valor=Math.max(0,Math.round(Number(input.value))||0);
+    const valorEnUnidades=modo==='pack'?valor*fmtActual:valor;
+    pvpGuardarMultiplo(ref,fila,valorEnUnidades,empaqueAGuardar,palabra);
+  },500);
+}
+async function pvpGuardarMultiplo(ref,fila,valorEnUnidades,empaqueEnUnidades,palabra){
+  const minAnterior=DB.multiplosProducto?DB.multiplosProducto[ref]:null;
+  const fmtAnterior=DB.empaquesProducto?DB.empaquesProducto[ref]:null;
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'guardar_multiplo_producto',payload:{sku:ref,multiplo:valorEnUnidades,empaque:empaqueEnUnidades||0,palabra:palabra||''}})});
+    const j=await res.json();
+    if(!j||!j.ok)throw new Error((j&&j.error)||'No se pudo guardar');
+    DB.multiplosProducto=DB.multiplosProducto||{};
+    DB.empaquesProducto=DB.empaquesProducto||{};
+    DB.palabrasProducto=DB.palabrasProducto||{};
+    if(valorEnUnidades>0)DB.multiplosProducto[ref]=valorEnUnidades;else delete DB.multiplosProducto[ref];
+    if(empaqueEnUnidades>0)DB.empaquesProducto[ref]=empaqueEnUnidades;else delete DB.empaquesProducto[ref];
+    if(empaqueEnUnidades>0&&palabra)DB.palabrasProducto[ref]=palabra;else delete DB.palabrasProducto[ref];
+    const itLocal=(DB.items||[]).find(x=>x.ref===ref);
+    if(itLocal){ aplicarMultiploManual(itLocal); }
+    persist();
+    // Igual criterio que Marín: si el usuario sigue con el foco en ESTA fila (stepper
+    // o campito de empaque), no se repinta — repintar acá lo saca del campo a mitad
+    // de camino de escribir.
+    const activo=document.activeElement;
+    const sigueEditando=fila&&(activo===fila.querySelector('[data-cfg-num]')||activo===fila.querySelector('[data-cfg-empaque]'));
+    if(!sigueEditando && pvpState.modo==='config') pvpRenderConfig();
+    if(typeof apRenderLista==='function') apRenderLista();
+    showToast('✓ Mínimo actualizado');
+  }catch(e){
+    showToast('❌ No se pudo guardar el mínimo: '+(e&&e.message?e.message:String(e)));
+    if(fila){
+      const input=fila.querySelector('[data-cfg-num]');
+      const empaqueInput=fila.querySelector('[data-cfg-empaque]');
+      const fmt=fmtAnterior||1;
+      if(input)input.value=fila.dataset.cfgModo==='pack'?Math.round((minAnterior||fmt)/fmt):(minAnterior||0);
+      if(empaqueInput)empaqueInput.value=fmtAnterior||'';
+    }
+  }
+}
+document.getElementById('pvp-lista').addEventListener('click',ev=>{
+  if(pvpState.modo!=='config')return;
+  const fila=ev.target.closest('[data-cfg-ref]');
+  if(!fila)return;
+  const btnUnidad=ev.target.closest('[data-cfg-unidad]');
+  if(btnUnidad){pvpCfgCambiarUnidad(fila,btnUnidad.dataset.cfgUnidad);return;}
+  const btnD=ev.target.closest('[data-cfg-d]');
+  if(btnD){pvpCfgAjustar(fila,Number(btnD.dataset.cfgD));return;}
+  const btnReset=ev.target.closest('[data-cfg-reset]');
+  if(btnReset){pvpGuardarMultiplo(btnReset.dataset.cfgReset,fila,0,0,null);return;}
+});
+document.getElementById('pvp-lista').addEventListener('change',ev=>{
+  if(pvpState.modo!=='config')return;
+  const input=ev.target.closest('[data-cfg-num],[data-cfg-empaque]');
+  if(!input)return;
+  const fila=input.closest('[data-cfg-ref]');
+  if(fila)pvpCfgProgramarGuardado(fila);
+});
 
 // ============================================================
 //  MERMAS (registro de pérdidas) — mismo flujo que Marín: buscar
