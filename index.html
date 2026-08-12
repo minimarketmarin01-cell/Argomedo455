@@ -270,7 +270,10 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .chip-removible button{width:18px;height:18px;flex:none;border-radius:50%;border:none;background:var(--cielo-d);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .ap-search{padding:0 16px 10px}
 .ap-list{padding:0 16px 96px}
-.ap-row{display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card)}
+.ap-row{position:relative;display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 40px 12px 12px;margin-bottom:8px;box-shadow:var(--sh-card)}
+.ap-fav-btn{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:8px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ap-fav-btn.active{background:var(--verde-bg);border-color:var(--verde);color:var(--verde-d)}
+.ap-fav-btn:active{transform:scale(.92)}
 .ap-thumb{width:44px;height:44px;flex:none;border-radius:10px;background:var(--card2);overflow:hidden;display:flex;align-items:center;justify-content:center}
 .ap-thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .ap-thumb svg{width:20px;height:20px;color:var(--muted)}
@@ -319,6 +322,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 #ap-ov .ov-close{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.32);color:#fff}
 #ap-ov #ap-scan{background:#fff;border-color:var(--line);color:var(--ink)}
 #ap-basis-seg .toggle-btn.active{background:var(--verde-d);border-color:var(--verde-d);color:#fff}
+#ap-fav-filtro.active{background:var(--verde-bg);border-color:var(--verde);color:var(--verde-d)}
 #ap-ov .chip-removible{background:var(--verde-bg);border-color:var(--verde);color:var(--verde-d)}
 #ap-ov .chip-removible button{background:var(--verde-d)}
 
@@ -356,7 +360,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   #cart-ov .ov-body, #cart-ov .ov-foot{ max-width:none }
   #ap-bottombar{ display:none !important } /* el panel fijo reemplaza a la barra inferior */
   .ap-thead{ padding-left:16px; padding-right:16px }
-  .ap-row{ padding:10px 14px }
+  .ap-row{ padding:10px 42px 10px 14px }
 }
 .ap-qty{display:flex;align-items:center;gap:6px;flex:none}
 .ap-qty-btn{width:34px;height:34px;border-radius:9px;background:var(--card2);border:1.5px solid var(--line);font-size:17px;font-weight:700;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer}
@@ -1243,6 +1247,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
       <button type="button" class="toggle-btn" data-basis="30" style="padding:7px 10px">30d</button>
       <button type="button" class="toggle-btn" data-basis="90" style="padding:7px 10px">90d</button>
     </div>
+    <button type="button" id="ap-fav-filtro" style="flex:none;height:34px;padding:0 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12px;white-space:nowrap">☆ Favoritos</button>
     <label style="font-size:11.5px;font-weight:700;color:var(--muted);white-space:nowrap;margin-left:4px">Cob. (días)</label>
     <input id="ap-cobertura" type="number" inputmode="numeric" value="10" style="width:56px;height:34px;text-align:center;border:1.5px solid var(--line);border-radius:8px;font-size:13px">
     <button id="ap-btn-ventas" style="margin-left:auto;height:34px;padding:0 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--cielo-d);font-weight:700;font-size:12px;white-space:nowrap">🔄 Actualizar ventas</button>
@@ -2154,6 +2159,7 @@ async function cargarCatalogo(silencioso){
     cargarABC(); // no bloquea la carga del catálogo — se refresca aparte, en segundo plano
     if(!CATEGORIAS_CAMBIO.size) cargarCategoriasCambio();
     if(!RIESGO_EXCLUIDOS.size) cargarRiesgoExcluidos();
+    if(!FAVORITOS.size) cargarFavoritos();
     // "Sincronizado hace X" refleja qué tan fresco es lo que se ve en pantalla, no
     // solo la última vez que se tocó el botón manual — así que se marca acá, en
     // TODA carga exitosa del catálogo (incluida la automática cada pocos segundos
@@ -3810,7 +3816,19 @@ function tierCostUn(it){
   return it.coste||0;
 }
 
-const apState={ prov:'TODOS', search:'', cobertura: Number(localStorage.getItem('cumpas_cobertura'))||10, basis: Number(localStorage.getItem('cumpas_basis'))||7, sortBy:null, sortDir:'desc' };
+// Favoritos de Armar pedido — mismo mecanismo que RIESGO_EXCLUIDOS (más
+// abajo, módulo Riesgo de quiebre): set de SKUs marcados a mano, persistido
+// en D1 para que el marcado sea el mismo en todos los celulares.
+let FAVORITOS=new Set();
+async function cargarFavoritos(){
+  try{
+    const res=await fetch(SYNC_URL+'?action=favoritos');
+    const j=await res.json();
+    if(j&&j.ok) FAVORITOS=new Set(j.skus||[]);
+  }catch(e){ /* silencioso: el marcado simplemente no se ve hasta la próxima carga */ }
+}
+
+const apState={ prov:'TODOS', search:'', cobertura: Number(localStorage.getItem('cumpas_cobertura'))||10, basis: Number(localStorage.getItem('cumpas_basis'))||7, sortBy:null, sortDir:'desc', soloFavoritos:false };
 
 function apProveedores(){
   const set=new Set((DB.items||[]).map(it=>it.prov||'SIN PROVEEDOR'));
@@ -3828,20 +3846,25 @@ function apProveedores(){
 // ============================================================
 function apItemsFiltrados(){
   const q=apState.search.trim();
+  let items;
   if(q){
     const palabras=q.toLowerCase().split(/\s+/).filter(Boolean);
-    return (DB.items||[]).filter(it=>{
+    items=(DB.items||[]).filter(it=>{
       const nom=(it.nombre||'').toLowerCase();
       const ref=String(it.ref||'');
       const bc=it.barcode?String(it.barcode):'';
       return palabras.every(p=>nom.includes(p)||ref.includes(p)||bc.includes(p));
     });
+  }else if(apState.prov==='TODOS'){
+    items=DB.items||[];
+  }else{
+    // Un producto pertenece al proveedor si es su proveedor PRINCIPAL, o si ese
+    // proveedor está entre sus proveedores EXTRA — así aparece bajo todos los
+    // proveedores a los que está asignado, no solo el principal.
+    items=(DB.items||[]).filter(it=>(it.prov||'SIN PROVEEDOR')===apState.prov || (it.provsExtra||[]).includes(apState.prov));
   }
-  if(apState.prov==='TODOS') return DB.items||[];
-  // Un producto pertenece al proveedor si es su proveedor PRINCIPAL, o si ese
-  // proveedor está entre sus proveedores EXTRA — así aparece bajo todos los
-  // proveedores a los que está asignado, no solo el principal.
-  return (DB.items||[]).filter(it=>(it.prov||'SIN PROVEEDOR')===apState.prov || (it.provsExtra||[]).includes(apState.prov));
+  if(apState.soloFavoritos) items=items.filter(it=>FAVORITOS.has(it.ref));
+  return items;
 }
 
 function apCloseSearchMenu(){
@@ -3970,7 +3993,9 @@ function apRenderLista(){
     // Badge de cobertura por umbral de días (independiente del estado general de
     // la fila): <3d urgente, 3-7d pedir, >7d suficiente.
     const cobClase=it._cob===Infinity?'suficiente':it._cob<3?'urgente':it._cob<=7?'pedir':'suficiente';
+    const esFav=FAVORITOS.has(it.ref);
     return `<div class="ap-row ${it._estado}" data-ref="${it.ref}">
+      <button type="button" class="ap-fav-btn ${esFav?'active':''}" data-act="favorito" aria-label="${esFav?'Quitar de favoritos':'Marcar como favorito'}">${esFav?'★':'☆'}</button>
       <div class="ap-thumb">
         ${it.imagen?`<img src="${it.imagen}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">`:''}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:${it.imagen?'none':'block'}"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
@@ -4036,8 +4061,36 @@ function apRenderLista(){
     // navega de sección, solo se cierra y vuelve a este mismo lugar.
     const nombreEl=row.querySelector('.n');
     if(nombreEl) nombreEl.onclick=()=>abrirFichaProducto(ref,{overlay:true});
+    const favBtn=row.querySelector('[data-act="favorito"]');
+    if(favBtn) favBtn.onclick=()=>apToggleFavorito(ref,favBtn);
   });
   apUpdateFab();
+}
+
+// Marca/desmarca un producto como favorito — mismo patrón que rzExcluir
+// (Riesgo de quiebre): espera la confirmación del servidor antes de tocar
+// el Set y repintar el botón, para que quede igual en todos los celulares.
+async function apToggleFavorito(ref,btn){
+  const favoritoNuevo=!FAVORITOS.has(ref);
+  btn.disabled=true;
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'favorito',payload:{sku:ref,favorito:favoritoNuevo}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      if(favoritoNuevo) FAVORITOS.add(ref); else FAVORITOS.delete(ref);
+      btn.classList.toggle('active',favoritoNuevo);
+      btn.textContent=favoritoNuevo?'★':'☆';
+      btn.setAttribute('aria-label',favoritoNuevo?'Quitar de favoritos':'Marcar como favorito');
+      showToast(favoritoNuevo?'★ Agregado a favoritos':'☆ Quitado de favoritos');
+      if(apState.soloFavoritos&&!favoritoNuevo) apRenderLista();
+    }else{
+      showToast('❌ No se pudo guardar el favorito');
+    }
+  }catch(e){
+    showToast('❌ Error de conexión');
+  }finally{
+    btn.disabled=false;
+  }
 }
 
 document.querySelectorAll('.ap-thead .th').forEach(th=>{
@@ -4110,6 +4163,14 @@ document.querySelectorAll('#ap-basis-seg [data-basis]').forEach(btn=>{
   };
 });
 
+document.getElementById('ap-fav-filtro').onclick=()=>{
+  apState.soloFavoritos=!apState.soloFavoritos;
+  const btn=document.getElementById('ap-fav-filtro');
+  btn.classList.toggle('active',apState.soloFavoritos);
+  btn.textContent=apState.soloFavoritos?'★ Favoritos':'☆ Favoritos';
+  apRenderLista();
+};
+
 document.getElementById('ap-btn-ventas').onclick=async()=>{
   const btn=document.getElementById('ap-btn-ventas');
   const txtOriginal=btn.textContent;
@@ -4131,13 +4192,15 @@ document.getElementById('ap-btn-ventas').onclick=async()=>{
 const esPantallaAncha=()=>window.matchMedia('(min-width:900px)').matches;
 
 function openArmarPedido(){
-  apState.prov='TODOS'; apState.search='';
+  apState.prov='TODOS'; apState.search=''; apState.soloFavoritos=false;
   document.getElementById('ap-search').value='';
   apCloseSearchMenu();
   apSyncProvChip();
   document.getElementById('ap-cobertura').value=apState.cobertura;
   document.querySelectorAll('#ap-basis-seg [data-basis]').forEach(b=>b.classList.toggle('active', Number(b.dataset.basis)===apState.basis));
   document.getElementById('ap-th-venta').innerHTML='VTA '+apState.basis+'D ▾';
+  const favBtn=document.getElementById('ap-fav-filtro');
+  favBtn.classList.remove('active'); favBtn.textContent='☆ Favoritos';
   apRenderLista();
   abrirModal('ap-ov');
   if(esPantallaAncha()){ renderCarrito(); abrirModal('cart-ov'); } // panel fijo estilo tablet/POS
