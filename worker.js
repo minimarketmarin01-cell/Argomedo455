@@ -2943,6 +2943,11 @@ export default {
   async scheduled(event, env, ctx) {
     try {
       await asegurarTablas(env);
+      // Recalcula la clasificación ABC antes de los demás chequeos: tanto el badge
+      // ABC de Armar pedido/Precio sugerido como Riesgo de quiebre dependen de que
+      // `clasificacion_abc` tenga datos — antes solo se llenaba si alguien tocaba
+      // "Recalcular" a mano en el módulo, así que quedaba vacía indefinidamente.
+      try { await calcularABC(env, 30); } catch (e) { await logMsg(env, "⚠️ No se pudo recalcular ABC: " + e.message); }
       await chequearYNotificarVencimientos(env);
       await chequearYRevertirDescuentosVencidos(env);
       await chequearYNotificarRiesgoQuiebre(env);
