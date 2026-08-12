@@ -32,10 +32,6 @@
   --ambar:#B8791A;--ambar-bg:#FBF1DF;
   --verde:#2E9E5B;--verde-bg:#E7F7EE;
   --violeta:#7A5CC0;--violeta-bg:#F0EBFA;
-  /* Verde oscuro — mismo matiz que --verde, solo más profundo, para el
-     encabezado/barra inferior de Armar pedido (referencia de diseño). */
-  --verde-d:#1F6B41;--verde-d2:#164F30;
-  --verde-grad:linear-gradient(120deg,var(--verde-d),var(--verde-d2));
 
   --sh-card:0 1px 3px rgba(11,26,51,.06),0 3px 10px rgba(11,26,51,.05);
   --sh-float:0 8px 24px rgba(11,26,51,.14);
@@ -270,10 +266,10 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .chip-removible button{width:18px;height:18px;flex:none;border-radius:50%;border:none;background:var(--cielo-d);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .ap-search{padding:0 16px 10px}
 .ap-list{padding:0 16px 96px}
-.ap-row{position:relative;display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 40px 12px 12px;margin-bottom:8px;box-shadow:var(--sh-card)}
-.ap-fav-btn{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:8px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer}
-.ap-fav-btn.active{background:var(--verde-bg);border-color:var(--verde);color:var(--verde-d)}
-.ap-fav-btn:active{transform:scale(.92)}
+.ap-row{display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card)}
+.ap-fav-btn{flex:none;width:22px;height:22px;border:none;background:none;color:var(--line);font-size:17px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;vertical-align:-4px;padding:0}
+.ap-fav-btn.active{color:var(--cielo)}
+.ap-fav-btn:active{transform:scale(.9)}
 .ap-thumb{width:44px;height:44px;flex:none;border-radius:10px;background:var(--card2);overflow:hidden;display:flex;align-items:center;justify-content:center}
 .ap-thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .ap-thumb svg{width:20px;height:20px;color:var(--muted)}
@@ -282,12 +278,14 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .ap-row .n:active{text-decoration-color:var(--line)}
 .ap-row .s,.ap-row .prov{font-size:11px;color:var(--muted);margin-top:2px}
 .ap-row .s b{color:var(--ink)}
+/* Chip "Ya pedido a X" — pedido confirmado (copiado a WhatsApp) para este
+   producto que todavía no llegó por Recepción. */
+.pend-badge{display:inline-flex;align-items:center;gap:5px;margin-top:4px;padding:3px 9px;border-radius:20px;background:var(--cielo-tint);border:1px dashed var(--cielo);color:var(--cielo-d);font-size:10.5px;font-weight:700}
 .ap-row .precio-line{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;margin-top:5px}
 .ap-row .precio-line .precio{font-weight:800;font-size:15px;color:var(--ink);font-family:'JetBrains Mono',monospace}
-.ap-row .precio-line .costo{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
-.ap-row .margen-line{display:flex;align-items:center;gap:6px;margin-top:3px}
-.ap-row .margen-line .margen{font-size:11px;font-weight:700;color:var(--verde);font-family:'JetBrains Mono',monospace}
-.ap-row .abc-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:5px;background:var(--card2);color:var(--ink);font-weight:800;font-size:9.5px}
+.ap-row .precio-line .costo,.ap-row .precio-line .margen{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+.ap-row .precio-line .margen{color:var(--verde);font-weight:700}
+.ap-row .abc-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:5px;background:var(--card2);color:var(--ink);font-weight:800;font-size:9.5px;margin-top:5px}
 /* Badge de cobertura (COB): mismos 3 estados que ya usa la app (urgente/pedir/
    sobrestock lo del borde de la fila), pero acá coloreado solo por umbral de
    días — pedido explícito: 🔴<3d 🟡3-7d 🟢>7d, independiente del estado general. */
@@ -295,36 +293,28 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .cob-badge.urgente{background:var(--rojo-bg);color:var(--rojo)}
 .cob-badge.pedir{background:var(--ambar-bg);color:var(--ambar)}
 .cob-badge.suficiente{background:var(--verde-bg);color:var(--verde)}
-/* ---- Columnas de métricas (COB/STK/VTA) — a la derecha del nombre/precio,
-   alineadas con el encabezado "COB · STK · VTA". Envueltas junto con
-   .ap-right en .ap-side para que, si no cabe todo en una línea, bajen juntas
-   en vez de quebrarse cada una por separado. ---- */
-.ap-row{flex-wrap:wrap}
-.ap-side{display:flex;align-items:center;gap:14px;margin-left:auto}
-.ap-metrics{display:flex;align-items:center;gap:12px;flex:none}
-.ap-col-cob{display:flex;flex-direction:column;align-items:center;gap:4px}
-.ap-col-stk{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap}
-.ap-col-vta{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:40px;padding:4px 7px;border-radius:9px;background:var(--card2)}
-.ap-col-vta-lbl{font-size:8px;color:var(--muted);text-transform:uppercase;font-weight:800;letter-spacing:.03em}
-.ap-col-vta b{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ink)}
+/* Fila de métricas STK · VTA · COB — ancho completo, mismo orden que el
+   encabezado (Producto · STK · VTA · COB · Pedir), como en Marín. */
+.ap-row .datos{display:flex;align-items:center;gap:10px;margin-top:7px;font-size:10.5px;color:var(--muted);flex-wrap:wrap}
+.ap-row .datos b{color:var(--ink);font-family:'JetBrains Mono',monospace}
 .ap-right{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:7px}
 .ap-right .sug-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
 .ap-right .sug-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:700}
-.ap-right .sugerido{cursor:pointer;font-weight:800;color:var(--verde-d);background:var(--verde-bg);border:1.5px solid var(--verde);border-radius:9px;padding:4px 10px;font-size:13px;font-family:'JetBrains Mono',monospace;white-space:nowrap}
+.ap-right .sugerido{cursor:pointer;font-weight:800;color:var(--cielo-d);background:var(--cielo-tint);border:1.5px solid var(--cielo);border-radius:9px;padding:4px 10px;font-size:13px;font-family:'JetBrains Mono',monospace;white-space:nowrap}
 .ap-right .sugerido:active{opacity:.75}
 .ap-right .empaque-note{font-size:9.5px;color:var(--muted);text-align:right;max-width:110px}
 
 /* ---- Rediseño visual de Armar pedido (tomando de referencia una paleta
    verde oscuro para cabecera/barra inferior, igual estructura de columnas
    COB · STK · VTA) — solo estética, ninguna función/cálculo cambia. ---- */
-#ap-ov .ov-head{background:var(--verde-grad);border-bottom:none}
+#ap-ov .ov-head{background:var(--brand-grad);border-bottom:none}
 #ap-ov .ov-head h3{color:#fff}
 #ap-ov .ov-close{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.32);color:#fff}
 #ap-ov #ap-scan{background:#fff;border-color:var(--line);color:var(--ink)}
-#ap-basis-seg .toggle-btn.active{background:var(--verde-d);border-color:var(--verde-d);color:#fff}
-#ap-fav-filtro.active{background:var(--verde-bg);border-color:var(--verde);color:var(--verde-d)}
-#ap-ov .chip-removible{background:var(--verde-bg);border-color:var(--verde);color:var(--verde-d)}
-#ap-ov .chip-removible button{background:var(--verde-d)}
+#ap-basis-seg .toggle-btn.active{background:var(--cielo-d);border-color:var(--cielo-d);color:#fff}
+#ap-fav-filtro.active{background:var(--cielo-tint);border-color:var(--cielo);color:var(--cielo-d)}
+#ap-ov .chip-removible{background:var(--cielo-tint);border-color:var(--cielo);color:var(--cielo-d)}
+#ap-ov .chip-removible button{background:var(--cielo-d)}
 
 .ap-legend{display:flex;gap:14px;padding:8px 16px 0;font-size:11px;color:var(--muted)}
 .ap-legend span{display:inline-flex;align-items:center;gap:5px}
@@ -344,7 +334,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .ap-row.urgente{border-left-color:var(--rojo);background:var(--rojo-bg)}
 .ap-row.pedir{border-left-color:var(--verde)}
 .ap-row.sobrestock{border-left-color:var(--violeta)}
-.ap-row .estado-badge{flex:none;font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:20px;text-transform:uppercase;margin-left:6px;letter-spacing:.2px}
+.ap-row .estado-badge{display:inline-block;flex:none;font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:20px;text-transform:uppercase;margin-bottom:5px;letter-spacing:.2px}
 .ap-row .estado-badge.urgente{background:var(--rojo);color:#fff}
 .ap-row .estado-badge.pedir{background:var(--verde);color:#fff}
 .ap-row .estado-badge.sobrestock{background:var(--violeta);color:#fff}
@@ -360,7 +350,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   #cart-ov .ov-body, #cart-ov .ov-foot{ max-width:none }
   #ap-bottombar{ display:none !important } /* el panel fijo reemplaza a la barra inferior */
   .ap-thead{ padding-left:16px; padding-right:16px }
-  .ap-row{ padding:10px 42px 10px 14px }
+  .ap-row{ padding:10px 14px }
 }
 .ap-qty{display:flex;align-items:center;gap:6px;flex:none}
 .ap-qty-btn{width:34px;height:34px;border-radius:9px;background:var(--card2);border:1.5px solid var(--line);font-size:17px;font-weight:700;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer}
@@ -408,13 +398,13 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 /* Barra inferior fija del pedido — reemplaza el botón flotante: siempre
    visible mientras haya productos elegidos, con el resumen (tocar = abre el
    carrito con el detalle editable) y el botón de confirmar a mano. */
-.ap-bottombar{position:fixed;left:0;right:0;bottom:0;z-index:270;background:var(--verde-grad);padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:flex;align-items:center;gap:10px;box-shadow:var(--sh-float)}
+.ap-bottombar{position:fixed;left:0;right:0;bottom:0;z-index:270;background:var(--brand-grad);padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:flex;align-items:center;gap:10px;box-shadow:var(--sh-float)}
 .ap-bb-info{flex:1;min-width:0;background:none;border:none;color:#fff;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:2px;padding:4px 2px}
 .ap-bb-info:active{opacity:.85}
 .ap-bb-lbl{font-size:10px;color:rgba(255,255,255,.78);font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .ap-bb-count{font-size:14.5px;font-weight:800;display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ap-bb-units{font-size:11px;font-weight:700;background:rgba(255,255,255,.2);padding:2px 8px;border-radius:10px;font-family:'JetBrains Mono',monospace;flex:none}
-.ap-bb-confirm{flex:none;height:48px;padding:0 16px;border-radius:12px;background:#fff;color:var(--verde-d);border:none;font-weight:800;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.ap-bb-confirm{flex:none;height:48px;padding:0 16px;border-radius:12px;background:#fff;color:var(--cielo-d);border:none;font-weight:800;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap}
 .ap-bb-confirm:active{transform:scale(.97)}
 .ap-bb-confirm.copied{background:var(--verde);color:#fff}
 
@@ -1259,9 +1249,9 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   </div>
   <div class="ap-thead">
     <span class="th th-nombre" data-sort="nombre">Producto</span>
-    <span class="th th-col" data-sort="cob">Cob ▾</span>
     <span class="th th-col" data-sort="stock">Stk ▾</span>
     <span class="th th-col" data-sort="venta" id="ap-th-venta">VTA 7D ▾</span>
+    <span class="th th-col" data-sort="cob">Cob ▾</span>
     <span class="th th-pedir" data-sort="sugerido">Pedir ▾</span>
   </div>
   <div class="ov-body" style="padding-top:0" id="ap-body">
@@ -2146,6 +2136,9 @@ async function cargarCatalogo(silencioso){
     DB.multiplosProducto=j.multiplos||{};
     DB.empaquesProducto=j.empaques||{};
     DB.palabrasProducto=j.palabras||{};
+    // "Ya pedido a X" en Armar pedido: sku -> {proveedor,cantidad,fecha} del
+    // último pedido confirmado que todavía no llegó por Recepción.
+    DB.pendientesPorSku=j.pendientes||{};
     // Formato/empaque (unidades por pack o caja) y escala de descuento por volumen,
     // calculados una vez al cargar — evita recalcular con regex en cada render de
     // la tabla (que puede tener miles de filas).
@@ -3994,45 +3987,43 @@ function apRenderLista(){
     // la fila): <3d urgente, 3-7d pedir, >7d suficiente.
     const cobClase=it._cob===Infinity?'suficiente':it._cob<3?'urgente':it._cob<=7?'pedir':'suficiente';
     const esFav=FAVORITOS.has(it.ref);
+    const favIco=`<button type="button" class="ap-fav-btn ${esFav?'active':''}" data-act="favorito" aria-label="${esFav?'Quitar de favoritos':'Marcar como favorito'}">${esFav?'★':'☆'}</button>`;
+    // "Ya pedido a X" — pedido confirmado (copiado a WhatsApp) sin recibir todavía.
+    const pend=(DB.pendientesPorSku||{})[it.ref];
+    const pendBadge=pend?`<div class="pend-badge" title="${pend.cantidad} u · ${pend.fecha||''}">⏱ Ya pedido a ${pend.proveedor||'proveedor'}</div>`:'';
     return `<div class="ap-row ${it._estado}" data-ref="${it.ref}">
-      <button type="button" class="ap-fav-btn ${esFav?'active':''}" data-act="favorito" aria-label="${esFav?'Quitar de favoritos':'Marcar como favorito'}">${esFav?'★':'☆'}</button>
       <div class="ap-thumb">
         ${it.imagen?`<img src="${it.imagen}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">`:''}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:${it.imagen?'none':'block'}"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
       </div>
       <div class="info">
-        <div class="n">${badge}${it.nombre}</div>
+        ${badge}
+        <div class="n">${favIco}${it.nombre}</div>
         <div class="prov">${it.prov}</div>
+        ${pendBadge}
         <div class="precio-line">
           <span class="precio">${fmtPeso(it.precio)}</span>
           ${it.coste>0?`<span class="costo">C ${fmtPeso(it.coste)}</span>`:''}
+          ${margen?`<span class="margen">${margen}</span>`:''}
         </div>
-        ${(margen||abcBadge)?`<div class="margen-line">${margen?`<span class="margen">${margen} margen</span>`:''}${abcBadge}</div>`:''}
+        ${abcBadge}
+        <div class="datos">
+          <span>STK <b>${stockTxt}</b></span>
+          <span>VTA <b>${it._venta}</b> <span class="trend-${it._trend.k}">${it._trend.t}</span></span>
+          <span class="cob-badge ${cobClase}">${cobTxt}</span>
+        </div>
       </div>
-      <div class="ap-side">
-        <div class="ap-metrics">
-          <div class="ap-col-cob">
-            <span class="cob-badge ${cobClase}">${cobTxt}</span>
-            <span class="ap-col-stk">STK ${stockTxt}</span>
-          </div>
-          <div class="ap-col-vta">
-            <span class="ap-col-vta-lbl">VTA</span>
-            <b>${it._venta}</b>
-            <span class="trend-${it._trend.k}">${it._trend.t}</span>
-          </div>
+      <div class="ap-right">
+        <div class="sug-wrap">
+          <span class="sug-lbl">Sugerido</span>
+          <b class="sugerido" data-act="sugerido">${sugTxt}</b>
         </div>
-        <div class="ap-right">
-          <div class="sug-wrap">
-            <span class="sug-lbl">Sugerido</span>
-            <b class="sugerido" data-act="sugerido">${sugTxt}</b>
-          </div>
-          <div class="ap-qty">
-            <button class="ap-qty-btn" data-act="menos">−</button>
-            <input type="text" inputmode="decimal" value="${qty||''}" placeholder="0" data-act="input">
-            <button class="ap-qty-btn" data-act="mas">+</button>
-          </div>
-          ${empaque?`<div class="empaque-note">${empaque}</div>`:''}
+        <div class="ap-qty">
+          <button class="ap-qty-btn" data-act="menos">−</button>
+          <input type="text" inputmode="decimal" value="${qty||''}" placeholder="0" data-act="input">
+          <button class="ap-qty-btn" data-act="mas">+</button>
         </div>
+        ${empaque?`<div class="empaque-note">${empaque}</div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -4062,7 +4053,7 @@ function apRenderLista(){
     const nombreEl=row.querySelector('.n');
     if(nombreEl) nombreEl.onclick=()=>abrirFichaProducto(ref,{overlay:true});
     const favBtn=row.querySelector('[data-act="favorito"]');
-    if(favBtn) favBtn.onclick=()=>apToggleFavorito(ref,favBtn);
+    if(favBtn) favBtn.onclick=(ev)=>{ ev.stopPropagation(); apToggleFavorito(ref,favBtn); };
   });
   apUpdateFab();
 }
@@ -4406,6 +4397,14 @@ function apConfirmarPedido(btnQueDisparo){
   const ok=()=>{
     showToast('✓ Pedido copiado — pégalo en WhatsApp · carrito vaciado');
     if(btnQueDisparo){ btnQueDisparo.classList.add('copied'); setTimeout(()=>btnQueDisparo.classList.remove('copied'),1400); }
+    // "Ya pedido a X": queda registrado para cada línea hasta que llegue por
+    // Recepción. Best-effort — si el POST falla, el pedido igual ya se copió
+    // (lo importante), así que no bloquea nada; se actualiza local de una vez
+    // para que el chip aparezca al toque, sin esperar la próxima sincronización.
+    const fechaHoy=new Date().toLocaleDateString('es-CL');
+    DB.pendientesPorSku=DB.pendientesPorSku||{};
+    lineas.forEach(l=>{ DB.pendientesPorSku[l.it.ref]={proveedor:l.it.prov||'SIN PROVEEDOR',cantidad:l.cantidad,fecha:fechaHoy}; });
+    fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'marcar_pedido_realizado',payload:{items:lineas.map(l=>({sku:l.it.ref,barcode:l.it.barcode||'',producto:l.it.nombre,proveedor:l.it.prov||'SIN PROVEEDOR',cantidad:l.cantidad}))}})}).catch(()=>{});
     CART={};
     persistCart();
     renderCarrito();

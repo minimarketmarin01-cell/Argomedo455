@@ -107,6 +107,15 @@ async function asegurarTablas(env) {
     cantidad REAL
   )`);
 
+  // Migración: estado del pedido pendiente ('confirmado' al copiar el pedido a
+  // WhatsApp, 'recibido' cuando llega la mercadería por Recepción) — permite
+  // avisar "Ya pedido a X" en Armar pedido sin borrar el historial al recibir.
+  try {
+    await run(env, `ALTER TABLE pedidos_pendientes ADD COLUMN estado TEXT DEFAULT 'confirmado'`);
+  } catch (e) {
+    // ya existía.
+  }
+
   // Registro histórico de acciones (auditoría), útil para depurar y para el historial.
   await run(env, `CREATE TABLE IF NOT EXISTS auditoria (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1374,6 +1383,45 @@ async function obtenerMultiplosProducto(env) {
 }
 
 // ============================================================
+//  "YA PEDIDO A X" (Armar pedido) — al confirmar un pedido (copiar a
+//  WhatsApp) se guarda una fila por producto con estado='confirmado'; al
+//  recibir la mercadería (Recepción) pasa a 'recibido' sin borrarse, para
+//  que quede como historial real. pedidos_pendientes.sku NO es PK única en
+//  Argomedo (a diferencia de Marín), así que un mismo sku puede tener varias
+//  filas confirmadas si se pidió más de una vez sin recibir — se usa
+//  siempre la más reciente (MAX(id)) para saber qué mostrar.
+// ============================================================
+async function accionMarcarPedidoRealizado(env, payload) {
+  payload = payload || {};
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!items.length) throw new Error("No hay productos en el pedido a marcar");
+  const fecha = fechaHoraDDMMAAAA();
+  let marcados = 0;
+  for (const it of items) {
+    const sku = String((it && it.sku) || "").trim();
+    const cantidad = Number(it && it.cantidad) || 0;
+    if (!sku || cantidad <= 0) continue;
+    await run(env,
+      "INSERT INTO pedidos_pendientes (fecha, sku, barcode, producto, proveedor, cantidad, estado) VALUES (?,?,?,?,?,?,'confirmado')",
+      fecha, sku, String((it && it.barcode) || ""), String((it && it.producto) || ""), String((it && it.proveedor) || ""), cantidad);
+    marcados++;
+  }
+  return { marcados };
+}
+
+// Mapa sku → {proveedor,cantidad,fecha} con lo último confirmado (sin recibir
+// todavía) de cada producto — se manda junto al catálogo, mismo patrón que
+// obtenerMultiplosProducto.
+async function obtenerPedidosPendientesPorSku(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT sku, proveedor, cantidad, fecha, MAX(id) FROM pedidos_pendientes WHERE estado = 'confirmado' GROUP BY sku"
+  ).all();
+  const map = {};
+  (results || []).forEach(r => { map[r.sku] = { proveedor: r.proveedor, cantidad: r.cantidad, fecha: r.fecha }; });
+  return map;
+}
+
+// ============================================================
 //  CATÁLOGO COMPACTO (D1 → frontend)
 //  Se usa para cargar TODOS los productos una sola vez al abrir
 //  la app (igual que Marín) y buscar después en el teléfono sin
@@ -1489,6 +1537,14 @@ async function accionLoteNuevo(env, payload) {
       }
     } catch (e) {
       out.avisoStock = "⚠️ No se pudo sumar el stock en Loyverse: " + e.message;
+    }
+
+    // 2b) Si este producto tenía un pedido confirmado sin recibir ("Ya pedido a
+    // X" en Armar pedido), pasa a 'recibido' — no se borra, queda como historial.
+    try {
+      await run(env, "UPDATE pedidos_pendientes SET estado = 'recibido' WHERE sku = ? AND estado = 'confirmado'", sku);
+    } catch (e) {
+      // no crítico: si falla, el chip "Ya pedido" simplemente sigue mostrándose.
     }
   }
 
@@ -2639,7 +2695,10 @@ export default {
         // pedir nada aparte, mismo criterio que usa Marín 376.
         let multiplos = {}, empaques = {}, palabras = {};
         try { ({ multiplos, empaques, palabras } = await obtenerMultiplosProducto(env)); } catch (e) { /* tabla recién creada, sin filas todavía */ }
-        return json({ ok: true, items, total: items.length, multiplos, empaques, palabras });
+        // "Ya pedido a X" — pedidos confirmados que todavía no se recibieron.
+        let pendientes = {};
+        try { pendientes = await obtenerPedidosPendientesPorSku(env); } catch (e) { /* columna recién migrada, sin filas todavía */ }
+        return json({ ok: true, items, total: items.length, multiplos, empaques, palabras, pendientes });
       }
 
       // GET /?action=ultima_actualizacion  →  devuelve solo la marca de tiempo del
@@ -2993,6 +3052,15 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'marcar_pedido_realizado', payload:{items:[{sku,barcode,
+      // producto,proveedor,cantidad}]} } → guarda cada línea del pedido recién
+      // confirmado como "en camino" (estado='confirmado'), para avisar "Ya
+      // pedido a X" en Armar pedido hasta que llegue por Recepción.
+      if (action === "marcar_pedido_realizado") {
+        const resultado = await accionMarcarPedidoRealizado(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
       // POST { action:'eliminar_proveedor', payload:{nombre} }  →  borra un proveedor
       // del catálogo, solo si no tiene productos asignados.
       if (action === "eliminar_proveedor") {
@@ -3030,7 +3098,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos, favoritos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir, guardar_multiplo_producto, favorito. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos, favoritos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir, guardar_multiplo_producto, favorito, marcar_pedido_realizado. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
