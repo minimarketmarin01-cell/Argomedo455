@@ -530,6 +530,15 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 
 <div class="quick-title">Accesos rápidos</div>
 <div class="menu">
+  <!-- Orden por flujo de trabajo diario: pedir → recibir → cuidar lo que ya
+       está en tienda (vencimientos/riesgo/mermas/llegadas) → precios y datos
+       → catálogo (categorías/proveedores) → notificaciones y reportes al final.
+       "Buscar producto" se sacó de aquí porque ya está arriba, en Acciones
+       rápidas (qa-buscar) con el mismo ícono y el mismo destino — estaba
+       duplicado. "Notificaciones" y "Recién llegado" compartían el mismo
+       ícono de campana; "Sin costo" y "Riesgo de quiebre" compartían el
+       mismo ícono de triángulo de alerta — a las dos que no eran alertas de
+       verdad (Llegadas y Sin costo) se les puso un ícono propio. -->
   <button class="menu-card pedido" id="btn-armar-pedido">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
     <div class="txt">
@@ -557,11 +566,11 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 
-  <button class="menu-card venc" id="btn-notificaciones">
-    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
+  <button class="menu-card mermas" id="btn-riesgo">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
     <div class="txt">
-      <div class="t">Notificaciones</div>
-      <div class="s">Recibir avisos de productos por vencer, 8 AM y 3 PM</div>
+      <div class="t">Riesgo de quiebre</div>
+      <div class="s">Productos de alta rotación (clase A/B) con cobertura urgente o sin stock</div>
     </div>
     <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
@@ -576,7 +585,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   </button>
 
   <button class="menu-card llegadas" id="btn-llegadas">
-    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg></div>
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg></div>
     <div class="txt">
       <div class="t">Recién llegado<span class="venc-badge hidden" id="ll-badge"></span></div>
       <div class="s">Stock nuevo cargado directo en Loyverse, sin fecha de vencimiento</div>
@@ -594,7 +603,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   </button>
 
   <button class="menu-card mermas" id="btn-sincosto">
-    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 22 20H2Z"/><line x1="12" y1="9" x2="12" y2="14"/><circle cx="12" cy="17.3" r="0.2" fill="currentColor" stroke-width="0"/></svg></div>
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><line x1="2" y1="2" x2="22" y2="22"/></svg></div>
     <div class="txt">
       <div class="t">Sin costo</div>
       <div class="s">Productos con seguimiento de inventario pero sin costo en Loyverse</div>
@@ -611,15 +620,6 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 
-  <button class="menu-card mermas" id="btn-riesgo">
-    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-    <div class="txt">
-      <div class="t">Riesgo de quiebre</div>
-      <div class="s">Productos de alta rotación (clase A/B) con cobertura urgente o sin stock</div>
-    </div>
-    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
-  </button>
-
   <button class="menu-card pedido" id="btn-proveedores">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
     <div class="txt">
@@ -629,11 +629,11 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
 
-  <button class="menu-card recibir" id="btn-ficha-producto">
-    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
+  <button class="menu-card venc" id="btn-notificaciones">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
     <div class="txt">
-      <div class="t">Buscar producto</div>
-      <div class="s">Escanear o buscar para editar todos los datos o eliminar</div>
+      <div class="t">Notificaciones</div>
+      <div class="s">Recibir avisos de productos por vencer, 8 AM y 3 PM</div>
     </div>
     <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
   </button>
@@ -5420,7 +5420,6 @@ async function openProductosProveedor(proveedor){
   }
 }
 document.getElementById('pvp-close').onclick=()=>cerrarModal('pvp-ov');
-document.getElementById('btn-ficha-producto').onclick=openFichaBuscar;
 
 // ============================================================
 //  MERMAS (registro de pérdidas) — mismo flujo que Marín: buscar
