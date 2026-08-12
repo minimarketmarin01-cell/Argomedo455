@@ -254,6 +254,14 @@ async function asegurarTablas(env) {
     agregado_en TEXT
   )`);
 
+  // Favoritos de Armar pedido — productos marcados a mano (ej. "los que pido
+  // siempre a este proveedor"), persistidos en D1 para que el marcado sea el
+  // mismo en todos los celulares. Misma forma que riesgo_excluidos.
+  await run(env, `CREATE TABLE IF NOT EXISTS favoritos (
+    sku TEXT PRIMARY KEY,
+    agregado_en TEXT
+  )`);
+
   await run(env, `CREATE TABLE IF NOT EXISTS config_categorias (
     categoria TEXT PRIMARY KEY,
     tipo TEXT
@@ -1164,6 +1172,27 @@ async function accionRiesgoExcluir(env, payload) {
     await run(env, "DELETE FROM riesgo_excluidos WHERE sku = ?", sku);
   }
   return { sku, excluido: !!payload.excluido };
+}
+
+// ============================================================
+//  FAVORITOS (Armar pedido) — mismo mecanismo que riesgo_excluidos:
+//  set de SKUs marcados a mano, persistido en D1.
+// ============================================================
+async function repFavoritos(env) {
+  const { results } = await env.DB.prepare("SELECT sku FROM favoritos").all();
+  return results.map(r => r.sku);
+}
+
+async function accionFavorito(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  if (payload.favorito) {
+    await run(env, "INSERT OR IGNORE INTO favoritos (sku, agregado_en) VALUES (?, ?)", sku, fechaHoraDDMMAAAA());
+  } else {
+    await run(env, "DELETE FROM favoritos WHERE sku = ?", sku);
+  }
+  return { sku, favorito: !!payload.favorito };
 }
 
 async function calcularRiesgoQuiebre(env) {
@@ -2842,6 +2871,20 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // GET /?action=favoritos  →  lista de SKUs marcados como favoritos
+      // en Armar pedido.
+      if (action === "favoritos") {
+        const skus = await repFavoritos(env);
+        return json({ ok: true, skus });
+      }
+
+      // POST { action:'favorito', payload:{sku,favorito} } → marca/desmarca
+      // un producto como favorito en Armar pedido.
+      if (action === "favorito") {
+        const resultado = await accionFavorito(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
       // GET /?action=descuentos_activos  →  lista de lotes con descuento aplicado
       // y todavía en gestión (sin cerrar).
       if (action === "descuentos_activos") {
@@ -2987,7 +3030,7 @@ export default {
       // Sin acción reconocida: mensaje de bienvenida simple.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir, guardar_multiplo_producto. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos, favoritos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir, guardar_multiplo_producto, favorito. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       return json({ ok: false, error: e.message }, 500);
