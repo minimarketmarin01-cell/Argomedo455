@@ -264,8 +264,8 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 /* ===== ARMAR PEDIDO: selector de proveedor + tabla + carrito ===== */
 .chip-removible{display:inline-flex;align-items:center;gap:6px;padding:6px 8px 6px 12px;border-radius:16px;background:var(--cielo-tint);border:1.5px solid var(--cielo);color:var(--cielo-d);font-weight:700;font-size:12px}
 .chip-removible button{width:18px;height:18px;flex:none;border-radius:50%;border:none;background:var(--cielo-d);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.ap-search{padding:0 8px 10px}
-.ap-list{padding:0 8px 96px}
+.ap-search{padding:0 0 10px}
+.ap-list{padding:0 0 96px}
 .ap-row{display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card)}
 .ap-fav-btn{flex:none;width:22px;height:22px;border:none;background:none;color:var(--line);font-size:17px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;vertical-align:-4px;padding:0}
 .ap-fav-btn.active{color:var(--cielo)}
@@ -316,14 +316,14 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 #ap-ov .chip-removible{background:var(--cielo-tint);border-color:var(--cielo);color:var(--cielo-d)}
 #ap-ov .chip-removible button{background:var(--cielo-d)}
 
-.ap-legend{display:flex;gap:14px;padding:8px 8px 0;font-size:11px;color:var(--muted)}
+.ap-legend{display:flex;gap:14px;padding:8px 0 0;font-size:11px;color:var(--muted)}
 .ap-legend span{display:inline-flex;align-items:center;gap:5px}
 .ap-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
 .ap-legend .d-urgente{background:var(--rojo)}
 .ap-legend .d-pedir{background:var(--verde)}
 .ap-legend .d-sobre{background:var(--violeta)}
 
-.ap-thead{display:flex;align-items:center;gap:8px;padding:10px 8px 6px;font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase}
+.ap-thead{display:flex;align-items:center;gap:8px;padding:10px 0 6px;font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase}
 .ap-thead .th{cursor:pointer;user-select:none;white-space:nowrap}
 .ap-thead .th.active{color:var(--cielo-d)}
 .ap-thead .th-nombre{flex:1}
@@ -1228,9 +1228,9 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
       </div>
       <div class="results" id="ap-search-menu"></div>
     </div>
-    <div id="ap-prov-chip" style="padding:0 8px 4px"></div>
+    <div id="ap-prov-chip" style="padding:0 0 4px"></div>
   </div>
-  <div class="ap-toolbar" style="display:flex;align-items:center;gap:8px;padding:10px 8px 0;flex-wrap:wrap">
+  <div class="ap-toolbar" style="display:flex;align-items:center;gap:8px;padding:10px 0 0;flex-wrap:wrap">
     <div class="toggle-row" id="ap-basis-seg" style="margin:0;flex:none;width:auto">
       <button type="button" class="toggle-btn active" data-basis="7" style="padding:7px 10px">7d</button>
       <button type="button" class="toggle-btn" data-basis="14" style="padding:7px 10px">14d</button>
