@@ -268,17 +268,24 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .chip-removible button{width:18px;height:18px;flex:none;border-radius:50%;border:none;background:var(--cielo-d);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .ap-search{padding:0 16px 10px}
 .ap-list{padding:0 16px 90px}
-.ap-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card)}
+.ap-row{display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card)}
 .ap-thumb{width:44px;height:44px;flex:none;border-radius:10px;background:var(--card2);overflow:hidden;display:flex;align-items:center;justify-content:center}
 .ap-thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .ap-thumb svg{width:20px;height:20px;color:var(--muted)}
 .ap-row .info{flex:1;min-width:0}
-.ap-row .n{font-weight:700;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ap-row .s{font-size:11px;color:var(--muted);margin-top:2px}
+.ap-row .n{font-weight:700;font-size:13px;color:var(--ink);line-height:1.35}
+.ap-row .s,.ap-row .prov{font-size:11px;color:var(--muted);margin-top:2px}
 .ap-row .s b{color:var(--ink)}
-.ap-row .datos{display:flex;gap:10px;margin-top:4px;font-size:10.5px;color:var(--muted)}
+.ap-row .precio-line{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:4px}
+.ap-row .precio-line .precio{font-weight:800;font-size:14px;color:var(--ink);font-family:'JetBrains Mono',monospace}
+.ap-row .precio-line .costo,.ap-row .precio-line .margen{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+.ap-row .abc-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:5px;background:var(--card2);color:var(--ink);font-weight:800;font-size:9.5px}
+.ap-row .datos{display:flex;gap:10px;margin-top:5px;font-size:10.5px;color:var(--muted)}
 .ap-row .datos b{color:var(--ink);font-family:'JetBrains Mono',monospace}
-.ap-row .sugerido{cursor:pointer;font-weight:800;color:var(--cielo-d);border-bottom:1px dashed var(--cielo)}
+.ap-right{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.ap-right .sug-lbl{font-size:10.5px;color:var(--muted);text-align:right;white-space:nowrap}
+.ap-right .sugerido{cursor:pointer;font-weight:800;color:var(--cielo-d);border-bottom:1px dashed var(--cielo)}
+.ap-right .empaque-note{font-size:9.5px;color:var(--muted);text-align:right;max-width:110px}
 
 .ap-legend{display:flex;gap:14px;padding:8px 16px 0;font-size:11px;color:var(--muted)}
 .ap-legend span{display:inline-flex;align-items:center;gap:5px}
@@ -3691,33 +3698,42 @@ function apRenderLista(){
   }
   box.innerHTML=items.map(it=>{
     const qty=CART[it.ref]||0;
-    const stockTxt=it.stock==null?'sin control':(it.stock+(it.peso?' kg':' u'));
+    const stockTxt=it.stock==null?'—':(it.stock+(it.peso?' kg':' u'));
     const estadoTxt=it._estado==='pedir'?'a pedir':it._estado;
     const badge=it._estado?`<span class="estado-badge ${it._estado}">${estadoTxt}</span>`:'';
-    const empaque=it._fmt>1?(' · '+it._fmt+' u/'+(it._word||'pack')):'';
+    const empaque=it._fmt>1?(it._fmt+' u/'+(it._word||'pack')):'';
     const sugTxt=it._fmt>1?(it._sugerido+' u ('+Math.ceil(it._sugerido/it._fmt)+' '+(it._word||'pack')+(Math.ceil(it._sugerido/it._fmt)===1?'':'s')+')'):it._sugerido;
     const margen=(it.precio>0&&it.coste>0)?Math.round((1-it.coste/it.precio)*100)+'%':null;
-    const abcBadge=it.abc?`<span style="background:var(--card2);border-radius:6px;padding:1px 6px;font-weight:800;font-size:10px;margin-left:5px">${it.abc.clase}</span>`:'';
-    const costoTxt=it.coste>0?(' · C '+fmtPeso(it.coste)):'';
-    const margenTxt=margen?(' · '+margen):'';
+    const abcBadge=it.abc?`<span class="abc-badge">${it.abc.clase}</span>`:'';
+    const cobTxt=it._cob===Infinity?'∞':(Math.round(it._cob*10)/10)+'d';
     return `<div class="ap-row ${it._estado}" data-ref="${it.ref}">
       <div class="ap-thumb">
         ${it.imagen?`<img src="${it.imagen}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">`:''}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:${it.imagen?'none':'block'}"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
       </div>
       <div class="info">
-        <div class="n">${it.nombre}${badge}${abcBadge}</div>
-        <div class="s">${it.prov} · Stock: <b>${stockTxt}</b> · ${fmtPeso(it.precio)}${costoTxt}${margenTxt}${empaque}</div>
+        <div class="n">${badge}${it.nombre}</div>
+        <div class="prov">${it.prov}</div>
+        <div class="precio-line">
+          <span class="precio">${fmtPeso(it.precio)}</span>
+          ${it.coste>0?`<span class="costo">C ${fmtPeso(it.coste)}</span>`:''}
+          ${margen?`<span class="margen">${margen}</span>`:''}
+          ${abcBadge}
+        </div>
         <div class="datos">
-          <span>Vta ${apState.basis}d: <b>${it._venta}</b> <span class="trend-${it._trend.k}">${it._trend.t}</span></span>
-          <span>Cob: <b>${it._cob===Infinity?'∞':Math.round(it._cob)+'d'}</b></span>
-          <span>Sugerido: <b class="sugerido" data-act="sugerido">${sugTxt}</b></span>
+          <span>STK <b>${stockTxt}</b></span>
+          <span>VTA <b>${it._venta}</b> <span class="trend-${it._trend.k}">${it._trend.t}</span></span>
+          <span>COB <b>${cobTxt}</b></span>
         </div>
       </div>
-      <div class="ap-qty">
-        <button class="ap-qty-btn" data-act="menos">−</button>
-        <input type="text" inputmode="decimal" value="${qty||''}" placeholder="0" data-act="input">
-        <button class="ap-qty-btn" data-act="mas">+</button>
+      <div class="ap-right">
+        <div class="sug-lbl">Sugerido <b class="sugerido" data-act="sugerido">${sugTxt}</b></div>
+        <div class="ap-qty">
+          <button class="ap-qty-btn" data-act="menos">−</button>
+          <input type="text" inputmode="decimal" value="${qty||''}" placeholder="0" data-act="input">
+          <button class="ap-qty-btn" data-act="mas">+</button>
+        </div>
+        ${empaque?`<div class="empaque-note">${empaque}</div>`:''}
       </div>
     </div>`;
   }).join('');
