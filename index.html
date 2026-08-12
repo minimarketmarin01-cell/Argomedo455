@@ -1186,7 +1186,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <button class="venc-tab" data-vista="descuentos">🏷️ Descuentos<span class="venc-badge hidden" id="venc-badge-descuentos"></span></button>
   </div>
 
-  <div id="venc-view-revision">
+  <div id="venc-view-revision" style="display:flex;flex-direction:column;flex:1;min-height:0">
     <div class="venc-tabs" style="border-top:1px solid var(--line)">
       <button class="venc-tab active" data-estado="">Activos</button>
       <button class="venc-tab" data-estado="todos">Todos</button>
@@ -1217,14 +1217,14 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     </div>
   </div>
 
-  <div id="venc-view-pendientes" class="hidden">
+  <div id="venc-view-pendientes" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
     <div class="ov-body" style="padding-top:12px">
       <div class="ap-empty" style="text-align:left;color:var(--muted);font-size:12px;margin-bottom:10px;padding:0">Ya se retiraron de la góndola — esperando que el proveedor los cambie, o falta confirmar si quedan como merma.</div>
       <div class="venc-list" id="venc-pend-list"></div>
     </div>
   </div>
 
-  <div id="venc-view-descuentos" class="hidden">
+  <div id="venc-view-descuentos" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
     <div class="ov-body" style="padding-top:12px">
       <div class="ap-empty" style="text-align:left;color:var(--muted);font-size:12px;margin-bottom:10px;padding:0">Productos con precio ya rebajado por vencimiento próximo — registra cuánto se vende o queda en merma hasta agotar el lote.</div>
       <div class="venc-list" id="venc-desc-list"></div>
@@ -4153,14 +4153,17 @@ function vencAplicarFiltros(){
   const q = vencState.busqueda.toLowerCase().trim();
   const palabras = q.split(/\s+/).filter(Boolean);
   vencState.listaFiltrada = vencState.lista.filter(l => {
+    // Solo lotes con fecha de vencimiento real — los recibidos sin fecha (solo
+    // para dejar rastro de la recepción) no son "vencimientos" que revisar acá.
+    if(!l.fecha_vencimiento) return false;
     if(vencState.proveedorFiltro){
       const it = (DB.items || []).find(i => i.ref === l.sku);
       if(!it || it.prov !== vencState.proveedorFiltro) return false;
     }
-    // Filtro rápido por días para vencer — los vencidos y sin fecha SIEMPRE se
-    // muestran (son lo más urgente, nunca deberían quedar ocultos por accidente).
+    // Filtro rápido por días para vencer — los vencidos SIEMPRE se muestran (son
+    // lo más urgente, nunca deberían quedar ocultos por accidente).
     if(vencState.diasFiltro>0){
-      if(!(l.diasRestantes==null || l.diasRestantes<0 || l.diasRestantes<=vencState.diasFiltro)) return false;
+      if(!(l.diasRestantes<0 || l.diasRestantes<=vencState.diasFiltro)) return false;
     }
     if(!palabras.length) return true;
     const texto = (l.producto + ' ' + l.sku).toLowerCase();
@@ -4171,15 +4174,18 @@ function vencAplicarFiltros(){
 }
 
 function vencRenderProgreso(){
-  const total = vencState.lista.length;
-  const revisados = vencState.lista.filter(l => l.estado !== 'Pendiente' && l.estado !== 'Sin fecha').length;
+  // El progreso solo cuenta lotes CON fecha de vencimiento — los "Sin fecha" ya
+  // no se muestran en la lista, así que tampoco deben contar en el denominador.
+  const conFecha = vencState.lista.filter(l => l.fecha_vencimiento);
+  const total = conFecha.length;
+  const revisados = conFecha.filter(l => l.estado !== 'Pendiente').length;
   const pct = total ? Math.round((revisados / total) * 100) : 0;
   document.getElementById('venc-progress-fill').style.width = pct + '%';
   document.getElementById('venc-progress-lbl').textContent = revisados + '/' + total + ' revisados';
 
   // Badge de la pestaña "Revisión": cuenta lotes urgentes o vencidos que aún no
   // se han gestionado — para que se note de un vistazo cuánto queda pendiente.
-  const urgentes = vencState.lista.filter(l => (l.urgencia === 'vencido' || l.urgencia === 'urgente') && l.estado === 'Pendiente').length;
+  const urgentes = conFecha.filter(l => (l.urgencia === 'vencido' || l.urgencia === 'urgente') && l.estado === 'Pendiente').length;
   const badgeRev = document.getElementById('venc-badge-revision');
   badgeRev.classList.toggle('hidden', !urgentes);
   badgeRev.textContent = urgentes;
