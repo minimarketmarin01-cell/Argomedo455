@@ -144,6 +144,15 @@ async function asegurarTablas(env) {
     // ya existía.
   }
 
+  // Migración: imagen_url — foto del producto tal como está cargada en Loyverse
+  // (campo item.image_url). Se completa sola en el próximo sync/webhook, no hace
+  // falta acción manual.
+  try {
+    await run(env, `ALTER TABLE productos ADD COLUMN imagen_url TEXT`);
+  } catch (e) {
+    // ya existía.
+  }
+
   // Migración: fecha_retiro en `vencimientos` — distingue el momento en que un
   // lote se retiró físicamente de la góndola (estado "Retirado", pendiente de que
   // el proveedor lo cambie o se confirme como merma) del momento en que se cierra
@@ -734,15 +743,15 @@ async function sincronizarCatalogo(env) {
     // (columnas que esta sentencia ni siquiera incluye) — solo se refrescan los
     // datos que sí vienen de Loyverse.
     stmts.push(env.DB.prepare(
-      `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+      `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva, imagen_url)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(sku) DO UPDATE SET
          id_loyverse=excluded.id_loyverse, variant_id=excluded.variant_id, nombre=excluded.nombre,
          categoria=excluded.categoria, barcode=excluded.barcode, precio=excluded.precio,
          costo=excluded.costo, stock=excluded.stock, sold_by_weight=excluded.sold_by_weight,
-         track_stock=excluded.track_stock, con_iva=excluded.con_iva`
+         track_stock=excluded.track_stock, con_iva=excluded.con_iva, imagen_url=excluded.imagen_url`
     ).bind(v.sku, it.id, v.variant_id, it.item_name, mapaCategorias[it.category_id] || "SIN CATEGORÍA",
-      v.barcode || "", precio || 0, v.cost || 0, stock, peso ? 1 : 0, it.track_stock ? 1 : 0, conIva ? 1 : 0));
+      v.barcode || "", precio || 0, v.cost || 0, stock, peso ? 1 : 0, it.track_stock ? 1 : 0, conIva ? 1 : 0, it.image_url || null));
   });
 
   await batchRun(env, stmts, 500);
@@ -1237,15 +1246,15 @@ async function aplicarCambiosItems(env, items) {
     const conIva = ivaTaxId ? (Array.isArray(it.tax_ids) && it.tax_ids.includes(ivaTaxId)) : false;
 
     await run(env,
-      `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, sold_by_weight, track_stock, con_iva)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, sold_by_weight, track_stock, con_iva, imagen_url)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(sku) DO UPDATE SET
          id_loyverse=excluded.id_loyverse, variant_id=excluded.variant_id, nombre=excluded.nombre,
          categoria=excluded.categoria, barcode=excluded.barcode, precio=excluded.precio,
          costo=excluded.costo, sold_by_weight=excluded.sold_by_weight,
-         track_stock=excluded.track_stock, con_iva=excluded.con_iva`,
+         track_stock=excluded.track_stock, con_iva=excluded.con_iva, imagen_url=excluded.imagen_url`,
       v.sku, it.id, v.variant_id, it.item_name, mapaCategorias[it.category_id] || "SIN CATEGORÍA",
-      v.barcode || "", precio || 0, v.cost || 0, peso ? 1 : 0, it.track_stock ? 1 : 0, conIva ? 1 : 0);
+      v.barcode || "", precio || 0, v.cost || 0, peso ? 1 : 0, it.track_stock ? 1 : 0, conIva ? 1 : 0, it.image_url || null);
     actualizados++;
   }
   return actualizados;
@@ -1297,7 +1306,7 @@ async function manejarWebhookLoyverse(request, env, url) {
 async function catalogoCompacto(env) {
   await asegurarTablas(env); // por si la columna con_iva u otra migración aún no se aplicó
   const { results } = await env.DB.prepare(
-    `SELECT sku, nombre, categoria, proveedor, sector, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva
+    `SELECT sku, nombre, categoria, proveedor, sector, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva, imagen_url
      FROM productos ORDER BY nombre`
   ).all();
 
@@ -1323,6 +1332,7 @@ async function catalogoCompacto(env) {
     barcode: p.barcode || "",
     precio: p.precio || 0,
     coste: p.costo || 0,
+    imagen: p.imagen_url || "",
     stock: p.stock,
     peso: !!p.sold_by_weight,
     track: !!p.track_stock,
