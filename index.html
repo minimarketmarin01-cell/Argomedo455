@@ -269,7 +269,8 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .ap-thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .ap-thumb svg{width:20px;height:20px;color:var(--muted)}
 .ap-row .info{flex:1;min-width:0}
-.ap-row .n{font-weight:700;font-size:13px;color:var(--ink);line-height:1.35}
+.ap-row .n{font-weight:700;font-size:13px;color:var(--ink);line-height:1.35;cursor:pointer;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:2px}
+.ap-row .n:active{text-decoration-color:var(--line)}
 .ap-row .s,.ap-row .prov{font-size:11px;color:var(--muted);margin-top:2px}
 .ap-row .s b{color:var(--ink)}
 .ap-row .precio-line{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:4px}
@@ -411,6 +412,33 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .pc-aplicar-btn:active{opacity:.85}
 .pc-resumen-mini{display:flex;gap:16px;margin-top:10px;font-size:11.5px;color:var(--muted);flex-wrap:wrap}
 .pc-resumen-mini b{color:var(--ink);font-family:'JetBrains Mono'}
+
+/* ===== Ficha de producto: cabecera de pasos + tarjetas KPI + historial =====
+   Puramente visual (igual criterio que Marín 376): agrupa los MISMOS campos que
+   ya existían en la ficha en 4 bloques con un indicador de paso que resalta
+   según la sección visible del scroll — no agrega ningún campo nuevo que
+   requiera datos que Argomedo455 no tenga. */
+.fp-steps{display:flex;align-items:center;justify-content:center;gap:0;padding:10px 16px 4px;max-width:520px;margin:0 auto;width:100%;box-sizing:border-box}
+.fp-step-dot{width:22px;height:22px;border-radius:50%;background:var(--card2);border:1.5px solid var(--line);color:var(--muted);font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none;transition:background .15s,border-color .15s,color .15s}
+.fp-step-dot.on{background:var(--verde);border-color:var(--verde);color:#fff}
+.fp-step-line{flex:1;height:2px;background:var(--line);margin:0 4px;min-width:14px}
+.fp-section-title{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px;display:flex;align-items:center;gap:6px}
+.fp-section-title:first-of-type{margin-top:4px}
+.fp-kpi-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px}
+.fp-kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 10px;text-align:center}
+.fp-kpi.destacado{background:var(--verde-bg);border-color:var(--verde)}
+.fp-kpi-lbl{font-size:9.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.02em}
+.fp-kpi-val{font-family:'JetBrains Mono';font-weight:800;font-size:14.5px;color:var(--ink);margin-top:3px}
+.fp-prod-card{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.fp-prod-img{width:56px;height:56px;border-radius:12px;object-fit:cover;flex:none;background:var(--card2);border:1px solid var(--line)}
+.fp-prod-img-empty{width:56px;height:56px;border-radius:12px;flex:none;background:var(--card2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.fp-recontar-toggle{width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--line);background:#fff;color:var(--ink);font-weight:700;font-size:12.5px;cursor:pointer;margin-bottom:8px}
+.fp-recontar-box{padding:10px;border:1.5px dashed var(--line);border-radius:10px;background:var(--paper);margin-bottom:12px}
+.fp-hist-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line2);font-size:11.5px}
+.fp-hist-row:last-child{border-bottom:none}
+.fp-hist-row .f{color:var(--muted);flex:none;font-family:'JetBrains Mono';font-size:10.5px}
+.fp-hist-row .m{color:var(--ink);text-align:right}
+.fp-hist-empty{font-size:12px;color:var(--muted);padding:8px 0}
 
 /* ===== Recepción: vista en 2 etapas (solo buscador → detalle al elegir) ===== */
 .mm-picked{display:none;padding:12px;background:var(--cielo-tint);border:1.5px solid var(--cielo);border-radius:12px;margin-top:8px}
@@ -1376,10 +1404,16 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 <!-- ===== MODAL: FICHA DE PRODUCTO (buscar, editar todo, eliminar) ===== -->
 <div class="ov hidden" id="fp-ov">
   <div class="ov-head">
-    <h3>🔎 Buscar producto</h3>
+    <h3 id="fp-titulo">🔎 Buscar producto</h3>
     <button class="ov-close" id="fp-close" aria-label="Cerrar">✕</button>
   </div>
-  <div class="ov-body">
+  <div class="fp-steps hidden" id="fp-steps">
+    <div class="fp-step-dot on">1</div><div class="fp-step-line"></div>
+    <div class="fp-step-dot">2</div><div class="fp-step-line"></div>
+    <div class="fp-step-dot">3</div><div class="fp-step-line"></div>
+    <div class="fp-step-dot">4</div>
+  </div>
+  <div class="ov-body" id="fp-scroll">
     <div class="field" id="fp-buscar-field">
       <label>Producto</label>
       <div class="search-row">
@@ -1390,60 +1424,102 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     </div>
 
     <div id="fp-ficha" class="hidden">
-      <div class="field">
-        <label>Código de barras</label>
-        <div class="search-row">
-          <input id="fp-barcode" inputmode="numeric">
-          <button class="scan-btn" id="fp-scan2" type="button" aria-label="Escanear código">📷</button>
-        </div>
-      </div>
-      <div class="field">
-        <label>Nombre</label>
-        <input id="fp-nombre">
-      </div>
-      <div class="field">
-        <label>Proveedor <span style="text-transform:none;font-weight:400">(principal)</span></label>
-        <input id="fp-proveedor" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
-        <div class="results" id="fp-proveedor-results"></div>
-      </div>
-      <div class="field">
-        <label>Proveedores adicionales <span style="text-transform:none;font-weight:400">(opcional — este producto también se compra a estos)</span></label>
-        <div id="fp-prov-extra-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
-        <div class="search-row">
-          <input id="fp-prov-extra-input" placeholder="Agregar otro proveedor…" autocomplete="off">
-        </div>
-        <div class="results" id="fp-prov-extra-results"></div>
-      </div>
-      <div class="field">
-        <label>Sector</label>
-        <input id="fp-sector" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
-        <div class="results" id="fp-sector-results"></div>
-      </div>
-      <div class="field">
-        <label>Se vende por peso (kg)</label>
-        <div class="toggle-row">
-          <button type="button" class="toggle-btn" id="fp-peso-no" data-v="0">No, por unidad</button>
-          <button type="button" class="toggle-btn" id="fp-peso-si" data-v="1">Sí, por kg</button>
-        </div>
-      </div>
-      <div class="field">
-        <div style="display:flex;gap:8px">
-          <div style="flex:1">
-            <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">COSTO</div>
-            <input id="fp-costo" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
-          </div>
-          <div style="flex:1">
-            <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">PRECIO VENTA</div>
-            <input id="fp-precio" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
-          </div>
-        </div>
-      </div>
-      <div class="field" style="font-size:12px;color:var(--muted)" id="fp-stock-txt"></div>
 
-      <div class="field">
-        <label style="color:var(--cielo-d)">🧮 Calculadora de precio</label>
-        <div class="resumen-box" id="fp-calc-actual" style="margin:6px 0 10px"></div>
-        <div id="fp-pr-mount"></div>
+      <!-- Paso 1: General — imagen, nombre, stock, recontar -->
+      <div id="fp-pane-general">
+        <div class="fp-section-title">① General</div>
+        <div class="fp-prod-card">
+          <img id="fp-img-actual" class="fp-prod-img hidden" alt="">
+          <div class="fp-prod-img-empty" id="fp-prod-img-empty"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></div>
+          <div style="flex:1;min-width:0">
+            <div class="field" style="margin-bottom:0">
+              <label>Nombre</label>
+              <input id="fp-nombre">
+            </div>
+          </div>
+        </div>
+        <div class="fp-kpi-grid" style="grid-template-columns:1fr 1fr">
+          <div class="fp-kpi destacado"><div class="fp-kpi-lbl">Stock actual</div><div class="fp-kpi-val" id="fp-kpi-stock">—</div></div>
+          <div class="fp-kpi"><div class="fp-kpi-lbl">SKU</div><div class="fp-kpi-val" id="fp-kpi-sku" style="font-size:12px">—</div></div>
+        </div>
+        <button type="button" class="fp-recontar-toggle" id="fp-recontar-toggle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.7-3"/><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3"/><polyline points="21 3 21 9 15 9"/><polyline points="3 21 3 15 9 15"/></svg> Recontar stock</button>
+        <div class="fp-recontar-box hidden" id="fp-recontar-box">
+          <input id="fp-recontar-input" type="number" inputmode="decimal" placeholder="Nueva cantidad contada" style="width:100%;padding:11px 14px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;font-family:'JetBrains Mono';box-sizing:border-box">
+          <button type="button" class="btn-primary" id="fp-recontar-guardar" style="margin-top:8px">Guardar stock</button>
+        </div>
+      </div>
+
+      <!-- Paso 2: Unidad — código de barras, peso/unidad -->
+      <div id="fp-pane-unidad">
+        <div class="fp-section-title">② Unidad y código</div>
+        <div class="field">
+          <label>Código de barras</label>
+          <div class="search-row">
+            <input id="fp-barcode" inputmode="numeric">
+            <button class="scan-btn" id="fp-scan2" type="button" aria-label="Escanear código">📷</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Se vende por peso (kg)</label>
+          <div class="toggle-row">
+            <button type="button" class="toggle-btn" id="fp-peso-no" data-v="0">No, por unidad</button>
+            <button type="button" class="toggle-btn" id="fp-peso-si" data-v="1">Sí, por kg</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Paso 3: Precio actual + calculadora -->
+      <div id="fp-pane-precio">
+        <div class="fp-section-title">③ Precio actual</div>
+        <div class="field">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">COSTO</div>
+              <input id="fp-costo" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
+            </div>
+            <div style="flex:1">
+              <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">PRECIO VENTA</div>
+              <input id="fp-precio" inputmode="numeric" placeholder="$" style="height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-family:'JetBrains Mono';width:100%">
+            </div>
+          </div>
+        </div>
+        <div class="fp-kpi-grid">
+          <div class="fp-kpi"><div class="fp-kpi-lbl">Costo</div><div class="fp-kpi-val" id="fp-kpi-costo">—</div></div>
+          <div class="fp-kpi"><div class="fp-kpi-lbl">Precio</div><div class="fp-kpi-val" id="fp-kpi-precio">—</div></div>
+          <div class="fp-kpi destacado"><div class="fp-kpi-lbl">Margen</div><div class="fp-kpi-val" id="fp-kpi-margen">—</div></div>
+        </div>
+        <div class="field" style="font-size:12px;color:var(--muted)" id="fp-stock-txt"></div>
+
+        <div class="field">
+          <label style="color:var(--cielo-d)">🧮 Calculadora de precio</label>
+          <div id="fp-pr-mount"></div>
+        </div>
+      </div>
+
+      <!-- Paso 4: Clasificación (proveedores + sector) + historial -->
+      <div id="fp-pane-clasif">
+        <div class="fp-section-title">④ Clasificación y proveedores</div>
+        <div class="field">
+          <label>Proveedor <span style="text-transform:none;font-weight:400">(principal)</span></label>
+          <input id="fp-proveedor" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
+          <div class="results" id="fp-proveedor-results"></div>
+        </div>
+        <div class="field">
+          <label>Proveedores adicionales <span style="text-transform:none;font-weight:400">(opcional — este producto también se compra a estos)</span></label>
+          <div id="fp-prov-extra-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+          <div class="search-row">
+            <input id="fp-prov-extra-input" placeholder="Agregar otro proveedor…" autocomplete="off">
+          </div>
+          <div class="results" id="fp-prov-extra-results"></div>
+        </div>
+        <div class="field">
+          <label>Sector</label>
+          <input id="fp-sector" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
+          <div class="results" id="fp-sector-results"></div>
+        </div>
+
+        <div class="fp-section-title">Historial de cambios</div>
+        <div id="fp-historial-box"><div class="fp-hist-empty">Cargando…</div></div>
       </div>
 
       <button class="btn-primary" id="fp-guardar" style="margin-bottom:10px;margin-top:14px">Guardar cambios</button>
@@ -3819,6 +3895,11 @@ function apRenderLista(){
       const v=it?apSugerido(it):0;
       apSetCantidad(ref,v); input.value=v||'';
     };
+    // Tocar el nombre abre la ficha completa del producto (misma que "Buscar
+    // producto"), como overlay encima de Armar pedido — no toca el carrito ni
+    // navega de sección, solo se cierra y vuelve a este mismo lugar.
+    const nombreEl=row.querySelector('.n');
+    if(nombreEl) nombreEl.onclick=()=>abrirFichaProducto(ref,{overlay:true});
   });
   apUpdateFab();
 }
@@ -4826,20 +4907,28 @@ document.getElementById('qa-escanear').onclick = () => {
 //  todo o eliminar). Al escanear un código, va directo a la ficha
 //  sin pasos intermedios: si hay 1 coincidencia la abre sola.
 // ============================================================
-const fpState={ sku:null, peso:false };
+const fpState={ sku:null, peso:false, overlay:false };
 
 function openFichaBuscarVisual(){
   document.getElementById('fp-search').value='';
   document.getElementById('fp-results').innerHTML='';
   document.getElementById('fp-buscar-field').style.display='block';
   document.getElementById('fp-ficha').classList.add('hidden');
+  document.getElementById('fp-steps').classList.add('hidden');
+  document.getElementById('fp-titulo').textContent='🔎 Buscar producto';
+  fpState.overlay=false;
   abrirModal('fp-ov');
   document.getElementById('fp-search').focus();
 }
 // Wrapper público: entra al historial como sección propia, así el botón Atrás
 // del celular vuelve a Inicio en vez de cerrar la PWA.
 function openFichaBuscar(){ irASeccion('buscar'); }
-document.getElementById('fp-close').onclick=()=>irASeccion('inicio');
+document.getElementById('fp-close').onclick=()=>{
+  // En modo overlay (abierto desde Armar pedido u otro módulo) solo se oculta
+  // el modal — el módulo de origen sigue debajo tal cual estaba, sin navegar.
+  if(fpState.overlay){ cerrarModal('fp-ov'); fpState.overlay=false; return; }
+  irASeccion('inicio');
+};
 
 document.getElementById('fp-search').oninput=e=>{
   const lista=buscarProductos(e.target.value);
@@ -4861,13 +4950,20 @@ document.getElementById('fp-scan2').onclick=()=>{
   openScanner(code=>{ document.getElementById('fp-barcode').value=code; });
 };
 
-function abrirFichaProducto(ref){
+function abrirFichaProducto(ref,opts){
   const it=(DB.items||[]).find(i=>i.ref===ref);
   if(!it){ showToast('⚠️ Producto no encontrado localmente'); return; }
+  // Modo "overlay": se abre ENCIMA del módulo actual (ej. al tocar el nombre de un
+  // producto en Armar pedido) sin tocar seccionActual/historial — al cerrar, vuelve
+  // exactamente a donde estaba en vez de navegar a Inicio.
+  const overlay=!!(opts&&opts.overlay);
+  fpState.overlay=overlay;
   // Reset completo antes de cargar el nuevo producto: evita que quede cualquier
   // residuo (valores, foco, estado de la calculadora) del producto anterior cuando
   // se escanea o selecciona uno distinto sin cerrar la ficha.
   fpState.sku=ref; fpState.peso=!!it.peso;
+  document.getElementById('fp-titulo').textContent=it.nombre;
+  document.getElementById('fp-steps').classList.remove('hidden');
   document.getElementById('fp-buscar-field').style.display='none';
   document.getElementById('fp-ficha').classList.remove('hidden');
   document.getElementById('fp-barcode').value=it.barcode||'';
@@ -4877,6 +4973,13 @@ function abrirFichaProducto(ref){
   document.getElementById('fp-costo').value=it.coste||'';
   document.getElementById('fp-precio').value=it.precio||'';
   fpSetPeso(fpState.peso);
+  const imgEl=document.getElementById('fp-img-actual'), imgEmpty=document.getElementById('fp-prod-img-empty');
+  if(it.imagen){ imgEl.src=it.imagen; imgEl.classList.remove('hidden'); imgEmpty.classList.add('hidden'); }
+  else{ imgEl.classList.add('hidden'); imgEl.removeAttribute('src'); imgEmpty.classList.remove('hidden'); }
+  document.getElementById('fp-kpi-sku').textContent=ref;
+  document.getElementById('fp-kpi-stock').textContent=it.stock==null?'s/c':(it.stock+(it.peso?' kg':' u'));
+  document.getElementById('fp-recontar-box').classList.add('hidden');
+  document.getElementById('fp-recontar-input').value='';
   const stockTxt=it.stock==null?'Sin control de inventario':('Stock actual: '+it.stock+(it.peso?' kg':' u'));
   document.getElementById('fp-stock-txt').textContent=stockTxt+' · SKU '+ref;
   fpCalcInit(it);
@@ -4884,6 +4987,12 @@ function abrirFichaProducto(ref){
     showToast('🧾 '+it.prov+': factura con IVA incluido — modo "Con IVA" activado');
   }
   fpCargarProveedoresExtra(ref);
+  fpCargarHistorial(ref);
+  fpWireSteps();
+  if(overlay){
+    abrirModal('fp-ov');
+    return;
+  }
   // Si se llega desde otra sección (Proveedores, Crear producto por duplicado), hay
   // que cerrar esa sección anterior y registrar 'buscar' en su lugar — así el botón
   // Atrás vuelve a Inicio, no a la sección de origen ya cerrada.
@@ -4899,6 +5008,82 @@ function abrirFichaProducto(ref){
   }
   guardarSnapshot();
 }
+
+// Resalta el punto (1..4) según qué sección del scroll está más cerca del borde
+// superior visible — puramente visual, el scroll libre entre secciones sigue
+// funcionando igual, no bloquea ni valida nada.
+function fpWireSteps(){
+  const scrollEl=document.getElementById('fp-scroll');
+  const dots=document.querySelectorAll('#fp-steps .fp-step-dot');
+  if(!scrollEl||!dots.length)return;
+  const marcadores=[
+    document.getElementById('fp-pane-general'),
+    document.getElementById('fp-pane-unidad'),
+    document.getElementById('fp-pane-precio'),
+    document.getElementById('fp-pane-clasif')
+  ];
+  const actualizar=()=>{
+    const top=scrollEl.scrollTop+40;
+    let activo=0;
+    marcadores.forEach((el,i)=>{ if(el&&el.offsetTop<=top) activo=i; });
+    dots.forEach((d,i)=>d.classList.toggle('on',i<=activo));
+  };
+  scrollEl.removeEventListener('scroll',scrollEl._fpStepsHandler||(()=>{}));
+  scrollEl._fpStepsHandler=actualizar;
+  scrollEl.addEventListener('scroll',actualizar,{passive:true});
+  requestAnimationFrame(actualizar);
+}
+
+// Historial de cambios (recepciones, ajustes, ediciones) — reutiliza el mismo
+// endpoint que ya usaba el módulo de Proveedores/Recepción, solo que ahora
+// también se ve dentro de la ficha.
+async function fpCargarHistorial(sku){
+  const box=document.getElementById('fp-historial-box');
+  box.innerHTML='<div class="fp-hist-empty">Cargando…</div>';
+  try{
+    const res=await fetch(SYNC_URL+'?action=historial_producto&sku='+encodeURIComponent(sku));
+    const j=await res.json();
+    const hist=(j&&j.ok&&j.historial)?j.historial:[];
+    if(!hist.length){ box.innerHTML='<div class="fp-hist-empty">Sin movimientos registrados todavía.</div>'; return; }
+    box.innerHTML=hist.map(h=>`<div class="fp-hist-row"><span class="f">${h.fecha||''}</span><span class="m">${h.accion||''}${h.motivo?' · '+h.motivo:''}${h.responsable?' · '+h.responsable:''}</span></div>`).join('');
+  }catch(e){
+    box.innerHTML='<div class="fp-hist-empty">No se pudo cargar el historial.</div>';
+  }
+}
+
+// Recuento de inventario sin salir de la ficha — misma acción que ya usa
+// Riesgo de quiebre (ajustar_stock, modo:'exacto'), no una lógica nueva.
+document.getElementById('fp-recontar-toggle').onclick=()=>{
+  document.getElementById('fp-recontar-box').classList.toggle('hidden');
+};
+document.getElementById('fp-recontar-guardar').onclick=async()=>{
+  const inp=document.getElementById('fp-recontar-input');
+  const valor=Number(inp.value);
+  if(inp.value.trim()===''||isNaN(valor)||valor<0){ showToast('Escribe la cantidad contada primero'); return; }
+  const btn=document.getElementById('fp-recontar-guardar');
+  btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'ajustar_stock',payload:{
+      sku:fpState.sku, modo:'exacto', cantidadExacta:valor, motivo:'Recuento desde Ficha de producto',
+      responsable:localStorage.getItem('cumpas_responsable')||'Ficha de producto'
+    }})});
+    const j=await res.json();
+    if(j&&j.ok){
+      const it=(DB.items||[]).find(i=>i.ref===fpState.sku);
+      if(it){ it.stock=valor; persist(); document.getElementById('fp-kpi-stock').textContent=it.stock+(it.peso?' kg':' u'); document.getElementById('fp-stock-txt').textContent='Stock actual: '+it.stock+(it.peso?' kg':' u')+' · SKU '+fpState.sku; }
+      showToast('✅ Stock actualizado');
+      fpCargarHistorial(fpState.sku);
+      document.getElementById('fp-recontar-box').classList.add('hidden');
+      if(fpState.overlay&&typeof apRenderLista==='function') apRenderLista();
+    }else{
+      showToast('❌ '+((j&&j.error)||'No se pudo guardar'));
+    }
+  }catch(e){
+    showToast('❌ Error de conexión');
+  }finally{
+    btn.disabled=false; btn.textContent='Guardar stock';
+  }
+};
 
 // ============================================================
 //  PROVEEDORES ADICIONALES (dentro de la ficha de producto)
@@ -4992,8 +5177,9 @@ function fpCalcRenderActual(){
   const costo=Number(document.getElementById('fp-costo').value)||0;
   const precio=Number(document.getElementById('fp-precio').value)||0;
   const margen=fpCalcMargen(costo,precio);
-  document.getElementById('fp-calc-actual').innerHTML=
-    'Costo: <b>'+fmtPeso(costo)+'</b> · Precio actual: <b>'+fmtPeso(precio)+'</b> · Margen actual: <b>'+(margen!=null?margen.toFixed(1)+'%':'—')+'</b>';
+  document.getElementById('fp-kpi-costo').textContent=costo?fmtPeso(costo):'—';
+  document.getElementById('fp-kpi-precio').textContent=precio?fmtPeso(precio):'—';
+  document.getElementById('fp-kpi-margen').textContent=margen!=null?margen.toFixed(0)+'%':'—';
 }
 document.getElementById('fp-costo').addEventListener('input', fpCalcRenderActual);
 document.getElementById('fp-precio').addEventListener('input', fpCalcRenderActual);
@@ -5071,10 +5257,17 @@ document.getElementById('fp-guardar').onclick=async()=>{
         persist();
       }
       showToast('✅ Cambios guardados: '+j.nombre);
-      limpiarSnapshot();
-      // En vez de cerrar el módulo, vuelve a la pantalla de búsqueda lista para
-      // escanear el siguiente producto — mismo flujo en cadena que ya tiene Recepción.
-      openFichaBuscarVisual();
+      if(fpState.overlay){
+        // Modo overlay (ej. desde Armar pedido): cierra y vuelve al módulo de
+        // origen, refrescando su lista para reflejar el nombre/precio nuevos.
+        cerrarModal('fp-ov'); fpState.overlay=false;
+        if(typeof apRenderLista==='function') apRenderLista();
+      }else{
+        limpiarSnapshot();
+        // En vez de cerrar el módulo, vuelve a la pantalla de búsqueda lista para
+        // escanear el siguiente producto — mismo flujo en cadena que ya tiene Recepción.
+        openFichaBuscarVisual();
+      }
     }else{
       showToast('❌ Error: '+((j&&j.error)||'no se pudo guardar'));
     }
@@ -5099,8 +5292,15 @@ document.getElementById('fp-eliminar').onclick=async()=>{
       DB.items=(DB.items||[]).filter(i=>i.ref!==fpState.sku);
       persist();
       showToast('🗑️ Producto eliminado: '+j.nombre);
-      limpiarSnapshot();
-      openFichaBuscarVisual();
+      if(fpState.overlay){
+        if(CART[fpState.sku]!=null){ delete CART[fpState.sku]; if(typeof persistCart==='function') persistCart(); }
+        cerrarModal('fp-ov'); fpState.overlay=false;
+        if(typeof apRenderLista==='function') apRenderLista();
+        if(typeof renderCarrito==='function') renderCarrito();
+      }else{
+        limpiarSnapshot();
+        openFichaBuscarVisual();
+      }
     }else{
       showToast('❌ Error: '+((j&&j.error)||'no se pudo eliminar'));
     }
