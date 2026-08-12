@@ -269,6 +269,9 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .ap-search{padding:0 16px 10px}
 .ap-list{padding:0 16px 90px}
 .ap-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card)}
+.ap-thumb{width:44px;height:44px;flex:none;border-radius:10px;background:var(--card2);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.ap-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.ap-thumb svg{width:20px;height:20px;color:var(--muted)}
 .ap-row .info{flex:1;min-width:0}
 .ap-row .n{font-weight:700;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ap-row .s{font-size:11px;color:var(--muted);margin-top:2px}
@@ -3698,6 +3701,10 @@ function apRenderLista(){
     const costoTxt=it.coste>0?(' · C '+fmtPeso(it.coste)):'';
     const margenTxt=margen?(' · '+margen):'';
     return `<div class="ap-row ${it._estado}" data-ref="${it.ref}">
+      <div class="ap-thumb">
+        ${it.imagen?`<img src="${it.imagen}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">`:''}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:${it.imagen?'none':'block'}"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+      </div>
       <div class="info">
         <div class="n">${it.nombre}${badge}${abcBadge}</div>
         <div class="s">${it.prov} · Stock: <b>${stockTxt}</b> · ${fmtPeso(it.precio)}${costoTxt}${margenTxt}${empaque}</div>
