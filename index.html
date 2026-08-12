@@ -275,15 +275,26 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .ap-row .n:active{text-decoration-color:var(--line)}
 .ap-row .s,.ap-row .prov{font-size:11px;color:var(--muted);margin-top:2px}
 .ap-row .s b{color:var(--ink)}
-.ap-row .precio-line{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:4px}
-.ap-row .precio-line .precio{font-weight:800;font-size:14px;color:var(--ink);font-family:'JetBrains Mono',monospace}
-.ap-row .precio-line .costo,.ap-row .precio-line .margen{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+.ap-row .precio-line{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;margin-top:5px}
+.ap-row .precio-line .precio{font-weight:800;font-size:15px;color:var(--ink);font-family:'JetBrains Mono',monospace}
+.ap-row .precio-line .costo{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+.ap-row .margen-line{display:flex;align-items:center;gap:6px;margin-top:3px}
+.ap-row .margen-line .margen{font-size:11px;font-weight:700;color:var(--verde);font-family:'JetBrains Mono',monospace}
 .ap-row .abc-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:5px;background:var(--card2);color:var(--ink);font-weight:800;font-size:9.5px}
-.ap-row .datos{display:flex;gap:10px;margin-top:5px;font-size:10.5px;color:var(--muted)}
+.ap-row .datos{display:flex;align-items:center;gap:10px;margin-top:6px;font-size:10.5px;color:var(--muted)}
 .ap-row .datos b{color:var(--ink);font-family:'JetBrains Mono',monospace}
-.ap-right{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-.ap-right .sug-lbl{font-size:10.5px;color:var(--muted);text-align:right;white-space:nowrap}
-.ap-right .sugerido{cursor:pointer;font-weight:800;color:var(--cielo-d);border-bottom:1px dashed var(--cielo)}
+/* Badge de cobertura (COB): mismos 3 estados que ya usa la app (urgente/pedir/
+   sobrestock lo del borde de la fila), pero acá coloreado solo por umbral de
+   días — pedido explícito: 🔴<3d 🟡3-7d 🟢>7d, independiente del estado general. */
+.cob-badge{display:inline-flex;align-items:center;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px;white-space:nowrap;font-family:'JetBrains Mono',monospace}
+.cob-badge.urgente{background:var(--rojo-bg);color:var(--rojo)}
+.cob-badge.pedir{background:var(--ambar-bg);color:var(--ambar)}
+.cob-badge.suficiente{background:var(--verde-bg);color:var(--verde)}
+.ap-right{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:7px}
+.ap-right .sug-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.ap-right .sug-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:700}
+.ap-right .sugerido{cursor:pointer;font-weight:800;color:var(--verde);background:var(--verde-bg);border:1.5px solid var(--verde);border-radius:9px;padding:4px 10px;font-size:13px;font-family:'JetBrains Mono',monospace;white-space:nowrap}
+.ap-right .sugerido:active{opacity:.75}
 .ap-right .empaque-note{font-size:9.5px;color:var(--muted);text-align:right;max-width:110px}
 
 .ap-legend{display:flex;gap:14px;padding:8px 16px 0;font-size:11px;color:var(--muted)}
@@ -365,19 +376,24 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .venc-progress-bar div{height:100%;background:var(--verde);border-radius:5px;transition:width .3s ease;width:0%}
 #venc-progress-lbl{flex:none;font-size:11px;color:var(--muted);font-weight:700;white-space:nowrap}
 
-/* Botón flotante del carrito */
-.cart-fab{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));z-index:270;height:52px;padding:0 18px;border-radius:26px;background:var(--brand-grad);color:#fff;border:none;font-size:14px;font-weight:800;box-shadow:var(--sh-float);cursor:pointer;display:flex;align-items:center;gap:8px}
-.cart-fab:active{transform:scale(.96)}
+/* Botón flotante del carrito — barra fija inferior con cantidad de
+   productos + total de unidades + flecha que invita a expandir. */
+.cart-fab{position:fixed;left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right));bottom:calc(14px + env(safe-area-inset-bottom));z-index:270;height:54px;padding:0 18px;border-radius:16px;background:var(--brand-grad);color:#fff;border:none;font-size:14px;font-weight:800;box-shadow:var(--sh-float);cursor:pointer;display:flex;align-items:center;gap:8px;justify-content:center}
+.cart-fab:active{transform:scale(.98)}
 .cart-fab .badge{background:#fff;color:var(--cielo-d);border-radius:10px;padding:1px 7px;font-size:12px;font-family:'JetBrains Mono'}
+.cart-fab .fab-up{margin-left:auto;opacity:.85;font-size:12px}
 
 /* Panel del carrito */
 .cart-body{padding:0}
-.cart-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.cart-row{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
 .cart-row .info{flex:1;min-width:0}
 .cart-row .n{font-weight:700;font-size:12.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cart-row .s{font-size:11px;color:var(--muted)}
+.cart-row .s{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cart-row .ap-qty{flex:none}
+.cart-row .ap-qty-btn{width:30px;height:30px;font-size:15px}
+.cart-row .ap-qty input{width:38px;height:30px;font-size:13px}
 .cart-row .del{width:30px;height:30px;flex:none;border-radius:8px;background:var(--rojo-bg);color:var(--rojo);border:none;font-size:15px;cursor:pointer}
-.cart-summary{background:var(--card2);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;display:flex;justify-content:space-between;font-weight:700;color:var(--ink)}
+.cart-summary{background:var(--card2);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:space-between;font-weight:700;color:var(--ink)}
 .btn-wa{width:100%;height:50px;border-radius:14px;background:#25D366;border:none;color:#fff;font-weight:800;font-size:15px;cursor:pointer;box-shadow:var(--sh-card);display:flex;align-items:center;justify-content:center;gap:8px}
 .btn-wa:active{transform:scale(.98)}
 .btn-wa.copied{background:var(--verde)}
@@ -1209,13 +1225,13 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
     <span class="th th-nombre" data-sort="nombre">Producto</span>
     <span class="th th-col" data-sort="cob">Cob ▾</span>
     <span class="th th-col" data-sort="stock">Stk ▾</span>
-    <span class="th th-col" data-sort="venta" id="ap-th-venta">Vta7d ▾</span>
+    <span class="th th-col" data-sort="venta" id="ap-th-venta">VTA 7D ▾</span>
     <span class="th th-pedir" data-sort="sugerido">Pedir ▾</span>
   </div>
   <div class="ov-body" style="padding-top:0" id="ap-body">
     <div class="ap-list" id="ap-list"></div>
   </div>
-  <button class="cart-fab hidden" id="ap-cart-fab">🛒 <span id="ap-cart-count">0</span> productos</button>
+  <button class="cart-fab hidden" id="ap-cart-fab">🛒 <span id="ap-cart-count" class="badge">0</span> productos<span id="ap-cart-units" class="badge">0 u</span><span class="fab-up">▲</span></button>
 </div>
 
 <!-- ===== PANEL: CARRITO DEL PEDIDO ===== -->
@@ -1226,6 +1242,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   </div>
   <div class="ov-body">
     <div class="cart-summary"><span id="cart-prov-txt">Proveedor: —</span><span id="cart-total-txt">0 productos</span></div>
+    <button type="button" class="btn-secondary" id="btn-ingresar-sugeridos" style="color:var(--verde);border-color:var(--verde);margin-top:0;margin-bottom:10px">✓ Ingresar sugeridos (de lo filtrado)</button>
     <div class="cart-body" id="cart-body"></div>
     <div class="field hidden" id="cart-scale-card" style="background:var(--cielo-tint);border:1.5px solid var(--cielo);border-radius:12px;padding:12px;margin-top:10px">
       <label style="color:var(--cielo-d)">⚡ Escala de volumen</label>
@@ -3913,6 +3930,9 @@ function apRenderLista(){
     const margen=(it.precio>0&&it.coste>0)?Math.round((1-it.coste/it.precio)*100)+'%':null;
     const abcBadge=it.abc?`<span class="abc-badge">${it.abc.clase}</span>`:'';
     const cobTxt=it._cob===Infinity?'∞':(Math.round(it._cob*10)/10)+'d';
+    // Badge de cobertura por umbral de días (independiente del estado general de
+    // la fila): <3d urgente, 3-7d pedir, >7d suficiente.
+    const cobClase=it._cob===Infinity?'suficiente':it._cob<3?'urgente':it._cob<=7?'pedir':'suficiente';
     return `<div class="ap-row ${it._estado}" data-ref="${it.ref}">
       <div class="ap-thumb">
         ${it.imagen?`<img src="${it.imagen}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">`:''}
@@ -3924,17 +3944,19 @@ function apRenderLista(){
         <div class="precio-line">
           <span class="precio">${fmtPeso(it.precio)}</span>
           ${it.coste>0?`<span class="costo">C ${fmtPeso(it.coste)}</span>`:''}
-          ${margen?`<span class="margen">${margen}</span>`:''}
-          ${abcBadge}
         </div>
+        ${(margen||abcBadge)?`<div class="margen-line">${margen?`<span class="margen">${margen} margen</span>`:''}${abcBadge}</div>`:''}
         <div class="datos">
           <span>STK <b>${stockTxt}</b></span>
           <span>VTA <b>${it._venta}</b> <span class="trend-${it._trend.k}">${it._trend.t}</span></span>
-          <span>COB <b>${cobTxt}</b></span>
+          <span class="cob-badge ${cobClase}">${cobTxt}</span>
         </div>
       </div>
       <div class="ap-right">
-        <div class="sug-lbl">Sugerido <b class="sugerido" data-act="sugerido">${sugTxt}</b></div>
+        <div class="sug-wrap">
+          <span class="sug-lbl">Sugerido</span>
+          <b class="sugerido" data-act="sugerido">${sugTxt}</b>
+        </div>
         <div class="ap-qty">
           <button class="ap-qty-btn" data-act="menos">−</button>
           <input type="text" inputmode="decimal" value="${qty||''}" placeholder="0" data-act="input">
@@ -3992,8 +4014,11 @@ function apSetCantidad(ref,cantidad){
 
 function apUpdateFab(){
   const n=Object.keys(CART).length;
+  const totalU=Object.values(CART).reduce((s,c)=>s+(Number(c)||0),0);
   const fab=document.getElementById('ap-cart-fab');
   document.getElementById('ap-cart-count').textContent=n;
+  const unidadesEl=document.getElementById('ap-cart-units');
+  if(unidadesEl) unidadesEl.textContent=(Math.round(totalU*10)/10)+' u';
   fab.classList.toggle('hidden',n===0);
   // Si el panel del carrito ya está visible (overlay en celular, panel fijo en
   // tablet/POS), lo mantenemos sincronizado en vivo sin que el usuario lo reabra.
@@ -4035,7 +4060,7 @@ document.querySelectorAll('#ap-basis-seg [data-basis]').forEach(btn=>{
     apState.basis=Number(btn.dataset.basis);
     localStorage.setItem('cumpas_basis', apState.basis);
     document.querySelectorAll('#ap-basis-seg [data-basis]').forEach(b=>b.classList.toggle('active',b===btn));
-    document.getElementById('ap-th-venta').innerHTML='Vta'+apState.basis+'d ▾';
+    document.getElementById('ap-th-venta').innerHTML='VTA '+apState.basis+'D ▾';
     apRenderLista();
   };
 });
@@ -4067,7 +4092,7 @@ function openArmarPedido(){
   apSyncProvChip();
   document.getElementById('ap-cobertura').value=apState.cobertura;
   document.querySelectorAll('#ap-basis-seg [data-basis]').forEach(b=>b.classList.toggle('active', Number(b.dataset.basis)===apState.basis));
-  document.getElementById('ap-th-venta').innerHTML='Vta'+apState.basis+'d ▾';
+  document.getElementById('ap-th-venta').innerHTML='VTA '+apState.basis+'D ▾';
   apRenderLista();
   abrirModal('ap-ov');
   if(esPantallaAncha()){ renderCarrito(); abrirModal('cart-ov'); } // panel fijo estilo tablet/POS
@@ -4093,11 +4118,19 @@ function openCarrito(){
 document.getElementById('cart-close').onclick=()=>cerrarModal('cart-ov');
 
 function renderCarrito(){
+  // No interrumpir mientras el usuario está escribiendo a mano la cantidad de
+  // una fila del carrito — repintar acá lo sacaría del campo a mitad de camino
+  // (mismo criterio ya usado en Proveedores → Mínimos de pedido).
+  const activo=document.activeElement;
+  const cartBody=document.getElementById('cart-body');
+  if(activo && activo.dataset && activo.dataset.cartInput && cartBody && cartBody.contains(activo)) return;
+
   const lineas=cartLineas();
-  const box=document.getElementById('cart-body');
+  const box=cartBody;
   const provs=new Set(lineas.map(l=>l.it.prov||'SIN PROVEEDOR'));
+  const totalUnidades=lineas.reduce((s,l)=>s+(Number(l.cantidad)||0),0);
   document.getElementById('cart-prov-txt').textContent='Proveedor: '+(provs.size===1?Array.from(provs)[0]:(provs.size>1?'(varios)':'—'));
-  document.getElementById('cart-total-txt').textContent=lineas.length+' producto'+(lineas.length===1?'':'s');
+  document.getElementById('cart-total-txt').textContent=lineas.length+' producto'+(lineas.length===1?'':'s')+' · '+(Math.round(totalUnidades*10)/10)+' u';
 
   if(!lineas.length){
     box.innerHTML='<div class="ap-empty">El carrito está vacío. Vuelve a "Armar pedido" y agrega productos.</div>';
@@ -4115,16 +4148,40 @@ function renderCarrito(){
     <div class="cart-row" data-ref="${l.it.ref}">
       <div class="info">
         <div class="n">${l.it.nombre}</div>
-        <div class="s">${l.it.prov} · Cantidad: <b>${l.cantidad}</b>${empaque}${dtoTxt}</div>
+        <div class="s">${l.it.prov}${empaque}${dtoTxt}</div>
+      </div>
+      <div class="ap-qty">
+        <button class="ap-qty-btn" data-cart-act="menos">−</button>
+        <input type="text" inputmode="decimal" value="${l.cantidad}" data-cart-input="${l.it.ref}">
+        <button class="ap-qty-btn" data-cart-act="mas">+</button>
       </div>
       <button class="del" data-del="${l.it.ref}">✕</button>
     </div>`;
   }).join('');
+
+  box.querySelectorAll('.cart-row').forEach(row=>{
+    const ref=row.dataset.ref;
+    const it=(DB.items||[]).find(i=>i.ref===ref);
+    const paso=(it&&it._fmt>1)?it._fmt:1;
+    const input=row.querySelector('[data-cart-input]');
+    row.querySelector('[data-cart-act="menos"]').onclick=()=>{
+      apSetCantidad(ref, Math.max(0,(CART[ref]||0)-paso));
+      apRenderLista();
+    };
+    row.querySelector('[data-cart-act="mas"]').onclick=()=>{
+      apSetCantidad(ref, (CART[ref]||0)+paso);
+      apRenderLista();
+    };
+    input.oninput=()=>{ apSetCantidad(ref, Number(input.value)||0); apRenderLista(); };
+    input.onblur=()=>renderCarrito();
+  });
+  // Eliminar con la X: cantidad a 0 al toque, lista principal y contadores se
+  // actualizan de inmediato — no toca el catálogo ni el stock real.
   box.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{
     delete CART[btn.dataset.del];
     persistCart();
-    renderCarrito();
     apUpdateFab();
+    apRenderLista();
   });
 
   const totEl=document.getElementById('cart-total-costo');
@@ -4186,8 +4243,23 @@ document.getElementById('btn-clear-cart').onclick=()=>{
   persistCart();
   renderCarrito();
   apUpdateFab();
+  apRenderLista(); // sincroniza los steppers de la lista principal a 0
   showToast('✕ Carrito vaciado');
 };
+
+// "Ingresar sugeridos": llena de una vez la cantidad sugerida de TODOS los
+// productos que se están viendo con el filtro actual (proveedor o búsqueda) —
+// reutiliza apSugerido()/apSetCantidad(), misma fórmula que ya usa cada fila.
+function apIngresarSugeridos(){
+  let n=0;
+  apItemsFiltrados().forEach(it=>{
+    const sug=apSugerido(it);
+    if(sug>0 && (CART[it.ref]||0)!==sug){ apSetCantidad(it.ref,sug); n++; }
+  });
+  apRenderLista();
+  showToast(n?('✓ '+n+' producto'+(n===1?'':'s')+' con cantidad sugerida'):'No hay sugerencias pendientes para lo filtrado');
+}
+document.getElementById('btn-ingresar-sugeridos').onclick=apIngresarSugeridos;
 
 // Copiar a WhatsApp cuenta como "confirmar" el pedido: al copiar con éxito se
 // vacía TODO el carrito (de todos los proveedores, no solo el que se está
