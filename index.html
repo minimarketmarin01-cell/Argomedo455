@@ -261,90 +261,105 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .scan-close{position:absolute;top:max(16px,env(safe-area-inset-top));right:16px;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;z-index:2}
 .scan-hint{position:absolute;bottom:calc(30px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.6)}
 
-/* ===== ARMAR PEDIDO: selector de proveedor + tabla + carrito ===== */
-.chip-removible{display:inline-flex;align-items:center;gap:6px;padding:6px 8px 6px 12px;border-radius:16px;background:var(--cielo-tint);border:1.5px solid var(--cielo);color:var(--cielo-d);font-weight:700;font-size:12px}
-.chip-removible button{width:18px;height:18px;flex:none;border-radius:50%;border:none;background:var(--cielo-d);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.ap-search{padding:0 0 10px}
-.ap-list{padding:0 0 96px}
-.ap-row{display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card)}
-.ap-fav-btn{flex:none;width:22px;height:22px;border:none;background:none;color:var(--line);font-size:17px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;vertical-align:-4px;padding:0}
-.ap-fav-btn.active{color:var(--cielo)}
-.ap-fav-btn:active{transform:scale(.9)}
-.ap-thumb{width:44px;height:44px;flex:none;border-radius:10px;background:var(--card2);overflow:hidden;display:flex;align-items:center;justify-content:center}
-.ap-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-.ap-thumb svg{width:20px;height:20px;color:var(--muted)}
-.ap-row .info{flex:1;min-width:0}
-.ap-row .n{font-weight:700;font-size:13px;color:var(--ink);line-height:1.35;cursor:pointer;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:2px}
-.ap-row .n:active{text-decoration-color:var(--line)}
-.ap-row .s,.ap-row .prov{font-size:11px;color:var(--muted);margin-top:2px}
-.ap-row .s b{color:var(--ink)}
-/* Chip "Ya pedido a X" — pedido confirmado (copiado a WhatsApp) para este
-   producto que todavía no llegó por Recepción. */
-.pend-badge{display:inline-flex;align-items:center;gap:5px;margin-top:4px;padding:3px 9px;border-radius:20px;background:var(--cielo-tint);border:1px dashed var(--cielo);color:var(--cielo-d);font-size:10.5px;font-weight:700}
-.ap-row .precio-line{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;margin-top:5px}
-.ap-row .precio-line .precio{font-weight:800;font-size:15px;color:var(--ink);font-family:'JetBrains Mono',monospace}
-.ap-row .precio-line .costo,.ap-row .precio-line .margen{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
-.ap-row .precio-line .margen{color:var(--verde);font-weight:700}
-.ap-row .abc-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:5px;background:var(--card2);color:var(--ink);font-weight:800;font-size:9.5px;margin-top:5px}
-/* Badge de cobertura (COB): mismos 3 estados que ya usa la app (urgente/pedir/
-   sobrestock lo del borde de la fila), pero acá coloreado solo por umbral de
-   días — pedido explícito: 🔴<3d 🟡3-7d 🟢>7d, independiente del estado general. */
-.cob-badge{display:inline-flex;align-items:center;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px;white-space:nowrap;font-family:'JetBrains Mono',monospace}
-.cob-badge.urgente{background:var(--rojo-bg);color:var(--rojo)}
-.cob-badge.pedir{background:var(--ambar-bg);color:var(--ambar)}
-.cob-badge.suficiente{background:var(--verde-bg);color:var(--verde)}
-/* Fila de métricas STK · VTA · COB — ancho completo, mismo orden que el
-   encabezado (Producto · STK · VTA · COB · Pedir), como en Marín. */
-.ap-row .datos{display:flex;align-items:center;gap:10px;margin-top:7px;font-size:10.5px;color:var(--muted);flex-wrap:wrap}
-.ap-row .datos b{color:var(--ink);font-family:'JetBrains Mono',monospace}
-.ap-right{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:7px}
-.ap-right .sug-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
-.ap-right .sug-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:700}
-.ap-right .sugerido{cursor:pointer;font-weight:800;color:var(--cielo-d);background:var(--cielo-tint);border:1.5px solid var(--cielo);border-radius:9px;padding:4px 10px;font-size:13px;font-family:'JetBrains Mono',monospace;white-space:nowrap}
-.ap-right .sugerido:active{opacity:.75}
-.ap-right .empaque-note{font-size:9.5px;color:var(--muted);text-align:right;max-width:110px}
-
-/* ---- Rediseño visual de Armar pedido (tomando de referencia una paleta
-   verde oscuro para cabecera/barra inferior, igual estructura de columnas
-   COB · STK · VTA) — solo estética, ninguna función/cálculo cambia. ---- */
-#ap-ov .ov-head{background:var(--brand-grad);border-bottom:none}
-#ap-ov .ov-head h3{color:#fff}
-#ap-ov .ov-close{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.32);color:#fff}
-#ap-ov #ap-scan{background:#fff;border-color:var(--line);color:var(--ink)}
-#ap-basis-seg .toggle-btn.active{background:var(--cielo-d);border-color:var(--cielo-d);color:#fff}
-#ap-fav-filtro.active{background:var(--cielo-tint);border-color:var(--cielo);color:var(--cielo-d)}
-#ap-ov .chip-removible{background:var(--cielo-tint);border-color:var(--cielo);color:var(--cielo-d)}
-#ap-ov .chip-removible button{background:var(--cielo-d)}
+/* ===== ARMAR PEDIDO: rediseño ERP/B2B — sobrio, compacto, sin degradados
+   ni sombras fuertes. Paleta propia definida como variables dentro de
+   #ap-ov (NO se tocan --rojo/--verde/--violeta/--cielo globales: .ap-row,
+   .ap-qty/.ap-qty-btn y .chip-removible se reusan en Proveedores →
+   Configurar mínimos, así que todo lo nuevo va scopeado acá para no
+   re-tematizar esas otras pantallas). Solo presentación — ningún cálculo,
+   filtro, API ni comportamiento del carrito cambia. ===== */
+#ap-ov{
+  --erp-navy:#0B1F33; --erp-corp:#123B5D; --erp-accion:#1677B8;
+  --erp-bg:#F4F6F8; --erp-surf:#FFFFFF; --erp-txt:#17212B; --erp-txt2:#64748B;
+  --erp-line:#E2E8F0;
+  --erp-urg:#C0392B; --erp-urg-bg:#FBEAE8;
+  --erp-ped:#278A57; --erp-ped-bg:#E8F5EE;
+  --erp-sob:#6950A1; --erp-sob-bg:#EFEAF7;
+  background:var(--erp-bg);
+}
+#ap-ov .ov-head{background:var(--erp-navy);border-bottom:none;padding-top:max(10px,env(safe-area-inset-top));padding-bottom:10px}
+#ap-ov .ov-head h3{color:#fff;font-size:15px}
+#ap-ov .ov-close{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.24);color:#fff;border-radius:6px}
 /* #ap-body reusa la clase genérica .ov-body (padding:14px 16px, compartida
    por todos los modales) — se achica el padding lateral SOLO acá, sin tocar
    la clase genérica que usan Vencimientos/Mermas/Proveedores/etc. */
 #ap-body{padding-left:1px;padding-right:1px}
 
-.ap-legend{display:flex;gap:14px;padding:8px 0 0;font-size:11px;color:var(--muted)}
-.ap-legend span{display:inline-flex;align-items:center;gap:5px}
-.ap-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
-.ap-legend .d-urgente{background:var(--rojo)}
-.ap-legend .d-pedir{background:var(--verde)}
-.ap-legend .d-sobre{background:var(--violeta)}
+/* Buscador */
+.ap-search{padding:0 16px 8px}
+.ap-search-wrap{position:relative;flex:1;min-width:0}
+#ap-ov #ap-search{width:100%;box-sizing:border-box;height:40px;padding:0 30px 0 12px;border:1px solid var(--erp-line);border-radius:6px;background:var(--erp-surf);font-size:13.5px;color:var(--erp-txt)}
+#ap-ov #ap-search:focus{outline:none;border-color:var(--erp-accion)}
+.ap-search-clear{position:absolute;right:5px;top:50%;transform:translateY(-50%);width:22px;height:22px;border:none;background:none;color:var(--erp-txt2);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+#ap-ov #ap-scan{width:40px;height:40px;flex:none;border-radius:6px;background:var(--erp-surf);border:1px solid var(--erp-line);color:var(--erp-txt2);font-size:16px}
 
-.ap-thead{display:flex;align-items:center;gap:8px;padding:10px 0 6px;font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase}
+/* Chip de proveedor activo — recuerda el último elegido (ver apState.prov) */
+#ap-ov .chip-removible{background:var(--erp-surf);border:1px solid var(--erp-accion);color:var(--erp-corp);border-radius:6px;padding:5px 6px 5px 10px}
+#ap-ov .chip-removible button{background:var(--erp-corp);border-radius:4px}
+
+/* Toolbar: período / favoritos / cobertura / actualizar ventas */
+#ap-ov #ap-basis-seg .toggle-btn{border-radius:5px;color:var(--erp-txt2)}
+#ap-ov #ap-basis-seg .toggle-btn.active{background:var(--erp-corp);border-color:var(--erp-corp);color:#fff}
+#ap-fav-filtro{border-radius:5px;color:var(--erp-txt2)}
+#ap-fav-filtro.active{background:#fff;border-color:var(--erp-accion);color:var(--erp-accion)}
+#ap-cobertura{border-radius:5px;color:var(--erp-txt)}
+#ap-btn-ventas{border-radius:5px;color:var(--erp-accion)}
+
+.ap-legend{display:flex;gap:14px;padding:8px 16px 0;font-size:10.5px;color:var(--erp-txt2)}
+.ap-legend span{display:inline-flex;align-items:center;gap:5px}
+.ap-legend i{width:7px;height:7px;border-radius:1px;display:inline-block}
+.ap-legend .d-urgente{background:var(--erp-urg)}
+.ap-legend .d-pedir{background:var(--erp-ped)}
+.ap-legend .d-sobre{background:var(--erp-sob)}
+
+.ap-thead{display:flex;align-items:center;gap:8px;padding:8px 16px 6px;font-size:10px;font-weight:700;color:var(--erp-txt2);text-transform:uppercase;letter-spacing:.02em;border-bottom:1px solid var(--erp-line)}
 .ap-thead .th{cursor:pointer;user-select:none;white-space:nowrap}
-.ap-thead .th.active{color:var(--cielo-d)}
+.ap-thead .th.active{color:var(--erp-accion)}
 .ap-thead .th-nombre{flex:1}
 .ap-thead .th-col{width:52px;text-align:center}
 .ap-thead .th-pedir{width:96px;text-align:center}
 
-.ap-row{border-left:4px solid var(--line)}
-.ap-row.urgente{border-left-color:var(--rojo);background:var(--rojo-bg)}
-.ap-row.pedir{border-left-color:var(--verde)}
-.ap-row.sobrestock{border-left-color:var(--violeta)}
-.ap-row .estado-badge{display:inline-block;flex:none;font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:20px;text-transform:uppercase;margin-bottom:5px;letter-spacing:.2px}
-.ap-row .estado-badge.urgente{background:var(--rojo);color:#fff}
-.ap-row .estado-badge.pedir{background:var(--verde);color:#fff}
-.ap-row .estado-badge.sobrestock{background:var(--violeta);color:#fff}
-.trend-up{color:var(--verde);font-weight:800}
-.trend-down{color:var(--rojo);font-weight:800}
-.trend-flat{color:var(--muted)}
+/* Tarjeta de producto: plana, borde sutil, línea lateral de color como
+   único indicador de estado (sin badge grande redondeado). */
+.ap-list{padding:0 16px 96px}
+#ap-ov .ap-row{border-radius:4px;box-shadow:none;padding:10px 12px;margin-bottom:6px;border:1px solid var(--erp-line);border-left:3px solid var(--erp-line);background:var(--erp-surf)}
+#ap-ov .ap-row.urgente{border-left-color:var(--erp-urg);background:var(--erp-urg-bg)}
+#ap-ov .ap-row.pedir{border-left-color:var(--erp-ped)}
+#ap-ov .ap-row.sobrestock{border-left-color:var(--erp-sob)}
+.ap-thumb{width:38px;height:38px;border-radius:4px}
+.ap-fav-btn{color:var(--erp-line)}
+.ap-fav-btn.active{color:var(--erp-accion)}
+.ap-row .n{color:var(--erp-txt);font-size:13px}
+.ap-row .s,.ap-row .prov{color:var(--erp-txt2)}
+.ap-row .precio-line .precio{color:var(--erp-txt)}
+.ap-row .precio-line .costo,.ap-row .precio-line .margen{color:var(--erp-txt2)}
+.ap-row .precio-line .margen{color:var(--erp-ped)}
+/* Chip "Ya pedido a X" — pedido confirmado (copiado a WhatsApp) para este
+   producto que todavía no llegó por Recepción. */
+.pend-badge{display:inline-flex;align-items:center;gap:5px;margin-top:4px;padding:3px 8px;border-radius:4px;background:#fff;border:1px dashed var(--erp-accion);color:var(--erp-corp);font-size:10.5px;font-weight:700}
+.ap-row .abc-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:3px;background:var(--erp-bg);color:var(--erp-txt);font-weight:800;font-size:9.5px;margin-top:5px}
+/* Badge de cobertura (COB): 🔴<3d urgente, 🟡3-7d pedir, 🟢>7d suficiente —
+   independiente del estado general de la fila (borde lateral). */
+.cob-badge{display:inline-flex;align-items:center;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:4px;white-space:nowrap;font-family:'JetBrains Mono',monospace}
+.cob-badge.urgente{background:var(--erp-urg-bg);color:var(--erp-urg)}
+.cob-badge.pedir{background:#FBF3E1;color:#9C6B18}
+.cob-badge.suficiente{background:var(--erp-ped-bg);color:var(--erp-ped)}
+/* Fila de métricas STK · VTA · COB — ancho completo, mismo orden que el
+   encabezado (Producto · STK · VTA · COB · Pedir). */
+.ap-row .datos{display:flex;align-items:center;gap:10px;margin-top:7px;font-size:10.5px;color:var(--erp-txt2);flex-wrap:wrap}
+.ap-row .datos b{color:var(--erp-txt);font-family:'JetBrains Mono',monospace}
+.trend-up{color:var(--erp-ped);font-weight:800}
+.trend-down{color:var(--erp-urg);font-weight:800}
+.trend-flat{color:var(--erp-txt2)}
+.ap-right{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:7px}
+.ap-right .sug-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.ap-right .sug-lbl{font-size:9px;color:var(--erp-txt2);text-transform:uppercase;letter-spacing:.03em;font-weight:700}
+.ap-right .sugerido{cursor:pointer;font-weight:800;color:var(--erp-accion);background:#fff;border:1px solid var(--erp-accion);border-radius:4px;padding:4px 10px;font-size:13px;font-family:'JetBrains Mono',monospace;white-space:nowrap}
+.ap-right .sugerido:active{opacity:.75}
+.ap-right .empaque-note{font-size:9.5px;color:var(--erp-txt2);text-align:right;max-width:110px}
+#ap-ov .ap-qty-btn{border-radius:4px;background:var(--erp-bg);border-color:var(--erp-line);color:var(--erp-txt)}
+#ap-ov .ap-qty-btn:active{background:#fff;border-color:var(--erp-accion)}
+#ap-ov .ap-qty input{border-radius:4px;border-color:var(--erp-line);color:var(--erp-txt)}
 
 /* ---- Layout ancho (tablet / POS), estilo referencia con carrito fijo lateral ---- */
 @media (min-width:900px){
@@ -354,7 +369,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   #cart-ov .ov-body, #cart-ov .ov-foot{ max-width:none }
   #ap-bottombar{ display:none !important } /* el panel fijo reemplaza a la barra inferior */
   .ap-thead{ padding-left:16px; padding-right:16px }
-  .ap-row{ padding:10px 14px }
+  #ap-ov .ap-row{ padding:9px 14px }
 }
 .ap-qty{display:flex;align-items:center;gap:6px;flex:none}
 .ap-qty-btn{width:34px;height:34px;border-radius:9px;background:var(--card2);border:1.5px solid var(--line);font-size:17px;font-weight:700;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer}
@@ -402,15 +417,15 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 /* Barra inferior fija del pedido — reemplaza el botón flotante: siempre
    visible mientras haya productos elegidos, con el resumen (tocar = abre el
    carrito con el detalle editable) y el botón de confirmar a mano. */
-.ap-bottombar{position:fixed;left:0;right:0;bottom:0;z-index:270;background:var(--brand-grad);padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:flex;align-items:center;gap:10px;box-shadow:var(--sh-float)}
+.ap-bottombar{position:fixed;left:0;right:0;bottom:0;z-index:270;background:var(--erp-navy,var(--brand-grad));padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:flex;align-items:center;gap:10px;box-shadow:0 -1px 0 rgba(0,0,0,.08)}
 .ap-bb-info{flex:1;min-width:0;background:none;border:none;color:#fff;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:2px;padding:4px 2px}
 .ap-bb-info:active{opacity:.85}
-.ap-bb-lbl{font-size:10px;color:rgba(255,255,255,.78);font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.ap-bb-lbl{font-size:10px;color:rgba(255,255,255,.72);font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .ap-bb-count{font-size:14.5px;font-weight:800;display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ap-bb-units{font-size:11px;font-weight:700;background:rgba(255,255,255,.2);padding:2px 8px;border-radius:10px;font-family:'JetBrains Mono',monospace;flex:none}
-.ap-bb-confirm{flex:none;height:48px;padding:0 16px;border-radius:12px;background:#fff;color:var(--cielo-d);border:none;font-weight:800;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap}
-.ap-bb-confirm:active{transform:scale(.97)}
-.ap-bb-confirm.copied{background:var(--verde);color:#fff}
+.ap-bb-units{font-size:11px;font-weight:700;background:rgba(255,255,255,.16);padding:2px 8px;border-radius:4px;font-family:'JetBrains Mono',monospace;flex:none}
+.ap-bb-confirm{flex:none;height:44px;padding:0 16px;border-radius:6px;background:var(--erp-accion,var(--cielo-d));color:#fff;border:none;font-weight:800;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.ap-bb-confirm:active{opacity:.85}
+.ap-bb-confirm.copied{background:var(--erp-ped,var(--verde));color:#fff}
 
 /* Panel del carrito */
 .cart-body{padding:0}
@@ -1227,7 +1242,10 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   <div style="padding:12px 0 0">
     <div class="ap-search" style="padding:0 16px 10px">
       <div class="search-row">
-        <input id="ap-search" placeholder="Proveedor o producto…" autocomplete="off" style="height:46px;padding:0 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-size:14px">
+        <div class="ap-search-wrap">
+          <input id="ap-search" placeholder="Proveedor o producto…" autocomplete="off">
+          <button type="button" id="ap-search-clear" class="ap-search-clear hidden" aria-label="Borrar búsqueda">✕</button>
+        </div>
         <button class="scan-btn" id="ap-scan" type="button" aria-label="Escanear código">📷</button>
       </div>
       <div class="results" id="ap-search-menu"></div>
@@ -2353,12 +2371,15 @@ function cerrarSeccionActual(){
   if(id) cerrarModal(id);
   if(seccionActual==='pedidos' && typeof esPantallaAncha==='function' && esPantallaAncha()) cerrarModal('cart-ov');
   // Por si quedó algo abierto dentro del módulo (detalle, carrito en celular,
-  // escáner, crear producto, productos de un proveedor) — se cierra todo junto
-  // al salir del módulo, para que Atrás nunca deje un sub-panel huérfano abierto.
-  ['venc-detalle-ov','cart-ov','scanner-ov','cp-ov','pvp-ov','abc-ov'].forEach(childId=>{
+  // escáner, crear producto, productos de un proveedor, ficha de producto en
+  // modo overlay desde Armar pedido) — se cierra todo junto al salir del
+  // módulo, para que Atrás nunca deje un sub-panel huérfano abierto.
+  ['venc-detalle-ov','cart-ov','scanner-ov','cp-ov','pvp-ov','abc-ov','fp-ov'].forEach(childId=>{
     const el=document.getElementById(childId);
     if(el && !el.classList.contains('hidden')){
-      if(childId==='scanner-ov') closeScanner(); else cerrarModal(childId);
+      if(childId==='scanner-ov') closeScanner();
+      else if(childId==='fp-ov'){ cerrarModal('fp-ov'); if(typeof fpState!=='undefined') fpState.overlay=false; }
+      else cerrarModal(childId);
     }
   });
 }
@@ -3825,7 +3846,10 @@ async function cargarFavoritos(){
   }catch(e){ /* silencioso: el marcado simplemente no se ve hasta la próxima carga */ }
 }
 
-const apState={ prov:'TODOS', search:'', cobertura: Number(localStorage.getItem('cumpas_cobertura'))||10, basis: Number(localStorage.getItem('cumpas_basis'))||7, sortBy:null, sortDir:'desc', soloFavoritos:false };
+// El proveedor elegido se recuerda entre visitas (mismo mecanismo ya usado para
+// cobertura/basis: localStorage) — así no hay que volver a elegirlo cada vez
+// que se entra a Armar pedido.
+const apState={ prov: localStorage.getItem('cumpas_ap_prov')||'TODOS', search:'', cobertura: Number(localStorage.getItem('cumpas_cobertura'))||10, basis: Number(localStorage.getItem('cumpas_basis'))||7, sortBy:null, sortDir:'desc', soloFavoritos:false };
 
 function apProveedores(){
   const set=new Set((DB.items||[]).map(it=>it.prov||'SIN PROVEEDOR'));
@@ -3904,9 +3928,12 @@ function apRenderSearchMenu(filterText){
 function apPickProv(prov){
   const carritoVacioAntes=Object.keys(CART).length===0;
   apState.prov=prov;
+  localStorage.setItem('cumpas_ap_prov', prov);
   apState.search='';
   const inp=document.getElementById('ap-search');
   if(inp) inp.value='';
+  const clearBtn=document.getElementById('ap-search-clear');
+  if(clearBtn) clearBtn.classList.add('hidden');
   apCloseSearchMenu();
   if(inp) inp.blur();
   apSyncProvChip();
@@ -3980,8 +4007,6 @@ function apRenderLista(){
   box.innerHTML=items.map(it=>{
     const qty=CART[it.ref]||0;
     const stockTxt=it.stock==null?'—':(it.stock+(it.peso?' kg':' u'));
-    const estadoTxt=it._estado==='pedir'?'a pedir':it._estado;
-    const badge=it._estado?`<span class="estado-badge ${it._estado}">${estadoTxt}</span>`:'';
     const empaque=it._fmt>1?(it._fmt+' u/'+(it._word||'pack')):'';
     const sugTxt=it._fmt>1?(it._sugerido+' u ('+Math.ceil(it._sugerido/it._fmt)+' '+(it._word||'pack')+(Math.ceil(it._sugerido/it._fmt)===1?'':'s')+')'):it._sugerido;
     const margen=(it.precio>0&&it.coste>0)?Math.round((1-it.coste/it.precio)*100)+'%':null;
@@ -4001,7 +4026,6 @@ function apRenderLista(){
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:${it.imagen?'none':'block'}"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
       </div>
       <div class="info">
-        ${badge}
         <div class="n">${favIco}${it.nombre}</div>
         <div class="prov">${it.prov}</div>
         ${pendBadge}
@@ -4120,11 +4144,22 @@ function apUpdateFab(){
 
 document.getElementById('ap-search').oninput=e=>{
   apState.search=e.target.value;
+  document.getElementById('ap-search-clear').classList.toggle('hidden', !apState.search);
   apRenderSearchMenu(apState.search);
   apSyncProvChip();
   apRenderLista();
 };
 document.getElementById('ap-search').onfocus=()=>apRenderSearchMenu(apState.search);
+document.getElementById('ap-search-clear').onclick=()=>{
+  apState.search='';
+  const inp=document.getElementById('ap-search');
+  inp.value='';
+  document.getElementById('ap-search-clear').classList.add('hidden');
+  apCloseSearchMenu();
+  apSyncProvChip();
+  apRenderLista();
+  inp.focus();
+};
 document.addEventListener('click', e=>{
   const searchBox=document.getElementById('ap-search');
   const menu=document.getElementById('ap-search-menu');
@@ -4136,6 +4171,7 @@ document.getElementById('ap-scan').onclick=()=>{
     apState.search=code;
     const inp=document.getElementById('ap-search');
     if(inp) inp.value=code;
+    document.getElementById('ap-search-clear').classList.toggle('hidden', !apState.search);
     apCloseSearchMenu();
     apSyncProvChip();
     apRenderLista();
@@ -4187,8 +4223,12 @@ document.getElementById('ap-btn-ventas').onclick=async()=>{
 const esPantallaAncha=()=>window.matchMedia('(min-width:900px)').matches;
 
 function openArmarPedido(){
-  apState.prov='TODOS'; apState.search=''; apState.soloFavoritos=false;
+  // El proveedor NO se reinicia acá — se recuerda el último usado (apState.prov
+  // ya viene restaurado de localStorage). Solo se limpian el texto de búsqueda
+  // y el filtro de favoritos, que son transitorios entre visitas.
+  apState.search=''; apState.soloFavoritos=false;
   document.getElementById('ap-search').value='';
+  document.getElementById('ap-search-clear').classList.add('hidden');
   apCloseSearchMenu();
   apSyncProvChip();
   document.getElementById('ap-cobertura').value=apState.cobertura;
