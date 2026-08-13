@@ -264,7 +264,7 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 /* ===== ARMAR PEDIDO: selector de proveedor + tabla + carrito ===== */
 .chip-removible{display:inline-flex;align-items:center;gap:6px;padding:6px 8px 6px 12px;border-radius:16px;background:var(--cielo-tint);border:1.5px solid var(--cielo);color:var(--cielo-d);font-weight:700;font-size:12px}
 .chip-removible button{width:18px;height:18px;flex:none;border-radius:50%;border:none;background:var(--cielo-d);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.ap-search{padding:0 0 10px}
+.ap-search{padding:0 0 6px}
 .ap-list{padding:0 0 96px}
 .ap-row{display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;box-shadow:var(--sh-card)}
 .ap-fav-btn{flex:none;width:22px;height:22px;border:none;background:none;color:var(--line);font-size:17px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;vertical-align:-4px;padding:0}
@@ -311,6 +311,12 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 #ap-ov .ov-head h3{color:#fff}
 #ap-ov .ov-close{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.32);color:#fff}
 #ap-ov #ap-scan{background:#fff;border-color:var(--line);color:var(--ink)}
+/* Encabezados lo más bajos posible — en Armar pedido cada pixel de "chrome"
+   fijo le quita una fila de producto visible a la lista, que es lo que
+   importa mostrar. Se achica solo acá (ap-ov/cart-ov), sin tocar el resto
+   de los módulos que reusan .ov-head. */
+#ap-ov .ov-head,#cart-ov .ov-head{padding:8px 16px;padding-top:max(8px,env(safe-area-inset-top))}
+#ap-ov .ov-head h3,#cart-ov .ov-head h3{font-size:15px}
 #ap-basis-seg .toggle-btn.active{background:var(--cielo-d);border-color:var(--cielo-d);color:#fff}
 #ap-fav-filtro.active{background:var(--cielo-tint);border-color:var(--cielo);color:var(--cielo-d)}
 #ap-ov .chip-removible{background:var(--cielo-tint);border-color:var(--cielo);color:var(--cielo-d)}
@@ -320,14 +326,14 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
    la clase genérica que usan Vencimientos/Mermas/Proveedores/etc. */
 #ap-body{padding-left:1px;padding-right:1px}
 
-.ap-legend{display:flex;gap:14px;padding:8px 0 0;font-size:11px;color:var(--muted)}
+.ap-legend{display:flex;gap:14px;padding:4px 0 0;font-size:11px;color:var(--muted)}
 .ap-legend span{display:inline-flex;align-items:center;gap:5px}
 .ap-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
 .ap-legend .d-urgente{background:var(--rojo)}
 .ap-legend .d-pedir{background:var(--verde)}
 .ap-legend .d-sobre{background:var(--violeta)}
 
-.ap-thead{display:flex;align-items:center;gap:8px;padding:10px 0 6px;font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase}
+.ap-thead{display:flex;align-items:center;gap:8px;padding:6px 0 4px;font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase}
 .ap-thead .th{cursor:pointer;user-select:none;white-space:nowrap}
 .ap-thead .th.active{color:var(--cielo-d)}
 .ap-thead .th-nombre{flex:1}
@@ -1303,33 +1309,31 @@ html.ap-carrito-fijo #cart-ov .cart-foot-compacto{display:flex;align-items:cente
 <div class="ov hidden" id="ap-ov">
   <div class="ov-head">
     <h3>📝 Armar pedido</h3>
-    <button class="ov-close" id="ap-close" aria-label="Cerrar">✕</button>
   </div>
-  <div style="padding:12px 0 0">
-    <div class="ap-search" style="padding:0 16px 10px">
+  <div style="padding:8px 0 0">
+    <div class="ap-search" style="padding:0 16px 6px">
       <div class="search-row">
-        <input id="ap-search" placeholder="Proveedor o producto…" autocomplete="off" style="height:46px;padding:0 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-size:14px">
+        <input id="ap-search" placeholder="Proveedor o producto…" autocomplete="off" style="height:40px;padding:0 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-size:14px">
         <button class="scan-btn" id="ap-scan" type="button" aria-label="Escanear código">📷</button>
       </div>
       <div class="results" id="ap-search-menu"></div>
     </div>
     <div id="ap-prov-chip" style="padding:0 0 4px"></div>
   </div>
-  <div class="ap-toolbar" style="display:flex;align-items:center;gap:8px;padding:10px 0 0;flex-wrap:wrap">
+  <div class="ap-toolbar" style="display:flex;align-items:center;gap:8px;padding:6px 0 0;flex-wrap:wrap">
     <div class="toggle-row" id="ap-basis-seg" style="margin:0;flex:none;width:auto">
-      <button type="button" class="toggle-btn active" data-basis="7" style="padding:7px 10px">7d</button>
-      <button type="button" class="toggle-btn" data-basis="14" style="padding:7px 10px">14d</button>
-      <button type="button" class="toggle-btn" data-basis="30" style="padding:7px 10px">30d</button>
-      <button type="button" class="toggle-btn" data-basis="90" style="padding:7px 10px">90d</button>
+      <button type="button" class="toggle-btn active" data-basis="7" style="padding:6px 9px">7d</button>
+      <button type="button" class="toggle-btn" data-basis="14" style="padding:6px 9px">14d</button>
+      <button type="button" class="toggle-btn" data-basis="30" style="padding:6px 9px">30d</button>
+      <button type="button" class="toggle-btn" data-basis="90" style="padding:6px 9px">90d</button>
     </div>
-    <button type="button" id="ap-fav-filtro" style="flex:none;height:34px;padding:0 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12px;white-space:nowrap">☆ Favoritos</button>
+    <button type="button" id="ap-fav-filtro" style="flex:none;height:30px;padding:0 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12px;white-space:nowrap">☆ Favoritos</button>
     <div class="toggle-row ap-modo-switch" id="ap-modo-switch" style="margin:0;flex:none;width:auto">
-      <button type="button" class="toggle-btn" data-modo="celular" onclick="setApModo('celular')" style="padding:7px 10px">Celular</button>
-      <button type="button" class="toggle-btn" data-modo="mostrador" onclick="setApModo('mostrador')" style="padding:7px 10px">Mostrador</button>
+      <button type="button" class="toggle-btn" data-modo="celular" onclick="setApModo('celular')" style="padding:6px 9px">Celular</button>
+      <button type="button" class="toggle-btn" data-modo="mostrador" onclick="setApModo('mostrador')" style="padding:6px 9px">Mostrador</button>
     </div>
     <label style="font-size:11.5px;font-weight:700;color:var(--muted);white-space:nowrap;margin-left:4px">Cob. (días)</label>
-    <input id="ap-cobertura" type="number" inputmode="numeric" value="10" style="width:56px;height:34px;text-align:center;border:1.5px solid var(--line);border-radius:8px;font-size:13px">
-    <button id="ap-btn-ventas" style="margin-left:auto;height:34px;padding:0 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--cielo-d);font-weight:700;font-size:12px;white-space:nowrap">🔄 Actualizar ventas</button>
+    <input id="ap-cobertura" type="number" inputmode="numeric" value="10" style="width:56px;height:30px;text-align:center;border:1.5px solid var(--line);border-radius:8px;font-size:13px">
   </div>
   <div class="ap-legend">
     <span><i class="d-urgente"></i>Urgente</span>
@@ -1359,7 +1363,6 @@ html.ap-carrito-fijo #cart-ov .cart-foot-compacto{display:flex;align-items:cente
 <div class="ov hidden" id="cart-ov">
   <div class="ov-head">
     <h3>🛒 Carrito del pedido</h3>
-    <button class="ov-close" id="cart-close" aria-label="Cerrar">✕</button>
   </div>
   <div class="ov-body">
     <div class="cart-summary"><span id="cart-prov-txt">Proveedor: —</span><span id="cart-total-txt">0 productos</span></div>
@@ -4290,24 +4293,6 @@ document.getElementById('ap-fav-filtro').onclick=()=>{
   apRenderLista();
 };
 
-document.getElementById('ap-btn-ventas').onclick=async()=>{
-  const btn=document.getElementById('ap-btn-ventas');
-  const txtOriginal=btn.textContent;
-  btn.disabled=true; btn.textContent='Actualizando…';
-  try{
-    const res=await fetch(SYNC_URL+'?action=sync_ventas&dias=14');
-    const j=await res.json();
-    if(!j.ok) throw new Error(j.error||'No se pudo actualizar');
-    showToast(`✓ ${j.recibos} recibos revisados`);
-    await cargarCatalogo(); // trae v7/v14 recalculados
-    apRenderLista();
-  }catch(e){
-    showToast('⚠️ '+e.message);
-  }finally{
-    btn.disabled=false; btn.textContent=txtOriginal;
-  }
-};
-
 // ============================================================
 //  VISTA ADAPTATIVA POS — "Armar pedido" pasa a formato de fila densa ("Mostrador") en
 //  pantalla ancha, y el carrito se acopla al costado (esto último ya existía como
@@ -4386,7 +4371,10 @@ window.addEventListener('orientationchange',()=>setTimeout(_aplicarLayoutArmarPe
 })();
 
 function openArmarPedido(){
-  apState.prov='TODOS'; apState.search=''; apState.soloFavoritos=false;
+  // El proveedor elegido NO se resetea acá a propósito: el buscador debe quedar
+  // siempre en el último proveedor usado, para no tener que volver a elegirlo
+  // cada vez que se reabre Armar pedido. Solo se limpia el texto libre escrito.
+  apState.search=''; apState.soloFavoritos=false;
   document.getElementById('ap-search').value='';
   apCloseSearchMenu();
   apSyncProvChip();
@@ -4400,7 +4388,6 @@ function openArmarPedido(){
   if(esPantallaAncha()){ renderCarrito(); abrirModal('cart-ov'); } // panel fijo estilo tablet/POS
   revisarActualizacionCatalogo();
 }
-document.getElementById('ap-close').onclick=()=>irASeccion('inicio');
 document.getElementById('ap-bb-info').onclick=openCarrito;
 
 // ============================================================
@@ -4417,7 +4404,6 @@ function openCarrito(){
   renderCarrito();
   abrirModal('cart-ov');
 }
-document.getElementById('cart-close').onclick=()=>cerrarModal('cart-ov');
 
 function renderCarrito(){
   // No interrumpir mientras el usuario está escribiendo a mano la cantidad de
