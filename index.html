@@ -409,10 +409,33 @@ html.ap-vista-tabla .ap-thead [data-sort="stock"]{grid-column:3}
 html.ap-vista-tabla .ap-thead [data-sort="venta"]{grid-column:4}
 html.ap-vista-tabla .ap-thead [data-sort="cob"]{grid-column:5}
 html.ap-vista-tabla .ap-thead [data-sort="sugerido"]{grid-column:6}
+/* Separador bajo el encabezado — mismo recurso que usa Pedidos-Marín (.ptable-head con
+   border-bottom) para despegar visualmente los títulos de columna de la primera fila. */
+html.ap-vista-tabla .ap-thead{border-bottom:1.5px solid var(--line);margin-bottom:2px}
 
 /* Selector manual Celular/Mostrador — reusa .toggle-row/.toggle-btn tal cual (mismo
    componente que ya usa el segmentado 7d/14d/30d/90d), sin inventar un botón nuevo. */
 .ap-modo-switch{margin-bottom:0}
+
+/* ---- Carrito del pedido en modo Mostrador (acoplado al costado): mismo formato que usa
+   Pedidos-Marín ahí — cabecera con degradé oscuro (en vez de blanca), y un pie compacto
+   con el total y 3 botones redondos de ícono en vez de los 2 botones grandes apilados
+   pensados para el modal a pantalla completa del celular. ---- */
+html.ap-carrito-fijo #cart-ov .ov-head{background:linear-gradient(135deg,var(--marino),var(--marino-hi));border-bottom:none}
+html.ap-carrito-fijo #cart-ov .ov-head h3{color:#fff}
+html.ap-carrito-fijo #cart-ov .ov-close{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.32);color:#fff}
+html.ap-carrito-fijo #cart-ov .cart-summary{background:var(--marino-tint);color:var(--marino);border-radius:0;margin:-1px 0 10px}
+html.ap-carrito-fijo #cart-ov #btn-ingresar-sugeridos{display:none} /* pasa a ser el ícono ↻ del pie compacto, ver abajo */
+html.ap-carrito-fijo #cart-ov .cart-foot-total,
+html.ap-carrito-fijo #cart-ov #btn-copy-wa,
+html.ap-carrito-fijo #cart-ov #btn-clear-cart{display:none!important}
+.cart-foot-compacto{display:none}
+html.ap-carrito-fijo #cart-ov .cart-foot-compacto{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 2px}
+.cart-foot-compacto .mono{font-size:15px;font-weight:800;color:var(--ink);font-family:'JetBrains Mono',monospace}
+.cart-foot-iconos{display:flex;gap:8px}
+.cart-icon-btn{width:42px;height:42px;border-radius:50%;border:1.5px solid var(--line);background:#fff;font-size:17px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink)}
+.cart-icon-btn.cart-icon-rojo{border-color:var(--rojo);color:var(--rojo)}
+.cart-icon-btn.cart-icon-verde{border:none;background:#25D366;color:#fff}
 
 .ap-qty{display:flex;align-items:center;gap:6px;flex:none}
 .ap-qty-btn{width:34px;height:34px;border-radius:9px;background:var(--card2);border:1.5px solid var(--line);font-size:17px;font-weight:700;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer}
@@ -1348,12 +1371,25 @@ html.ap-vista-tabla .ap-thead [data-sort="sugerido"]{grid-column:6}
     </div>
   </div>
   <div class="ov-foot">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 2px 10px;font-size:13px;font-weight:700;color:var(--ink)">
+    <div class="cart-foot-total" style="display:flex;justify-content:space-between;align-items:center;padding:4px 2px 10px;font-size:13px;font-weight:700;color:var(--ink)">
       <span>Costo total del pedido</span>
       <span id="cart-total-costo" class="mono">$0</span>
     </div>
-    <button class="btn-wa" id="btn-copy-wa">✅ Confirmar pedido (copia a WhatsApp)</button>
-    <button class="btn-secondary" id="btn-clear-cart" style="color:var(--rojo);border-color:var(--rojo)">🗑️ Vaciar carrito</button>
+    <button class="btn-wa" id="btn-copy-wa"><span class="ic">✅</span><span class="lbl"> Confirmar pedido (copia a WhatsApp)</span></button>
+    <button class="btn-secondary" id="btn-clear-cart" style="color:var(--rojo);border-color:var(--rojo)"><span class="ic">🗑️</span><span class="lbl"> Vaciar carrito</span></button>
+    <!-- Solo visible en modo Mostrador (carrito acoplado) — mismo formato compacto que usa
+         Pedidos-Marín ahí: TOTAL a la izquierda + 3 botones redondos de ícono a la derecha,
+         en vez de los 2 botones grandes de arriba (pensados para el modal a pantalla
+         completa del celular). Reenvían el click al botón real de siempre — no duplican
+         ninguna lógica, solo cambian cómo se ven. -->
+    <div class="cart-foot-compacto">
+      <span id="cart-total-costo-compacto" class="mono">$0</span>
+      <div class="cart-foot-iconos">
+        <button type="button" id="btn-ingresar-sugeridos-compacto" class="cart-icon-btn" title="Ingresar sugeridos">↻</button>
+        <button type="button" id="btn-clear-cart-compacto" class="cart-icon-btn cart-icon-rojo" title="Vaciar carrito">🗑️</button>
+        <button type="button" id="btn-copy-wa-compacto" class="cart-icon-btn cart-icon-verde" title="Confirmar pedido (copia a WhatsApp)">✅</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -4452,6 +4488,8 @@ function renderCarrito(){
 
   const totEl=document.getElementById('cart-total-costo');
   if(totEl) totEl.textContent=fmtPeso(totalCosto);
+  const totElCompacto=document.getElementById('cart-total-costo-compacto');
+  if(totElCompacto) totElCompacto.textContent=fmtPeso(totalCosto);
   renderEscalaVolumen();
 }
 
@@ -4590,6 +4628,11 @@ function apConfirmarPedido(btnQueDisparo){
 }
 document.getElementById('btn-copy-wa').onclick=()=>apConfirmarPedido(document.getElementById('btn-copy-wa'));
 document.getElementById('ap-bb-confirm').onclick=()=>apConfirmarPedido(document.getElementById('ap-bb-confirm'));
+// Botones redondos del pie compacto (modo Mostrador) — reenvían el click al botón real de
+// siempre, sin duplicar ninguna lógica de guardado/confirmación.
+document.getElementById('btn-ingresar-sugeridos-compacto').onclick=()=>document.getElementById('btn-ingresar-sugeridos').click();
+document.getElementById('btn-clear-cart-compacto').onclick=()=>document.getElementById('btn-clear-cart').click();
+document.getElementById('btn-copy-wa-compacto').onclick=()=>apConfirmarPedido(document.getElementById('btn-copy-wa'));
 
 // ============================================================
 //  NAVEGACIÓN
