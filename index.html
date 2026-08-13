@@ -346,16 +346,59 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .trend-down{color:var(--rojo);font-weight:800}
 .trend-flat{color:var(--muted)}
 
-/* ---- Layout ancho (tablet / POS), estilo referencia con carrito fijo lateral ---- */
-@media (min-width:900px){
-  #ap-ov:not(.hidden){ right:38%; }
-  #cart-ov:not(.hidden){ left:62%; right:0; border-left:1px solid var(--line); box-shadow:-6px 0 18px rgba(11,26,51,.06); }
-  #ap-ov .ov-body, #ap-ov .ov-foot,
-  #cart-ov .ov-body, #cart-ov .ov-foot{ max-width:none }
-  #ap-bottombar{ display:none !important } /* el panel fijo reemplaza a la barra inferior */
-  .ap-thead{ padding-left:16px; padding-right:16px }
-  .ap-row{ padding:10px 14px }
+/* ---- Layout ancho (tablet / POS), estilo referencia con carrito fijo lateral ----
+   Antes era un @media (min-width:900px) puro; se convirtió a una clase que pone JS
+   (ap-carrito-fijo, ver _aplicarLayoutArmarPedido) porque @media/matchMedia puede
+   evaluar un ancho distinto al real en navegadores embebidos de mostrador — mismo
+   motivo por el que Pedidos-Marín (proyecto hermano) usa window.innerWidth en vez
+   de @media para este tipo de decisión de layout. Mismo breakpoint (900) de siempre,
+   solo cambia CÓMO se dispara, no CUÁNDO. */
+html.ap-carrito-fijo #ap-ov:not(.hidden){ right:38%; }
+html.ap-carrito-fijo #cart-ov:not(.hidden){ left:62%; right:0; border-left:1px solid var(--line); box-shadow:-6px 0 18px rgba(11,26,51,.06); }
+html.ap-carrito-fijo #ap-ov .ov-body, html.ap-carrito-fijo #ap-ov .ov-foot,
+html.ap-carrito-fijo #cart-ov .ov-body, html.ap-carrito-fijo #cart-ov .ov-foot{ max-width:none }
+html.ap-carrito-fijo #ap-bottombar{ display:none !important } /* el panel fijo reemplaza a la barra inferior */
+html.ap-carrito-fijo .ap-thead{ padding-left:16px; padding-right:16px }
+html.ap-carrito-fijo .ap-row{ padding:10px 14px }
+
+/* ---- Vista de fila densa ("Mostrador"): mismo principio que Pedidos-Marín
+   (vista-filas/modo-bliss) — en pantalla ancha la tarjeta pasa a formato de fila tipo
+   planilla. .ap-row-tabla se agrega COMO CLASE EXTRA sobre .ap-row (no la reemplaza),
+   así los colores de estado (.ap-row.urgente/.pedir/.sobrestock, arriba) y el cableado
+   de eventos (querySelectorAll('.ap-row')) siguen funcionando sin tocarlos. apRenderLista()
+   emite, en este modo, 6 hijos directos en orden: thumb, info, 3×.ap-tabla-col (Stk/Vta/
+   Cob), ap-right — calzan 1 a 1 con las 6 columnas de este grid por orden natural, sin
+   necesitar grid-column explícito en las filas (sí hace falta en el encabezado, más abajo,
+   porque .ap-thead no tiene un hijo "miniatura" que ocupe la primera columna). ---- */
+html.ap-vista-tabla .ap-row-tabla{
+  display:grid;grid-template-columns:32px minmax(0,1fr) 52px 46px 52px 96px;
+  align-items:center;column-gap:8px;width:100%;box-sizing:border-box;min-width:0
 }
+html.ap-vista-tabla .ap-row-tabla .ap-thumb{width:32px;height:32px}
+html.ap-vista-tabla .ap-row-tabla .info{min-width:0;overflow:hidden}
+html.ap-vista-tabla .ap-row-tabla .n{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12.5px}
+html.ap-vista-tabla .ap-row-tabla .precio-line{margin-top:2px}
+html.ap-vista-tabla .ap-row-tabla .ap-tabla-col{text-align:center;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap}
+html.ap-vista-tabla .ap-row-tabla .ap-tabla-col b{color:var(--ink)}
+html.ap-vista-tabla .ap-row-tabla .ap-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+html.ap-vista-tabla .ap-row-tabla .ap-right .sugerido{font-size:11px;padding:3px 8px}
+
+/* Encabezado de columnas alineado con .ap-row-tabla — mismo ancho de columnas, y cada
+   th anclado por data-sort (ya existe en el HTML) a la columna que le corresponde, para
+   que "Producto/Stk/VTA/Cob/Pedir" quede justo arriba de cada dato de la fila. */
+html.ap-vista-tabla .ap-thead{
+  display:grid;grid-template-columns:32px minmax(0,1fr) 52px 46px 52px 96px;column-gap:8px
+}
+html.ap-vista-tabla .ap-thead [data-sort="nombre"]{grid-column:2;text-align:left}
+html.ap-vista-tabla .ap-thead [data-sort="stock"]{grid-column:3}
+html.ap-vista-tabla .ap-thead [data-sort="venta"]{grid-column:4}
+html.ap-vista-tabla .ap-thead [data-sort="cob"]{grid-column:5}
+html.ap-vista-tabla .ap-thead [data-sort="sugerido"]{grid-column:6}
+
+/* Selector manual Celular/Mostrador — reusa .toggle-row/.toggle-btn tal cual (mismo
+   componente que ya usa el segmentado 7d/14d/30d/90d), sin inventar un botón nuevo. */
+.ap-modo-switch{margin-bottom:0}
+
 .ap-qty{display:flex;align-items:center;gap:6px;flex:none}
 .ap-qty-btn{width:34px;height:34px;border-radius:9px;background:var(--card2);border:1.5px solid var(--line);font-size:17px;font-weight:700;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer}
 .ap-qty-btn:active{background:var(--cielo-tint);border-color:var(--cielo)}
@@ -1242,6 +1285,10 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
       <button type="button" class="toggle-btn" data-basis="90" style="padding:7px 10px">90d</button>
     </div>
     <button type="button" id="ap-fav-filtro" style="flex:none;height:34px;padding:0 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-weight:700;font-size:12px;white-space:nowrap">☆ Favoritos</button>
+    <div class="toggle-row ap-modo-switch" id="ap-modo-switch" style="margin:0;flex:none;width:auto">
+      <button type="button" class="toggle-btn" data-modo="celular" onclick="setApModo('celular')" style="padding:7px 10px">Celular</button>
+      <button type="button" class="toggle-btn" data-modo="mostrador" onclick="setApModo('mostrador')" style="padding:7px 10px">Mostrador</button>
+    </div>
     <label style="font-size:11.5px;font-weight:700;color:var(--muted);white-space:nowrap;margin-left:4px">Cob. (días)</label>
     <input id="ap-cobertura" type="number" inputmode="numeric" value="10" style="width:56px;height:34px;text-align:center;border:1.5px solid var(--line);border-radius:8px;font-size:13px">
     <button id="ap-btn-ventas" style="margin-left:auto;height:34px;padding:0 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--cielo-d);font-weight:700;font-size:12px;white-space:nowrap">🔄 Actualizar ventas</button>
@@ -3977,6 +4024,9 @@ function apRenderLista(){
     box.innerHTML='<div class="ap-empty">Sin productos que coincidan.</div>';
     return;
   }
+  // Vista densa ("Mostrador"): ap-vista-tabla en <html> (ver _aplicarLayoutArmarPedido) —
+  // se calcula UNA vez acá, no por producto, ya que es el mismo modo para toda la lista.
+  const denso=document.documentElement.classList.contains('ap-vista-tabla');
   box.innerHTML=items.map(it=>{
     const qty=CART[it.ref]||0;
     const stockTxt=it.stock==null?'—':(it.stock+(it.peso?' kg':' u'));
@@ -3995,11 +4045,37 @@ function apRenderLista(){
     // "Ya pedido a X" — pedido confirmado (copiado a WhatsApp) sin recibir todavía.
     const pend=(DB.pendientesPorSku||{})[it.ref];
     const pendBadge=pend?`<div class="pend-badge" title="${pend.cantidad} u · ${pend.fecha||''}">⏱ Ya pedido a ${pend.proveedor||'proveedor'}</div>`:'';
-    return `<div class="ap-row ${it._estado}" data-ref="${it.ref}">
-      <div class="ap-thumb">
-        ${it.imagen?`<img src="${it.imagen}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">`:''}
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:${it.imagen?'none':'block'}"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+    const thumbHtml=`${it.imagen?`<img src="${it.imagen}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">`:''}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:${it.imagen?'none':'block'}"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>`;
+    const qtyHtml=`<button class="ap-qty-btn" data-act="menos">−</button>
+          <input type="text" inputmode="decimal" value="${qty||''}" placeholder="0" data-act="input">
+          <button class="ap-qty-btn" data-act="mas">+</button>`;
+    if(denso){
+      // Fila tipo planilla: STK/VTA/COB pasan a columnas propias (alineadas con .ap-thead
+      // vía CSS grid, mismo orden Producto·Stk·VTA·Cob·Pedir) en vez de ir apretadas dentro
+      // de .info como en la tarjeta. La estrella de favorito sale de .n para no chocar con
+      // el recorte a 2 líneas (-webkit-line-clamp) del nombre.
+      return `<div class="ap-row ap-row-tabla ${it._estado}" data-ref="${it.ref}">
+      <div class="ap-thumb">${thumbHtml}</div>
+      <div class="info">
+        <div style="display:flex;align-items:flex-start;gap:4px">${favIco}<div class="n">${it.nombre}</div></div>
+        <div class="precio-line">
+          <span class="precio">${fmtPeso(it.precio)}</span>
+          ${margen?`<span class="margen">${margen}</span>`:''}
+        </div>
+        ${pendBadge}
       </div>
+      <div class="ap-tabla-col">${stockTxt}</div>
+      <div class="ap-tabla-col"><b>${it._venta}</b> <span class="trend-${it._trend.k}">${it._trend.t}</span></div>
+      <div class="ap-tabla-col"><span class="cob-badge ${cobClase}">${cobTxt}</span></div>
+      <div class="ap-right">
+        <b class="sugerido" data-act="sugerido">${sugTxt}</b>
+        <div class="ap-qty">${qtyHtml}</div>
+      </div>
+    </div>`;
+    }
+    return `<div class="ap-row ${it._estado}" data-ref="${it.ref}">
+      <div class="ap-thumb">${thumbHtml}</div>
       <div class="info">
         ${badge}
         <div class="n">${favIco}${it.nombre}</div>
@@ -4022,11 +4098,7 @@ function apRenderLista(){
           <span class="sug-lbl">Sugerido</span>
           <b class="sugerido" data-act="sugerido">${sugTxt}</b>
         </div>
-        <div class="ap-qty">
-          <button class="ap-qty-btn" data-act="menos">−</button>
-          <input type="text" inputmode="decimal" value="${qty||''}" placeholder="0" data-act="input">
-          <button class="ap-qty-btn" data-act="mas">+</button>
-        </div>
+        <div class="ap-qty">${qtyHtml}</div>
         ${empaque?`<div class="empaque-note">${empaque}</div>`:''}
       </div>
     </div>`;
@@ -4184,7 +4256,82 @@ document.getElementById('ap-btn-ventas').onclick=async()=>{
   }
 };
 
-const esPantallaAncha=()=>window.matchMedia('(min-width:900px)').matches;
+// ============================================================
+//  VISTA ADAPTATIVA POS — "Armar pedido" pasa a formato de fila densa ("Mostrador") en
+//  pantalla ancha, y el carrito se acopla al costado (esto último ya existía como
+//  esPantallaAncha()/@media; ahora comparte el mismo detector). Detección automática por
+//  window.innerWidth — NO por @media/matchMedia, que puede evaluar un ancho distinto al
+//  real en navegadores embebidos de mostrador (mismo motivo por el que Pedidos-Marín,
+//  proyecto hermano, usa este patrón) — más un selector manual de respaldo (Celular/
+//  Mostrador) que, una vez elegido, gana siempre sobre la detección automática: un
+//  MutationObserver reaplica el modo guardado si algo más le toca las clases al <html>.
+// ============================================================
+const AP_VISTA_TABLA_BREAKPOINT=900;
+let _apVistaTablaActual=null;
+function _apModoManualGuardado(){ try{return localStorage.getItem('cumpas_ap_modo_manual');}catch(e){return null;} }
+function _apGuardarModoManual(m){ try{localStorage.setItem('cumpas_ap_modo_manual',m);}catch(e){} }
+// #ap-list existe siempre en el DOM aunque el modal esté cerrado (a diferencia de
+// Pedidos-Marín, donde #ptbody no existe hasta abrir la pantalla) — por eso acá el guard
+// correcto es el estado .hidden de #ap-ov, no la existencia de #ap-list.
+function _apRerenderSiAbierto(activar){
+  const ov=document.getElementById('ap-ov');
+  if(!ov || ov.classList.contains('hidden')) return;
+  apRenderLista();
+  if(activar){ renderCarrito(); abrirModal('cart-ov'); } else { cerrarModal('cart-ov'); }
+}
+function _apAplicarModo(m){
+  const html=document.documentElement;
+  html.classList.remove('ap-modo-celular','ap-modo-mostrador');
+  if(m==='celular'){
+    html.classList.add('ap-modo-celular');
+    html.classList.remove('ap-vista-tabla','ap-carrito-fijo');
+  }else if(m==='mostrador'){
+    html.classList.add('ap-modo-mostrador','ap-vista-tabla','ap-carrito-fijo');
+  }
+  _apVistaTablaActual=html.classList.contains('ap-vista-tabla');
+  document.querySelectorAll('#ap-modo-switch button').forEach(b=>b.classList.toggle('active',b.dataset.modo===m));
+  _apRerenderSiAbierto(_apVistaTablaActual);
+}
+function setApModo(m){ _apGuardarModoManual(m); _apAplicarModo(m); }
+
+// Detector automático puro (solo ancho, sin conocer el modo manual) — igual que en
+// Pedidos-Marín, este es un respaldo: mientras haya un modo manual guardado, el
+// MutationObserver de abajo revierte cualquier cambio de clase que este detector haga
+// que contradiga esa elección. Si localStorage no está disponible (navegación privada),
+// no hay modo guardado ni observer activo, y este detector queda como único mecanismo.
+function _aplicarLayoutArmarPedido(){
+  const activar=window.innerWidth>=AP_VISTA_TABLA_BREAKPOINT;
+  if(activar===_apVistaTablaActual) return; // sin cambio real: no repinta de nuevo
+  _apVistaTablaActual=activar;
+  document.documentElement.classList.toggle('ap-vista-tabla',activar);
+  document.documentElement.classList.toggle('ap-carrito-fijo',activar);
+  _apRerenderSiAbierto(activar);
+}
+const esPantallaAncha=()=>document.documentElement.classList.contains('ap-carrito-fijo');
+
+let _apLayoutT=null;
+window.addEventListener('resize',()=>{clearTimeout(_apLayoutT);_apLayoutT=setTimeout(_aplicarLayoutArmarPedido,100);});
+window.addEventListener('orientationchange',()=>setTimeout(_aplicarLayoutArmarPedido,150));
+
+(function _apInitModo(){
+  let guardado=_apModoManualGuardado();
+  if(!guardado){
+    // Primer arranque: sin preferencia guardada, se infiere un modo explícito según el
+    // ancho actual y queda grabado — así el selector nunca arranca "sin marcar".
+    guardado=window.innerWidth<AP_VISTA_TABLA_BREAKPOINT?'celular':'mostrador';
+    _apGuardarModoManual(guardado);
+  }
+  _apAplicarModo(guardado);
+  const obs=new MutationObserver(()=>{
+    const m=_apModoManualGuardado();
+    if(!m)return;
+    const html=document.documentElement;
+    const ok=(m==='celular'&&html.classList.contains('ap-modo-celular')&&!html.classList.contains('ap-vista-tabla'))
+      ||(m==='mostrador'&&html.classList.contains('ap-modo-mostrador')&&html.classList.contains('ap-vista-tabla')&&html.classList.contains('ap-carrito-fijo'));
+    if(!ok)_apAplicarModo(m);
+  });
+  obs.observe(document.documentElement,{attributes:true,attributeFilter:['class']});
+})();
 
 function openArmarPedido(){
   apState.prov='TODOS'; apState.search=''; apState.soloFavoritos=false;
