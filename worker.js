@@ -630,7 +630,14 @@ async function stockFrescoDeVariante(env, storeId, variantId) {
 
 // Suma cantidad al stock actual de un producto (lee fresco de Loyverse, escribe el
 // nuevo total, y refleja el cambio también en la caché D1 `productos`).
-async function sumarStockLoyverse(env, productoRow, cantidad) {
+//   opts.clampBaseNegativo — si true, un stock de partida negativo se trata como 0
+//   antes de sumar. Uso EXCLUSIVO de recepción de mercadería (accionLoteNuevo): recibir
+//   nunca debe dejar el stock más negativo del que ya estaba. El resto de los llamadores
+//   (ajuste de stock, retiro de góndola, merma) opera sobre el stock REAL sin recortar,
+//   porque ya calculan su delta a partir del valor verdadero (ej. "Cantidad exacta" en
+//   Ajustar stock necesita el stock real para aterrizar justo en lo contado).
+async function sumarStockLoyverse(env, productoRow, cantidad, opts) {
+  opts = opts || {};
   if (!productoRow.track_stock) return { ok: false, motivo: "producto sin seguimiento de inventario ('Activar inventario' primero)" };
   if (!productoRow.variant_id) return { ok: false, motivo: "falta variant_id (vuelve a sincronizar el catálogo)" };
 
@@ -638,11 +645,10 @@ async function sumarStockLoyverse(env, productoRow, cantidad) {
   const stockActual = await stockFrescoDeVariante(env, storeId, productoRow.variant_id);
   if (stockActual == null) return { ok: false, motivo: "Loyverse no devolvió inventario para este producto" };
 
-  // Si el stock de partida ya estaba negativo (por algún ajuste/error anterior), se
-  // trata como 0 antes de sumar/restar — igual criterio que la referencia (Marín).
-  // El RESULTADO de una resta grande sí puede seguir dando negativo (ej. stock=0 y
-  // se resta 5 → queda en -5); esto no se recorta, solo se corrige el punto de partida.
-  const base = Math.max(0, stockActual);
+  // El RESULTADO de una resta grande sí puede seguir dando negativo (ej. stock=0 y se
+  // resta 5 → queda en -5); esto no se recorta nunca, solo el PUNTO DE PARTIDA, y solo
+  // cuando opts.clampBaseNegativo lo pide.
+  const base = opts.clampBaseNegativo ? Math.max(0, stockActual) : stockActual;
   const nuevoStock = Math.round((base + cantidad) * 1000) / 1000;
   await loyversePost(env, "/inventory", {
     inventory_levels: [{ variant_id: productoRow.variant_id, store_id: storeId, stock_after: nuevoStock }]
@@ -1521,9 +1527,11 @@ async function accionLoteNuevo(env, payload) {
     out.filaIndex = insertRes.meta.last_row_id;
 
     // 2) Sumar stock en Loyverse (el paso más importante — si falla, se avisa pero no
-    //    se corta el resto: el lote de vencimiento ya quedó guardado igual).
+    //    se corta el resto: el lote de vencimiento ya quedó guardado igual). Único
+    //    llamador que pide clampBaseNegativo: recibir mercadería nunca debe sumar sobre
+    //    un stock de partida negativo (ver comentario en sumarStockLoyverse).
     try {
-      const res = await sumarStockLoyverse(env, it, cantidad);
+      const res = await sumarStockLoyverse(env, it, cantidad, { clampBaseNegativo: true });
       if (res.ok) {
         out.nuevoStock = res.despues;
         await run(env,
@@ -1879,8 +1887,9 @@ async function accionMerma(env, payload) {
     costoDesdeLoyverse: costoLoyverse > 0, responsable
   };
 
-  // Descuenta stock en Loyverse (con el mismo tope-en-0 que el resto de la app) —
-  // si falla, la merma ya quedó guardada igual, solo se avisa para revisarlo a mano.
+  // Descuenta stock en Loyverse sobre el valor REAL (sin recortar el punto de partida
+  // — el tope-en-0 es exclusivo de recepción, ver sumarStockLoyverse) — si falla, la
+  // merma ya quedó guardada igual, solo se avisa para revisarlo a mano.
   try {
     const res = await sumarStockLoyverse(env, it, -cantidad);
     if (res.ok) out.nuevoStock = res.despues;
