@@ -215,6 +215,34 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .toggle-btn.active{border-color:var(--cielo);background:var(--cielo-tint);color:var(--cielo-d)}
 .pvp-cfg-reset{padding:7px 10px;border-radius:9px;border:1.5px solid var(--ambar);background:var(--ambar-bg);color:var(--ambar);font-weight:700;font-size:11.5px;cursor:pointer;white-space:nowrap}
 
+/* ===== Recibir mercadería — versión compacta (más densidad, menos aire) ===== */
+#rc-ov .field{margin-bottom:10px}
+#rc-ov .picked{padding:10px 11px}
+.rc-linea-datos{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 7px;margin-top:7px;font-size:11.5px;color:var(--muted)}
+.rc-linea-datos b{font-family:'JetBrains Mono';font-weight:700;font-size:12.5px;color:var(--ink);margin-left:2px}
+.rc-linea-datos b.bajo{color:var(--rojo)}
+.rc-linea-datos .sep{color:var(--line2);font-weight:400}
+.rc-mov-line{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-size:10.5px;color:var(--muted)}
+.rc-mov-line span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rc-mov-line .lnk{color:var(--cielo-d);font-weight:700;cursor:pointer;white-space:nowrap;flex:none}
+
+/* Caja surtida (dentro de Cantidad recibida): tarjeta contenedora + filas tipo tabla. */
+.rc-surtida-box{background:var(--verde-bg);border:1.5px solid var(--verde);border-radius:14px;padding:10px 11px;margin-top:10px}
+.rc-surtida-box .hdr{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.rc-surtida-box .hdr .ttl{font-weight:800;font-size:12.5px;color:var(--verde)}
+.rc-surtida-box .hint{font-size:11px;color:var(--muted);margin-top:3px}
+.btn-mini-outline{padding:6px 12px;border-radius:9px;border:1.5px solid var(--verde);background:#fff;color:var(--verde);font-weight:800;font-size:11px;cursor:pointer;white-space:nowrap;flex:none}
+.rc-surtida-row{display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--line)}
+.rc-surtida-row:last-child{border-bottom:none}
+.rc-surtida-row .rc-sr-main{flex:1;min-width:0}
+.rc-surtida-row .rc-sr-main .n{font-weight:700;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rc-surtida-row .rc-sr-main .meta{color:var(--muted);font-size:10px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rc-sr-qty{display:flex;align-items:center;gap:3px;flex:none}
+.rc-sr-qty button{width:24px;height:24px;border-radius:6px;border:1.5px solid var(--line);background:var(--card2);font-weight:700;font-size:13px;cursor:pointer;flex:none;line-height:1;padding:0}
+.rc-sr-qty input{width:34px;height:24px;text-align:center;font-family:'JetBrains Mono';font-weight:700;font-size:11.5px;border:1.5px solid var(--line);border-radius:6px;padding:0}
+.rc-sr-del{flex:none;width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:var(--rojo);cursor:pointer;font-weight:700;font-size:13px}
+.rc-surtida-foot{display:flex;justify-content:space-between;margin-top:7px;padding-top:7px;border-top:1px solid var(--verde);font-size:11px;color:var(--verde);font-weight:700}
+
 .qty-row{display:flex;align-items:center;gap:8px}
 .qty-btn{width:46px;height:46px;flex:none;border-radius:12px;background:var(--card2);border:1.5px solid var(--line);color:var(--ink);font-size:22px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .qty-btn:active{background:var(--cielo-tint);border-color:var(--cielo)}
@@ -912,16 +940,19 @@ html.ap-carrito-fijo #cart-ov .cart-foot-compacto{display:flex;align-items:cente
       <div class="picked" id="rc-picked">
         <div class="n" id="rc-nom">—</div>
         <div class="s" id="rc-cat">—</div>
-        <div class="rc-resumen">
-          <div class="item"><div class="v" id="rc-res-costo">—</div><div class="k">Costo</div></div>
-          <div class="item"><div class="v" id="rc-res-precio">—</div><div class="k">Precio</div></div>
-          <div class="item"><div class="v" id="rc-res-margen">—</div><div class="k">Margen</div></div>
-          <div class="item"><div class="v" id="rc-res-stock">—</div><div class="k">Stock</div></div>
+        <div class="rc-linea-datos">
+          <span>Costo<b id="rc-res-costo">—</b></span><span class="sep">|</span>
+          <span>Venta<b id="rc-res-precio">—</b></span><span class="sep">|</span>
+          <span>Margen<b id="rc-res-margen">—</b></span><span class="sep">|</span>
+          <span>Stock<b id="rc-res-stock">—</b></span>
         </div>
+        <div class="rc-mov-line">
+          <span id="rc-ultimo-mov">—</span>
+          <span class="lnk" id="rc-ver-historial">Ver historial</span>
+        </div>
+        <div id="rc-historial-box" class="hidden" style="margin-top:8px;max-height:180px;overflow-y:auto"></div>
         <button class="btn-secondary hidden" id="rc-activar-inv" style="margin-top:10px;color:var(--cielo-d);border-color:var(--cielo)" type="button">🔓 Activar inventario para este producto</button>
         <button class="btn-secondary hidden" id="rc-activar-iva" style="margin-top:10px;color:#b45309;border-color:#f0c987" type="button">🧾 Activar IVA para este producto</button>
-        <button class="btn-secondary" id="rc-ver-historial" style="margin-top:10px" type="button">🕘 Ver historial de este producto</button>
-        <div id="rc-historial-box" class="hidden" style="margin-top:10px;max-height:180px;overflow-y:auto"></div>
       </div>
     </div>
 
@@ -1029,8 +1060,9 @@ html.ap-carrito-fijo #cart-ov .cart-foot-compacto{display:flex;align-items:cente
     <div class="field" id="rc-cantidad-field" style="display:none">
       <label>Cantidad recibida <span style="text-transform:none;font-weight:400">(déjalo en 0 si solo editas precio/costo)</span></label>
       <div class="toggle-row">
-        <button type="button" class="toggle-btn active" id="rc-modo-unidad" data-modo="unidad">Por unidad</button>
-        <button type="button" class="toggle-btn" id="rc-modo-caja" data-modo="caja">Por caja</button>
+        <button type="button" class="toggle-btn active" id="rc-modo-unidad" data-modo="unidad">UND</button>
+        <button type="button" class="toggle-btn" id="rc-modo-caja" data-modo="caja">CAJA</button>
+        <button type="button" class="toggle-btn" id="rc-modo-surtida" data-modo="surtida">🧺 CAJA SURTIDA</button>
       </div>
       <div class="qty-row">
         <button class="qty-btn" id="rc-qty-menos" type="button">−</button>
@@ -1043,6 +1075,22 @@ html.ap-carrito-fijo #cart-ov .cart-foot-compacto{display:flex;align-items:cente
         <input id="rc-unidades-caja" inputmode="numeric" placeholder="Ej: 24">
       </div>
       <div id="rc-stock-total-hint" style="margin-top:6px;font-size:11.5px;color:var(--muted)"></div>
+
+      <!-- Caja surtida (dentro de "Cantidad recibida"): NO tiene buscador propio — usa
+           el mismo buscador de arriba (#rc-search). Mientras este panel está activo,
+           tocar un resultado de esa búsqueda agrega el producto a esta lista en vez de
+           reemplazar el producto principal. Cada fila mantiene el costo/precio/margen
+           PROPIO y actual de ese producto (de solo lectura) — solo la cantidad se edita
+           acá; al "Finalizar caja" se suma stock sin tocar costo ni precio. -->
+      <div id="rc-surtida-panel" class="hidden rc-surtida-box">
+        <div class="hdr">
+          <div class="ttl">🧺 Armando caja surtida</div>
+          <button type="button" class="btn-mini-outline" id="rc-surtida-finalizar">✓ Finalizar caja</button>
+        </div>
+        <div class="hint">Busca arriba ☝️ y toca un producto para agregarlo a la lista.</div>
+        <div id="rc-surtida-lista"></div>
+        <div class="rc-surtida-foot hidden" id="rc-surtida-foot"></div>
+      </div>
     </div>
 
     <div class="field" id="rc-costo-field" style="display:none">
@@ -2896,7 +2944,13 @@ const rcState={ item:null, modo:'unidad', ivaModo:'con', precioTocado:false, mar
   // sector/IVA/costo/precio — null en prov/sector significa "no tocar"). Costo y precio
   // se aplican por igual a TODOS los productos de la lista, igual que proveedor/sector/
   // fecha de vencimiento — no son por producto.
-  cajaItems:[], cajaIvaModo:'con', cajaProvNuevo:null, cajaSectorNuevo:null, cajaCosto:'', cajaPrecio:'' };
+  cajaItems:[], cajaIvaModo:'con', cajaProvNuevo:null, cajaSectorNuevo:null, cajaCosto:'', cajaPrecio:'',
+  // Caja surtida DENTRO de "Cantidad recibida": lista de productos extra que se
+  // reciben junto al producto principal, usando el MISMO buscador de arriba. A
+  // diferencia de rcState.cajaItems (la "Caja surtida" de arriba, sin producto
+  // principal, con costo/precio compartidos), acá cada producto conserva SU PROPIO
+  // costo/precio/margen actuales — solo se suma la cantidad recibida de cada uno.
+  surtidaOn:false, surtidaItems:[] };
 
 function rcSetAccion(accion){
   rcState.accion=accion;
@@ -3021,10 +3075,33 @@ document.getElementById('rc-ver-historial').onclick=async()=>{
       box.classList.remove('hidden');
     }else{ showToast('❌ No se pudo cargar el historial'); }
   }catch(e){ showToast('❌ Error de conexión al cargar historial'); }
-  finally{ btn.textContent='🕘 Ver historial de este producto'; }
+  finally{ btn.textContent='Ver historial'; }
 };
 
-function rcReset(){
+// Último movimiento del producto principal, mostrado automáticamente apenas se
+// elige (sin esperar a que el usuario toque "Ver historial") — usa limit=1 para
+// traer solo el más reciente, igual que hace la fila de cada producto en la lista
+// de "Caja surtida" más abajo.
+async function rcCargarUltimoMovimiento(ref){
+  const el=document.getElementById('rc-ultimo-mov');
+  if(!el)return;
+  el.textContent='Cargando movimiento…';
+  try{
+    const res=await fetch(SYNC_URL+'?action=historial_producto&sku='+encodeURIComponent(ref)+'&limit=1');
+    const j=await res.json();
+    if(!rcState.item||rcState.item.ref!==ref)return; // el usuario ya cambió de producto mientras cargaba
+    if(j&&j.ok&&j.historial&&j.historial[0]){
+      const h=j.historial[0];
+      el.textContent=h.fecha+' · '+(h.motivo||h.accion||'').replace('Recepción de mercadería:','Recepción');
+    }else{
+      el.textContent='Sin movimientos registrados todavía.';
+    }
+  }catch(e){
+    if(rcState.item&&rcState.item.ref===ref) el.textContent='';
+  }
+}
+
+function rcReset(surtida=true){
   rcState.item=null; rcState.modo='unidad'; rcState.precioTocado=false; rcState.margenTocado=false;
   rcState.provNuevo=null; rcState.sectorNuevo=null; rcState.codigoEscaneado=null;
   document.getElementById('rc-search').value='';
@@ -3034,6 +3111,7 @@ function rcReset(){
   document.getElementById('rc-activar-iva').classList.add('hidden');
   document.getElementById('rc-historial-box').classList.add('hidden');
   document.getElementById('rc-historial-box').innerHTML='';
+  document.getElementById('rc-ultimo-mov').textContent='—';
   document.getElementById('rc-provsector-field').style.display='none';
   document.getElementById('rc-proveedor').value='';
   document.getElementById('rc-sector').value='';
@@ -3083,6 +3161,19 @@ function rcReset(){
   document.getElementById('rc-caja-lista').innerHTML='';
   document.getElementById('rc-caja-resumen').textContent='';
 
+  // Caja surtida DENTRO de "Cantidad recibida" (lista de productos extra del
+  // producto principal) — solo se reinicia cuando surtida=true (reset completo,
+  // ej. al abrir el módulo de cero). Si el guardado del producto principal la
+  // llamó con surtida=false, la lista en armado se conserva intacta.
+  if(surtida){
+    rcState.surtidaOn=false; rcState.surtidaItems=[];
+    document.getElementById('rc-modo-surtida').classList.remove('active');
+    document.getElementById('rc-surtida-panel').classList.add('hidden');
+    document.getElementById('rc-surtida-lista').innerHTML='';
+    document.getElementById('rc-surtida-foot').innerHTML='';
+    document.getElementById('rc-surtida-foot').classList.add('hidden');
+  }
+
   rcSetAccion('recibir');
   const btnG=document.getElementById('rc-guardar'); btnG.disabled=true; btnG.textContent='Guardar y sumar stock';
 }
@@ -3099,6 +3190,32 @@ function rcSetModo(modo){
 document.getElementById('rc-modo-unidad').onclick=()=>rcSetModo('unidad');
 document.getElementById('rc-modo-caja').onclick=()=>rcSetModo('caja');
 document.getElementById('rc-unidades-caja').oninput=rcRenderStockHint;
+
+// "🧺 CAJA SURTIDA" dentro de "Cantidad recibida" es un interruptor aparte — NO es
+// mutuamente excluyente con "UND"/"CAJA" (esos dos siguen definiendo cómo se
+// ingresa la cantidad del producto PRINCIPAL). Al activarlo: el producto que ya
+// estaba elegido se suma automáticamente a la lista (si corresponde), y el mismo
+// buscador de arriba (#rc-search) queda listo para seguir agregando más productos
+// a esa lista — no se abre un buscador nuevo.
+function rcSetSurtida(on){
+  rcState.surtidaOn=on;
+  document.getElementById('rc-modo-surtida').classList.toggle('active',on);
+  document.getElementById('rc-surtida-panel').classList.toggle('hidden',!on);
+  if(on){
+    if(rcState.item&&rcState.item.track&&!rcState.surtidaItems.some(r=>r.ref===rcState.item.ref)){
+      const cantActual=Number(document.getElementById('rc-cantidad').value)||0;
+      rcSurtidaPick(rcState.item.ref);
+      const fila=rcState.surtidaItems.find(r=>r.ref===rcState.item.ref);
+      if(fila&&cantActual>0)fila.cantidad=cantActual;
+    }
+    document.getElementById('rc-search').value='';
+    document.getElementById('rc-results').innerHTML='';
+    document.getElementById('rc-search').focus();
+    rcSurtidaRender();
+  }
+  rcValidar();
+}
+document.getElementById('rc-modo-surtida').onclick=()=>rcSetSurtida(!rcState.surtidaOn);
 
 // NOTA: el manejo de Costo/IVA/Margen/Precio/Redondeo ahora vive en PcWidget
 // (montado en rcMontarPrecio, ver más abajo) — rcSetIva/rcRenderExplicaCosto/
@@ -3143,6 +3260,7 @@ function rcPick(ref){
   document.getElementById('rc-res-precio').textContent=fmtPeso(it.precio);
   const margenActual=(it.precio>0)?Math.round((1-(it.coste||0)/it.precio)*100):null;
   document.getElementById('rc-res-margen').textContent=margenActual==null?'—':margenActual+'%';
+  rcCargarUltimoMovimiento(it.ref);
 
   // Proveedor y sector: se muestran siempre (son campos solo locales, no requieren
   // seguimiento de inventario) y se prellenan con lo que ya tiene el producto.
@@ -3300,8 +3418,16 @@ document.getElementById('rc-search').oninput=e=>{
   const lista=buscarProductos(q);
   const box=document.getElementById('rc-results');
   if(lista.length){
-    box.innerHTML=lista.map(it=>`<div class="result-item" data-ref="${it.ref}"><div class="n">${it.nombre}</div><div class="s">${it.prov}${it.barcode?' · '+it.barcode:''}</div></div>`).join('');
-    box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>rcPick(el.dataset.ref));
+    // Modo "🧺 Caja surtida" activo: los productos ya agregados a la lista se marcan
+    // en vez de ocultarse, para que quede claro por qué no vuelven a agregarse.
+    box.innerHTML=lista.map(it=>{
+      const yaEnLista=rcState.surtidaOn&&rcState.surtidaItems.some(r=>r.ref===it.ref);
+      return `<div class="result-item" data-ref="${it.ref}"${yaEnLista?' style="opacity:.55"':''}><div class="n">${it.nombre}${yaEnLista?' · ya en la lista':''}</div><div class="s">${it.prov}${it.barcode?' · '+it.barcode:''}</div></div>`;
+    }).join('');
+    box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>{
+      if(rcState.surtidaOn) rcSurtidaPick(el.dataset.ref);
+      else rcPick(el.dataset.ref);
+    });
   }else if(q.trim().length>=3){
     // Ya no se redirige solo a "crear producto": se muestra un resultado tocable
     // y recién si el usuario confirma que sí quiere crearlo se abre ese módulo.
@@ -3339,6 +3465,122 @@ function rcCajaFilasListas(){
 function rcCajaListaLista(){
   return Number(rcState.cajaCosto)>0 && Number(rcState.cajaPrecio)>0 && rcCajaFilasListas().length>0;
 }
+
+// ============================================================
+//  CAJA SURTIDA DENTRO DE "CANTIDAD RECIBIDA" — a diferencia del bloque de arriba
+//  (rcState.cajaItems, acción "🧺 Caja surtida" completa, sin producto principal ni
+//  buscador propio, con costo/precio COMPARTIDOS para toda la lista), esta lista
+//  vive DENTRO del flujo normal de un solo producto: reutiliza el MISMO buscador de
+//  arriba (#rc-search) para seguir agregando productos, y cada uno conserva SU
+//  PROPIO costo/precio/margen actuales (de solo lectura) — al "Finalizar caja" solo
+//  se suma la cantidad recibida de cada producto, sin tocar costo ni precio.
+// ============================================================
+function rcSurtidaFilasListas(){
+  return rcState.surtidaItems.filter(r=>Number(r.cantidad)>0);
+}
+async function rcSurtidaPick(ref){
+  const it=(DB.items||[]).find(i=>i.ref===ref);
+  if(!it)return;
+  if(!it.track){ showToast('❌ '+it.nombre+' no tiene inventario activado — actívalo primero para poder recibirlo'); return; }
+  document.getElementById('rc-search').value='';
+  document.getElementById('rc-results').innerHTML='';
+  document.getElementById('rc-search').focus();
+  if(rcState.surtidaItems.some(r=>r.ref===ref)){ showToast('Ya está en la lista — ajusta la cantidad ahí abajo'); return; }
+  const row={ ref:it.ref, nombre:it.nombre, peso:!!it.peso, cantidad:1, stock:it.stock, costo:it.coste, precio:it.precio, mov:null, movCargando:true };
+  rcState.surtidaItems.push(row);
+  rcSurtidaRender();
+  guardarSnapshot();
+  rcValidar();
+  // Último movimiento de esta fila: se trae en segundo plano (limit=1) sin bloquear
+  // el agregado del producto a la lista.
+  try{
+    const res=await fetch(SYNC_URL+'?action=historial_producto&sku='+encodeURIComponent(it.ref)+'&limit=1');
+    const j=await res.json();
+    row.movCargando=false;
+    row.mov=(j&&j.ok&&j.historial&&j.historial[0])
+      ?(j.historial[0].fecha+' · '+(j.historial[0].motivo||j.historial[0].accion||'').replace('Recepción de mercadería:','Recepción'))
+      :'Sin movimientos';
+  }catch(e){
+    row.movCargando=false; row.mov=null;
+  }
+  rcSurtidaRender();
+}
+function rcSurtidaRender(){
+  const box=document.getElementById('rc-surtida-lista');
+  const foot=document.getElementById('rc-surtida-foot');
+  if(!box||!foot)return;
+  if(!rcState.surtidaItems.length){
+    box.innerHTML='';
+    foot.innerHTML='';
+    foot.classList.add('hidden');
+    return;
+  }
+  box.innerHTML=rcState.surtidaItems.map((row,i)=>{
+    const unidad=row.peso?'kg':'u';
+    const stockTxt=row.stock==null?'s/c':(row.stock+' '+unidad);
+    const margenTxt=(row.precio>0)?Math.round((1-(row.costo||0)/row.precio)*100)+'%':'—';
+    const movTxt=row.movCargando?'Cargando movimiento…':(row.mov||'Sin movimientos');
+    return '<div class="rc-surtida-row">'+
+      '<div class="rc-sr-main">'+
+        '<div class="n">'+row.nombre+'</div>'+
+        '<div class="meta">Stock '+stockTxt+' · Costo '+fmtPeso(row.costo)+' · Margen '+margenTxt+' · '+movTxt+'</div>'+
+      '</div>'+
+      '<div class="rc-sr-qty">'+
+        '<button type="button" data-sur-act="menos" data-i="'+i+'">−</button>'+
+        '<input data-sur-i="'+i+'" inputmode="decimal" value="'+(row.cantidad||'')+'" placeholder="0">'+
+        '<button type="button" data-sur-act="mas" data-i="'+i+'">+</button>'+
+      '</div>'+
+      '<div class="rc-sr-del" data-sur-quitar="'+i+'" aria-label="Quitar producto">✕</div>'+
+    '</div>';
+  }).join('');
+  box.querySelectorAll('[data-sur-act]').forEach(btn=>{
+    btn.onclick=()=>{
+      const i=Number(btn.dataset.i); const row=rcState.surtidaItems[i]; if(!row)return;
+      const paso=row.peso?0.1:1;
+      if(btn.dataset.surAct==='menos') row.cantidad=Math.max(0,Math.round(((Number(row.cantidad)||0)-paso)*1000)/1000);
+      else row.cantidad=Math.round(((Number(row.cantidad)||0)+paso)*1000)/1000;
+      rcSurtidaRender(); guardarSnapshot(); rcValidar();
+    };
+  });
+  box.querySelectorAll('[data-sur-i]').forEach(inp=>{
+    inp.oninput=()=>{ const i=Number(inp.dataset.surI); if(rcState.surtidaItems[i])rcState.surtidaItems[i].cantidad=inp.value; rcValidar(); };
+    inp.onblur=()=>{ rcSurtidaRender(); guardarSnapshot(); };
+  });
+  box.querySelectorAll('[data-sur-quitar]').forEach(btn=>{
+    btn.onclick=()=>{ const i=Number(btn.dataset.surQuitar); rcState.surtidaItems.splice(i,1); rcSurtidaRender(); guardarSnapshot(); rcValidar(); };
+  });
+  const totalUnidades=Math.round(rcState.surtidaItems.reduce((s,r)=>s+(Number(r.cantidad)||0),0)*1000)/1000;
+  foot.innerHTML='<span>Total productos: <b>'+rcState.surtidaItems.length+'</b></span><span>Total unidades: <b>'+totalUnidades+'</b></span>';
+  foot.classList.remove('hidden');
+}
+// "Finalizar caja": guarda todos los productos con cantidad cargada, sumando stock
+// con el endpoint que ya existe (lote_nuevo) — sin costo ni precio en el payload,
+// para que cada producto conserve el suyo propio tal cual estaba.
+document.getElementById('rc-surtida-finalizar').onclick=async()=>{
+  const filas=rcSurtidaFilasListas();
+  if(!filas.length){ showToast('Agrega al menos un producto con cantidad'); return; }
+  const btn=document.getElementById('rc-surtida-finalizar');
+  btn.disabled=true; btn.textContent='Guardando…';
+  let ok=0, fail=0;
+  for(const row of filas){
+    try{
+      const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'lote_nuevo',payload:{sku:row.ref,cantidad:Number(row.cantidad),fechaVencimiento:''}})});
+      const j=await res.json();
+      if(j&&j.ok){
+        ok++;
+        const itLocal=(DB.items||[]).find(x=>x.ref===row.ref);
+        if(itLocal&&j.nuevoStock!=null)itLocal.stock=j.nuevoStock;
+        rcState.surtidaItems=rcState.surtidaItems.filter(r=>r.ref!==row.ref);
+      }else{ fail++; }
+    }catch(e){ fail++; }
+  }
+  if(ok)persist();
+  btn.disabled=false; btn.textContent='✓ Finalizar caja';
+  rcSurtidaRender();
+  showToast((ok?('✓ '+ok+' producto'+(ok===1?'':'s')+' recibido'+(ok===1?'':'s')):'')+(fail?(' · ❌ '+fail+' con error'):''));
+  rcValidar();
+  guardarSnapshot();
+};
 
 async function rcCajaPick(ref){
   const it=(DB.items||[]).find(i=>i.ref===ref);
@@ -3699,6 +3941,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
         if(j.sectorAplicado!=null)itLocal.sector=j.sectorAplicado;
         persist();
       }
+
       let msg;
       if(soloEdicion){
         const partes=[];
@@ -3706,13 +3949,16 @@ document.getElementById('rc-guardar').onclick=async()=>{
         if(costoCambio)partes.push('costo → '+fmtPeso(nuevoCosto));
         if(provCambio)partes.push('proveedor → '+rcState.provNuevo);
         if(sectorCambio)partes.push('sector → '+rcState.sectorNuevo);
-        msg='✓ '+it.nombre+' · '+partes.join(' · ');
+        msg='✓ '+it.nombre+(partes.length?' · '+partes.join(' · '):'');
       }else{
         msg='✓ Recibido: '+it.nombre+' · +'+cantidad+' '+(it.peso?'kg':'u')+(fecha?(' · vence '+fecha):'');
       }
       showToast(msg);
       if(j.avisoStock) setTimeout(()=>showToast(j.avisoStock),2800);
-      rcReset();
+      // Si hay una "Caja surtida" en armado (lista con productos aún sin guardar),
+      // no se pierde: se conserva y solo se limpia el producto principal — la caja
+      // se guarda aparte, de forma independiente, con "Finalizar caja".
+      rcReset(rcState.surtidaItems.length===0);
       limpiarSnapshot();
       document.getElementById('rc-search').focus();
     }else{
@@ -3813,7 +4059,10 @@ function rcMostrarDuplicadosEscaneo(code,items){
     }).join('');
 
     box.querySelectorAll('[data-elegir]').forEach(el=>{
-      el.onclick=()=>rcPick(el.dataset.elegir);
+      el.onclick=()=>{
+        if(rcState.surtidaOn) rcSurtidaPick(el.dataset.elegir);
+        else rcPick(el.dataset.elegir);
+      };
     });
     box.querySelectorAll('[data-eliminar]').forEach(btn=>{
       btn.onclick=async()=>{
@@ -3830,7 +4079,7 @@ function rcMostrarDuplicadosEscaneo(code,items){
             persist();
             items=items.filter(i=>i.ref!==it.ref);
             showToast('🗑️ Eliminado: '+j.nombre);
-            if(items.length===1){ rcPick(items[0].ref); }
+            if(items.length===1){ if(rcState.surtidaOn) rcSurtidaPick(items[0].ref); else rcPick(items[0].ref); }
             else if(items.length===0){ document.getElementById('rc-results').innerHTML=''; showToast('Ya no quedan productos con ese código'); }
             else{ render(); }
           }else{
@@ -3859,7 +4108,11 @@ document.getElementById('rc-scan').onclick=()=>{
       return;
     }
     const lista=buscarProductos(code);
-    if(lista.length===1){ abrirModal('rc-ov'); rcPick(lista[0].ref); }
+    if(lista.length===1){
+      abrirModal('rc-ov');
+      if(rcState.surtidaOn) rcSurtidaPick(lista[0].ref);
+      else rcPick(lista[0].ref);
+    }
     else if(lista.length===0){
       // Ya no crea el producto directo: deja el código cargado en la búsqueda,
       // que muestra el mismo resultado tocable "➕ Crear producto nuevo" con
