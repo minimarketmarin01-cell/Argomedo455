@@ -1674,10 +1674,10 @@ async function accionAjustarStock(env, payload) {
 //  (recepciones, ajustes, ediciones de precio/costo) para mostrar
 //  en "Recibir productos" y permitir revisar qué pasó y quién lo hizo.
 // ============================================================
-async function historialProducto(env, sku) {
+async function historialProducto(env, sku, limit) {
   const { results } = await env.DB.prepare(
-    "SELECT fecha, accion, stock, motivo, responsable FROM auditoria WHERE sku = ? ORDER BY id DESC LIMIT 30"
-  ).bind(sku).all();
+    "SELECT fecha, accion, stock, motivo, responsable FROM auditoria WHERE sku = ? ORDER BY id DESC LIMIT ?"
+  ).bind(sku, limit || 30).all();
   return results;
 }
 
@@ -2759,12 +2759,15 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
-      // GET /?action=historial_producto&sku=XXXXX  →  últimos movimientos (recepciones,
-      // ajustes, ediciones) de un producto, para mostrar el historial en la app.
+      // GET /?action=historial_producto&sku=XXXXX[&limit=N]  →  últimos movimientos
+      // (recepciones, ajustes, ediciones) de un producto, para mostrar el historial en
+      // la app. limit es opcional (default 30) — Caja surtida lo usa con limit=1 para
+      // traer solo el último movimiento sin pedir de más.
       if (action === "historial_producto") {
         const sku = String(url.searchParams.get("sku") || "").trim();
         if (!sku) return json({ ok: false, error: "Falta el parámetro sku" }, 400);
-        const historial = await historialProducto(env, sku);
+        const limitParam = Number(url.searchParams.get("limit"));
+        const historial = await historialProducto(env, sku, limitParam > 0 ? limitParam : null);
         return json({ ok: true, historial });
       }
 
