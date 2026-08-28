@@ -897,7 +897,6 @@ html.ap-carrito-fijo #cart-ov .cart-foot-compacto{display:flex;align-items:cente
       <label>¿Qué quieres hacer?</label>
       <div class="toggle-row">
         <button type="button" class="toggle-btn active" id="rc-accion-recibir" data-accion="recibir">📦 Recibir mercadería</button>
-        <button type="button" class="toggle-btn" id="rc-accion-caja" data-accion="caja">🧺 Caja surtida</button>
         <button type="button" class="toggle-btn" id="rc-accion-ajustar" data-accion="ajustar">🛠️ Ajustar stock</button>
       </div>
     </div>
@@ -923,56 +922,6 @@ html.ap-carrito-fijo #cart-ov .cart-foot-compacto{display:flex;align-items:cente
         <button class="btn-secondary" id="rc-ver-historial" style="margin-top:10px" type="button">🕘 Ver historial de este producto</button>
         <div id="rc-historial-box" class="hidden" style="margin-top:10px;max-height:180px;overflow-y:auto"></div>
       </div>
-    </div>
-
-    <!-- Caja surtida: varios productos distintos en una sola recepción, cada uno con
-         su propio costo TOTAL (no unitario) — la app divide por la cantidad de esa
-         fila. Proveedor/sector/IVA/fecha se cargan una sola vez para toda la caja. -->
-    <div class="field" id="rc-caja-field" style="display:none">
-      <label>Agregar producto a la caja</label>
-      <div class="search-row">
-        <input id="rc-caja-search" placeholder="Nombre, SKU o código…" autocomplete="off">
-        <button class="scan-btn" id="rc-caja-scan" type="button" aria-label="Escanear código">📷</button>
-      </div>
-      <div class="results" id="rc-caja-results"></div>
-
-      <div class="field" style="margin-top:14px;margin-bottom:0">
-        <label>Proveedor <span style="text-transform:none;font-weight:400">(aplica a toda la caja)</span></label>
-        <input id="rc-caja-proveedor" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
-        <div class="results" id="rc-caja-proveedor-results"></div>
-        <label style="margin-top:10px">Sector <span style="text-transform:none;font-weight:400">(aplica a toda la caja)</span></label>
-        <input id="rc-caja-sector" placeholder="Buscar o escribir uno nuevo…" autocomplete="off">
-        <div class="results" id="rc-caja-sector-results"></div>
-        <label style="margin-top:10px">IVA de esta compra <span style="text-transform:none;font-weight:400">(aplica a toda la caja)</span></label>
-        <div class="toggle-row">
-          <button type="button" class="toggle-btn active" id="rc-caja-iva-con" data-iva="con">Con IVA</button>
-          <button type="button" class="toggle-btn" id="rc-caja-iva-sin" data-iva="sin">Sin IVA</button>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <div style="flex:1">
-            <label style="margin-top:0">Costo <span style="text-transform:none;font-weight:400">(toda la caja)</span></label>
-            <input id="rc-caja-costo" type="number" inputmode="decimal" placeholder="$">
-          </div>
-          <div style="flex:1">
-            <label style="margin-top:0">Precio de venta <span style="text-transform:none;font-weight:400">(toda la caja)</span></label>
-            <input id="rc-caja-precio" type="number" inputmode="decimal" placeholder="$">
-          </div>
-        </div>
-        <div id="rc-caja-margen-hint" class="pc-hint"></div>
-        <label style="margin-top:10px">Fecha de vencimiento <span style="text-transform:none;font-weight:400">(opcional, aplica a toda la caja)</span></label>
-        <div class="fecha-row">
-          <input id="rc-caja-fecha-dd" class="fecha-seg" inputmode="numeric" maxlength="2" placeholder="DD">
-          <span class="fecha-sep">/</span>
-          <input id="rc-caja-fecha-mm" class="fecha-seg" inputmode="numeric" maxlength="2" placeholder="MM">
-          <span class="fecha-sep">/</span>
-          <input id="rc-caja-fecha-aaaa" class="fecha-seg" inputmode="numeric" maxlength="4" placeholder="AAAA">
-          <button type="button" class="fecha-cal-btn" id="rc-caja-fecha-cal">📅</button>
-          <input type="date" id="rc-caja-fecha" class="fecha-date-hidden" tabindex="-1">
-        </div>
-      </div>
-
-      <div id="rc-caja-lista" style="margin-top:14px"></div>
-      <div id="rc-caja-resumen" style="margin-top:8px;font-size:11.5px;color:var(--muted)"></div>
     </div>
 
     <div class="field" id="rc-provsector-field" style="display:none">
@@ -1031,8 +980,9 @@ html.ap-carrito-fijo #cart-ov .cart-foot-compacto{display:flex;align-items:cente
       <div class="toggle-row">
         <button type="button" class="toggle-btn active" id="rc-modo-unidad" data-modo="unidad">Por unidad</button>
         <button type="button" class="toggle-btn" id="rc-modo-caja" data-modo="caja">Por caja</button>
+        <button type="button" class="toggle-btn" id="rc-modo-surtida" data-modo="surtida">🧺 Caja surtida</button>
       </div>
-      <div class="qty-row">
+      <div class="qty-row" id="rc-cantidad-qtyrow">
         <button class="qty-btn" id="rc-qty-menos" type="button">−</button>
         <input id="rc-cantidad" inputmode="decimal" placeholder="0" disabled>
         <span id="rc-unidad-lbl" style="min-width:34px;text-align:center;color:var(--muted);font-weight:700;font-size:12px">u</span>
@@ -1043,6 +993,15 @@ html.ap-carrito-fijo #cart-ov .cart-foot-compacto{display:flex;align-items:cente
         <input id="rc-unidades-caja" inputmode="numeric" placeholder="Ej: 24">
       </div>
       <div id="rc-stock-total-hint" style="margin-top:6px;font-size:11.5px;color:var(--muted)"></div>
+      <!-- Caja surtida: varios productos en una sola recepción, agregados con el mismo
+           buscador "Producto" de arriba. El costo/precio (calculadora de más abajo),
+           proveedor/sector y fecha de vencimiento son los MISMOS campos compartidos que
+           ya usa la recepción de un solo producto — se aplican por igual a toda la
+           lista, no hace falta duplicarlos. -->
+      <div class="hidden" id="rc-surtida-campos" style="margin-top:10px">
+        <div id="rc-surtida-lista"></div>
+        <div id="rc-surtida-resumen" style="margin-top:8px;font-size:11.5px;color:var(--muted)"></div>
+      </div>
     </div>
 
     <div class="field" id="rc-costo-field" style="display:none">
@@ -2892,30 +2851,18 @@ const PcWidget=(function(){
 
 
 const rcState={ item:null, modo:'unidad', ivaModo:'con', precioTocado:false, margenTocado:false, accion:'recibir', ajusteModo:'delta', provNuevo:null, sectorNuevo:null, codigoEscaneado:null,
-  // Caja surtida: lista de productos + campos compartidos para toda la caja (proveedor/
-  // sector/IVA/costo/precio — null en prov/sector significa "no tocar"). Costo y precio
-  // se aplican por igual a TODOS los productos de la lista, igual que proveedor/sector/
-  // fecha de vencimiento — no son por producto.
-  cajaItems:[], cajaIvaModo:'con', cajaProvNuevo:null, cajaSectorNuevo:null, cajaCosto:'', cajaPrecio:'' };
+  // Caja surtida: modo==='surtida' (3ra opción de "Cantidad recibida"). Lista de
+  // productos agregados con el mismo buscador de arriba — el costo/precio (widget de
+  // más abajo) y proveedor/sector/fecha son los MISMOS campos compartidos que ya usa
+  // la recepción de un solo producto, no hace falta duplicarlos ni un estado aparte.
+  surtidaItems:[] };
 
 function rcSetAccion(accion){
   rcState.accion=accion;
   document.getElementById('rc-accion-recibir').classList.toggle('active',accion==='recibir');
-  document.getElementById('rc-accion-caja').classList.toggle('active',accion==='caja');
   document.getElementById('rc-accion-ajustar').classList.toggle('active',accion==='ajustar');
-  document.getElementById('rc-caja-field').style.display=accion==='caja'?'block':'none';
-  document.getElementById('rc-producto-field').style.display=accion==='caja'?'none':'block';
   const it=rcState.item;
-  if(accion==='caja'){
-    // Caja surtida no usa el picker de un solo producto (#rc-picked/#rc-results) ni
-    // sus campos — se ocultan todos, igual que ya hace 'ajustar' con #rc-ajuste-field.
-    document.getElementById('rc-provsector-field').style.display='none';
-    document.getElementById('rc-costo-field').style.display='none';
-    document.getElementById('rc-fecha-field').style.display='none';
-    document.getElementById('rc-cantidad-field').style.display='none';
-    document.getElementById('rc-ajuste-field').style.display='none';
-    rcCajaRender();
-  }else if(accion==='ajustar'){
+  if(accion==='ajustar'){
     document.getElementById('rc-costo-field').style.display='none';
     document.getElementById('rc-fecha-field').style.display='none';
     document.getElementById('rc-cantidad-field').style.display='none';
@@ -2935,7 +2882,6 @@ function rcSetAccion(accion){
   rcValidar();
 }
 document.getElementById('rc-accion-recibir').onclick=()=>rcSetAccion('recibir');
-document.getElementById('rc-accion-caja').onclick=()=>rcSetAccion('caja');
 document.getElementById('rc-accion-ajustar').onclick=()=>rcSetAccion('ajustar');
 document.getElementById('rc-ajuste-menos').onclick=()=>{ const i=document.getElementById('rc-ajuste-cantidad'); i.value=(Number(i.value)||0)-1; };
 document.getElementById('rc-ajuste-mas').onclick=()=>{ const i=document.getElementById('rc-ajuste-cantidad'); i.value=(Number(i.value)||0)+1; };
@@ -2989,13 +2935,6 @@ comboboxInit('rc-proveedor','rc-proveedor-results',()=>PROV_SEC.proveedores,'cre
   }
 });
 comboboxInit('rc-sector','rc-sector-results',()=>PROV_SEC.sectores,'crear_sector',(v)=>{ rcState.sectorNuevo=v; rcValidar(); });
-// Proveedor/Sector compartidos de "Caja surtida" — mismo patrón, pero se guardan en
-// rcState.cajaProvNuevo/cajaSectorNuevo (aplican a toda la caja, no a un solo producto).
-comboboxInit('rc-caja-proveedor','rc-caja-proveedor-results',()=>PROV_SEC.proveedores,'crear_proveedor',(v)=>{
-  rcState.cajaProvNuevo=v;
-  if(esProveedorConIvaFactura(v)){ rcCajaSetIva('con'); showToast('🧾 '+v+': factura con IVA incluido — modo "Con IVA" activado'); }
-});
-comboboxInit('rc-caja-sector','rc-caja-sector-results',()=>PROV_SEC.sectores,'crear_sector',(v)=>{ rcState.cajaSectorNuevo=v; });
 comboboxInit('cp-proveedor','cp-proveedor-results',()=>PROV_SEC.proveedores,'crear_proveedor',(v)=>{
   if(esProveedorConIvaFactura(v)){
     if(cpPcApi)cpPcApi.setIva('con');
@@ -3062,26 +3001,11 @@ function rcReset(){
   document.getElementById('rc-fecha-dd').value='';
   document.getElementById('rc-fecha-mm').value='';
   document.getElementById('rc-fecha-aaaa').value='';
-  rcSetModo('unidad');
-
   // Caja surtida
-  rcState.cajaItems=[]; rcState.cajaIvaModo='con'; rcState.cajaProvNuevo=null; rcState.cajaSectorNuevo=null;
-  rcState.cajaCosto=''; rcState.cajaPrecio='';
-  document.getElementById('rc-caja-search').value='';
-  document.getElementById('rc-caja-results').innerHTML='';
-  document.getElementById('rc-caja-proveedor').value='';
-  document.getElementById('rc-caja-sector').value='';
-  document.getElementById('rc-caja-iva-con').classList.add('active');
-  document.getElementById('rc-caja-iva-sin').classList.remove('active');
-  document.getElementById('rc-caja-costo').value='';
-  document.getElementById('rc-caja-precio').value='';
-  document.getElementById('rc-caja-margen-hint').textContent='';
-  document.getElementById('rc-caja-fecha').value='';
-  document.getElementById('rc-caja-fecha-dd').value='';
-  document.getElementById('rc-caja-fecha-mm').value='';
-  document.getElementById('rc-caja-fecha-aaaa').value='';
-  document.getElementById('rc-caja-lista').innerHTML='';
-  document.getElementById('rc-caja-resumen').textContent='';
+  rcState.surtidaItems=[];
+  document.getElementById('rc-surtida-lista').innerHTML='';
+  document.getElementById('rc-surtida-resumen').textContent='';
+  rcSetModo('unidad');
 
   rcSetAccion('recibir');
   const btnG=document.getElementById('rc-guardar'); btnG.disabled=true; btnG.textContent='Guardar y sumar stock';
@@ -3091,13 +3015,28 @@ function rcSetModo(modo){
   rcState.modo=modo;
   document.getElementById('rc-modo-unidad').classList.toggle('active',modo==='unidad');
   document.getElementById('rc-modo-caja').classList.toggle('active',modo==='caja');
+  document.getElementById('rc-modo-surtida').classList.toggle('active',modo==='surtida');
   document.getElementById('rc-caja-campos').classList.toggle('hidden',modo!=='caja');
+  document.getElementById('rc-cantidad-qtyrow').classList.toggle('hidden',modo==='surtida');
+  document.getElementById('rc-surtida-campos').classList.toggle('hidden',modo!=='surtida');
+  if(modo==='surtida'){
+    // El producto ya elegido (si lo hay) pasa a ser el primer ítem de la lista, para
+    // no perderlo — el picker de un solo producto (#rc-picked) se oculta porque sus
+    // propiedades/historial ahora se muestran por fila, en la lista de abajo.
+    document.getElementById('rc-picked').classList.remove('on');
+    if(rcState.item && !rcState.surtidaItems.some(r=>r.ref===rcState.item.ref)){
+      rcSurtidaAgregar(rcState.item.ref);
+    }
+    rcSurtidaRender();
+  }
   const esPeso=rcState.item&&rcState.item.peso;
   document.getElementById('rc-unidad-lbl').textContent=modo==='caja'?'cajas':(esPeso?'kg':'u');
   rcRenderStockHint();
+  rcValidar();
 }
 document.getElementById('rc-modo-unidad').onclick=()=>rcSetModo('unidad');
 document.getElementById('rc-modo-caja').onclick=()=>rcSetModo('caja');
+document.getElementById('rc-modo-surtida').onclick=()=>rcSetModo('surtida');
 document.getElementById('rc-unidades-caja').oninput=rcRenderStockHint;
 
 // NOTA: el manejo de Costo/IVA/Margen/Precio/Redondeo ahora vive en PcWidget
@@ -3130,6 +3069,12 @@ function rcMontarPrecio(costo,precio){
 function rcPick(ref){
   const it=(DB.items||[]).find(i=>i.ref===ref);
   if(!it)return;
+  // En modo "Caja surtida" el buscador de arriba agrega a la lista en vez de
+  // reemplazar la selección única — no toca rcState.item ni el resto de este flujo.
+  if(rcState.accion==='recibir' && rcState.modo==='surtida'){
+    rcSurtidaAgregar(ref);
+    return;
+  }
   rcState.item=it;
   document.getElementById('rc-search').value=it.nombre;
   document.getElementById('rc-results').innerHTML='';
@@ -3254,11 +3199,12 @@ document.getElementById('rc-activar-iva').onclick=async()=>{
 
 function rcValidar(){
   const btn=document.getElementById('rc-guardar');
-  // Caja surtida no usa rcState.item (nunca pasa por rcPick) — se valida ANTES del
-  // guard de "!it" de más abajo, si no el botón quedaría siempre deshabilitado acá.
-  if(rcState.accion==='caja'){
-    const listas=rcCajaFilasListas().length;
-    btn.disabled=!rcCajaListaLista();
+  // Caja surtida (modo==='surtida' dentro de "Recibir mercadería") no depende de un
+  // solo rcState.item — se valida ANTES del guard de "!it" de más abajo, que es del
+  // flujo de un solo producto.
+  if(rcState.accion==='recibir' && rcState.modo==='surtida'){
+    const listas=rcSurtidaFilasListas().length;
+    btn.disabled=listas===0;
     btn.textContent=listas?('Guardar '+listas+' producto'+(listas===1?'':'s')):'Guardar y sumar stock';
     return;
   }
@@ -3329,31 +3275,26 @@ document.getElementById('rc-search').oninput=e=>{
 //  que ya existe para "Ver historial de este producto".
 // ============================================================
 
-// Filas con cantidad cargada y seguimiento de inventario activo (independiente de
-// si el costo/precio compartidos ya están cargados — eso se valida aparte).
-function rcCajaFilasListas(){
-  return rcState.cajaItems.filter(r=>r.track&&Number(r.cantidad)>0);
-}
-// La caja está lista para guardar si el costo/precio compartidos están cargados
-// Y hay al menos una fila con cantidad.
-function rcCajaListaLista(){
-  return Number(rcState.cajaCosto)>0 && Number(rcState.cajaPrecio)>0 && rcCajaFilasListas().length>0;
+// Filas con cantidad cargada y seguimiento de inventario activo — el costo/precio
+// compartidos (widget de más abajo) se validan aparte, en rc-guardar/rcValidar.
+function rcSurtidaFilasListas(){
+  return rcState.surtidaItems.filter(r=>r.track&&Number(r.cantidad)>0);
 }
 
-async function rcCajaPick(ref){
+async function rcSurtidaAgregar(ref){
   const it=(DB.items||[]).find(i=>i.ref===ref);
   if(!it)return;
-  if(rcState.cajaItems.some(r=>r.ref===ref)){ showToast('Ya está en la lista — edita su cantidad ahí abajo'); return; }
+  document.getElementById('rc-search').value='';
+  document.getElementById('rc-results').innerHTML='';
+  if(rcState.surtidaItems.some(r=>r.ref===ref)){ showToast('Ya está en la lista — edita su cantidad ahí abajo'); return; }
   const row={
     ref:it.ref, nombre:it.nombre, barcode:it.barcode, prov:it.prov, sector:it.sector,
     peso:!!it.peso, track:!!it.track, coste:it.coste, precio:it.precio, stock:it.stock,
     cantidad:0, guardando:false, error:null,
     ultimoMov:null // null = cargando, false = sin movimientos, objeto = {fecha,accion,motivo,...}
   };
-  rcState.cajaItems.push(row);
-  document.getElementById('rc-caja-search').value='';
-  document.getElementById('rc-caja-results').innerHTML='';
-  rcCajaRender();
+  rcState.surtidaItems.push(row);
+  rcSurtidaRender();
   guardarSnapshot();
   // Último movimiento: se busca aparte (no bloquea el agregado a la lista). Reusa
   // el mismo endpoint que "Ver historial de este producto", con limit=1 porque acá
@@ -3366,49 +3307,24 @@ async function rcCajaPick(ref){
   }catch(e){
     row.ultimoMov=false;
   }
-  rcCajaRender();
+  rcSurtidaRender();
 }
 
-// Costo/precio/IVA compartidos: solo recalculan la pista de margen (una vez para
-// toda la caja) — ya no hay nada que recalcular por fila, las propiedades de cada
-// producto que se muestran son las que ya tenía ANTES de recibir, no dependen de
-// este costo/precio nuevo.
-function rcCajaRenderResumen(){
-  const costo=Number(rcState.cajaCosto)||0;
-  const precio=Number(rcState.cajaPrecio)||0;
-  const hint=document.getElementById('rc-caja-margen-hint');
-  if(!costo||!precio){ hint.textContent=''; return; }
-  const costoBruto=PriceCalc.costoBruto(costo,'unidad',null,rcState.cajaIvaModo);
-  const margen=PriceCalc.margenDesdePrecio(precio,costoBruto);
-  hint.textContent='Costo bruto: '+fmtPeso(costoBruto)+(margen!=null?' · Margen: '+margen.toFixed(1)+'%':'');
-}
-document.getElementById('rc-caja-costo').oninput=e=>{ rcState.cajaCosto=e.target.value; rcCajaRenderResumen(); rcValidar(); };
-document.getElementById('rc-caja-precio').oninput=e=>{ rcState.cajaPrecio=e.target.value; rcCajaRenderResumen(); rcValidar(); };
-
-function rcCajaSetIva(modo){
-  rcState.cajaIvaModo=modo;
-  document.getElementById('rc-caja-iva-con').classList.toggle('active',modo==='con');
-  document.getElementById('rc-caja-iva-sin').classList.toggle('active',modo==='sin');
-  rcCajaRenderResumen();
-}
-document.getElementById('rc-caja-iva-con').onclick=()=>rcCajaSetIva('con');
-document.getElementById('rc-caja-iva-sin').onclick=()=>rcCajaSetIva('sin');
-
-function rcCajaRender(){
-  const box=document.getElementById('rc-caja-lista');
+function rcSurtidaRender(){
+  const box=document.getElementById('rc-surtida-lista');
   // No robar el foco de una fila que el usuario está editando en este momento
   // (mismo cuidado que renderCarrito() en Armar pedido).
   const activo=document.activeElement;
   if(activo && box.contains(activo)) return;
 
-  if(!rcState.cajaItems.length){
+  if(!rcState.surtidaItems.length){
     box.innerHTML='';
-    document.getElementById('rc-caja-resumen').textContent='';
+    document.getElementById('rc-surtida-resumen').textContent='Buscá arriba y agregá los productos de la caja — el costo y precio de la calculadora se aplican a todos por igual.';
     rcValidar();
     return;
   }
 
-  box.innerHTML=rcState.cajaItems.map(row=>{
+  box.innerHTML=rcState.surtidaItems.map(row=>{
     const stockTxt=row.stock==null?'s/c':(row.stock+(row.peso?' kg':' u'));
     const stockBajo=row.stock!=null&&row.stock<=0;
     const margenTxt=(row.precio>0)?Math.round((1-(row.coste||0)/row.precio)*100)+'%':'—';
@@ -3429,63 +3345,35 @@ function rcCajaRender(){
       <div class="mm-field" style="flex:1 1 120px;margin-bottom:0;margin-top:8px">
         <label style="font-size:10px">Cantidad</label>
         <div class="ap-qty">
-          <button class="ap-qty-btn" type="button" data-cja-act="menos">−</button>
-          <input type="text" inputmode="decimal" value="${row.cantidad||''}" placeholder="0" data-cja-cant="${row.ref}">
-          <button class="ap-qty-btn" type="button" data-cja-act="mas">+</button>
+          <button class="ap-qty-btn" type="button" data-srt-act="menos">−</button>
+          <input type="text" inputmode="decimal" value="${row.cantidad||''}" placeholder="0" data-srt-cant="${row.ref}">
+          <button class="ap-qty-btn" type="button" data-srt-act="mas">+</button>
         </div>
       </div>
-      <button class="del" type="button" data-cja-del="${row.ref}" ${row.guardando?'disabled':''}>${row.guardando?'…':'✕'}</button>
+      <button class="del" type="button" data-srt-del="${row.ref}" ${row.guardando?'disabled':''}>${row.guardando?'…':'✕'}</button>
     </div>`;
   }).join('');
 
   box.querySelectorAll('.cart-row').forEach(rowEl=>{
     const ref=rowEl.dataset.ref;
-    const row=rcState.cajaItems.find(r=>r.ref===ref);
+    const row=rcState.surtidaItems.find(r=>r.ref===ref);
     if(!row)return;
     const paso=row.peso?0.05:1;
-    const cantInput=rowEl.querySelector('[data-cja-cant]');
-    rowEl.querySelector('[data-cja-act="menos"]').onclick=()=>{ row.cantidad=Math.max(0,(Number(row.cantidad)||0)-paso); rcCajaRender(); guardarSnapshot(); };
-    rowEl.querySelector('[data-cja-act="mas"]').onclick=()=>{ row.cantidad=(Number(row.cantidad)||0)+paso; rcCajaRender(); guardarSnapshot(); };
+    const cantInput=rowEl.querySelector('[data-srt-cant]');
+    rowEl.querySelector('[data-srt-act="menos"]').onclick=()=>{ row.cantidad=Math.max(0,(Number(row.cantidad)||0)-paso); rcSurtidaRender(); guardarSnapshot(); };
+    rowEl.querySelector('[data-srt-act="mas"]').onclick=()=>{ row.cantidad=(Number(row.cantidad)||0)+paso; rcSurtidaRender(); guardarSnapshot(); };
     cantInput.oninput=()=>{ row.cantidad=Number(cantInput.value)||0; rcValidar(); };
-    cantInput.onblur=()=>rcCajaRender();
-    rowEl.querySelector('[data-cja-del]').onclick=()=>{
-      rcState.cajaItems=rcState.cajaItems.filter(r=>r.ref!==ref);
-      rcCajaRender(); guardarSnapshot();
+    cantInput.onblur=()=>rcSurtidaRender();
+    rowEl.querySelector('[data-srt-del]').onclick=()=>{
+      rcState.surtidaItems=rcState.surtidaItems.filter(r=>r.ref!==ref);
+      rcSurtidaRender(); guardarSnapshot();
     };
   });
 
-  const listas=rcCajaFilasListas().length;
-  document.getElementById('rc-caja-resumen').textContent=rcState.cajaItems.length+' producto'+(rcState.cajaItems.length===1?'':'s')+' en la lista'+(listas?' · '+listas+' con cantidad cargada':'');
+  const listas=rcSurtidaFilasListas().length;
+  document.getElementById('rc-surtida-resumen').textContent=rcState.surtidaItems.length+' producto'+(rcState.surtidaItems.length===1?'':'s')+' en la lista'+(listas?' · '+listas+' con cantidad cargada':'');
   rcValidar();
 }
-
-document.getElementById('rc-caja-search').oninput=e=>{
-  const q=e.target.value;
-  const lista=buscarProductos(q);
-  const box=document.getElementById('rc-caja-results');
-  if(lista.length){
-    box.innerHTML=lista.map(it=>`<div class="result-item" data-ref="${it.ref}"><div class="n">${it.nombre}</div><div class="s">${it.prov}${it.barcode?' · '+it.barcode:''}</div></div>`).join('');
-    box.querySelectorAll('[data-ref]').forEach(el=>el.onclick=()=>rcCajaPick(el.dataset.ref));
-  }else{
-    box.innerHTML='';
-  }
-};
-
-document.getElementById('rc-caja-scan').onclick=()=>{
-  // A diferencia del escaneo de un solo producto, acá NO se cierra el modal entre
-  // escaneos (el overlay de la cámara tiene más z-index que #rc-ov y lo cubre
-  // igual) — así se pueden escanear varios productos de la caja seguidos.
-  openScanner(code=>{
-    const exactos=(DB.items||[]).filter(it=>String(it.barcode||'')===String(code));
-    if(exactos.length===1){ rcCajaPick(exactos[0].ref); return; }
-    const lista=buscarProductos(code);
-    if(lista.length===1){ rcCajaPick(lista[0].ref); }
-    else{
-      document.getElementById('rc-caja-search').value=code;
-      document.getElementById('rc-caja-search').dispatchEvent(new Event('input',{bubbles:true}));
-    }
-  });
-};
 
 document.getElementById('rc-qty-menos').onclick=()=>{
   const i=document.getElementById('rc-cantidad');
@@ -3558,7 +3446,6 @@ function wireFechaSegmentada(ddId,mmId,aaaaId,hiddenId,calId){
   }
 }
 wireFechaSegmentada('rc-fecha-dd','rc-fecha-mm','rc-fecha-aaaa','rc-fecha','rc-fecha-cal');
-wireFechaSegmentada('rc-caja-fecha-dd','rc-caja-fecha-mm','rc-caja-fecha-aaaa','rc-caja-fecha','rc-caja-fecha-cal');
 wireFechaSegmentada('cp-fecha-dd','cp-fecha-mm','cp-fecha-aaaa');
 function fechaSegmentadaTexto(ddId,mmId,aaaaId){
   const dd=document.getElementById(ddId).value.padStart(2,'0');
@@ -3571,29 +3458,34 @@ function fechaSegmentadaTexto(ddId,mmId,aaaaId){
 document.getElementById('rc-guardar').onclick=async()=>{
   const btn=document.getElementById('rc-guardar');
 
-  // Caja surtida no usa rcState.item — se resuelve ANTES del guard "if(!it)return"
-  // de más abajo, que es del flujo de un solo producto.
-  if(rcState.accion==='caja'){
-    if(!rcCajaListaLista()){ showToast('Cargá el costo, el precio y al menos un producto con cantidad'); return; }
-    const filas=rcCajaFilasListas();
-    const fecha=fechaSegmentadaTexto('rc-caja-fecha-dd','rc-caja-fecha-mm','rc-caja-fecha-aaaa');
-    // Costo/precio compartidos: se calculan UNA sola vez y se aplican por igual a
-    // cada producto de la lista (a diferencia de la cantidad, que sí es por fila).
-    const costoBruto=Math.round(PriceCalc.costoBruto(rcState.cajaCosto,'unidad',null,rcState.cajaIvaModo));
-    const precio=Number(rcState.cajaPrecio)||0;
+  // Caja surtida (modo==='surtida' dentro de "Recibir mercadería") no depende de un
+  // solo rcState.item — se resuelve ANTES del guard "if(!it)return" de más abajo,
+  // que es del flujo de un solo producto.
+  if(rcState.accion==='recibir' && rcState.modo==='surtida'){
+    const filas=rcSurtidaFilasListas();
+    if(!filas.length){ showToast('Agregá al menos un producto con cantidad'); return; }
+    const fecha=fechaSegmentadaTexto('rc-fecha-dd','rc-fecha-mm','rc-fecha-aaaa');
+    // Costo/precio compartidos: los mismos campos de la calculadora (rc-costo-field)
+    // que ya usa la recepción de un solo producto — se leen UNA sola vez y se aplican
+    // por igual a cada producto de la lista (a diferencia de la cantidad, que sí es
+    // por fila).
+    const costoBruto=Math.round(rcCostoBruto());
+    const precio=Number(document.getElementById('rc-precio').value)||0;
     btn.disabled=true;
     let okCount=0, failCount=0;
     for(const row of filas){
-      row.guardando=true; row.error=null; rcCajaRender();
+      row.guardando=true; row.error=null; rcSurtidaRender();
       const cantidad=Number(row.cantidad);
       const itLocal=(DB.items||[]).find(x=>x.ref===row.ref);
+      const costoCambio=costoBruto>0&&itLocal&&costoBruto!==itLocal.coste;
       const precioCambio=precio>0&&itLocal&&precio!==itLocal.precio;
-      const provCambio=rcState.cajaProvNuevo!=null&&rcState.cajaProvNuevo!==(itLocal&&itLocal.prov==='SIN PROVEEDOR'?'':(itLocal&&itLocal.prov));
-      const sectorCambio=rcState.cajaSectorNuevo!=null&&rcState.cajaSectorNuevo!==(itLocal&&itLocal.sector||'');
-      const payload={ sku:row.ref, cantidad, fechaVencimiento:fecha, costo:costoBruto };
+      const provCambio=rcState.provNuevo!=null&&rcState.provNuevo!==(itLocal&&itLocal.prov==='SIN PROVEEDOR'?'':(itLocal&&itLocal.prov));
+      const sectorCambio=rcState.sectorNuevo!=null&&rcState.sectorNuevo!==(itLocal&&itLocal.sector||'');
+      const payload={ sku:row.ref, cantidad, fechaVencimiento:fecha };
+      if(costoCambio) payload.costo=costoBruto;
       if(precioCambio) payload.precio=precio;
-      if(provCambio) payload.proveedor=rcState.cajaProvNuevo;
-      if(sectorCambio) payload.sector=rcState.cajaSectorNuevo;
+      if(provCambio) payload.proveedor=rcState.provNuevo;
+      if(sectorCambio) payload.sector=rcState.sectorNuevo;
       try{
         const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'lote_nuevo',payload})});
         const j=await res.json();
@@ -3606,7 +3498,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
             if(j.proveedorAplicado!=null)itLocal.prov=j.proveedorAplicado||'SIN PROVEEDOR';
             if(j.sectorAplicado!=null)itLocal.sector=j.sectorAplicado;
           }
-          rcState.cajaItems=rcState.cajaItems.filter(r=>r.ref!==row.ref);
+          rcState.surtidaItems=rcState.surtidaItems.filter(r=>r.ref!==row.ref);
         }else{
           failCount++; row.guardando=false; row.error=(j&&j.error)||'no se pudo guardar';
         }
@@ -3615,11 +3507,11 @@ document.getElementById('rc-guardar').onclick=async()=>{
       }
     }
     persist();
-    rcCajaRender();
+    rcSurtidaRender();
     btn.disabled=false;
     showToast((okCount?('✓ '+okCount+' producto'+(okCount===1?'':'s')+' recibido'+(okCount===1?'':'s')):'')+
               (failCount?(' · ❌ '+failCount+' con error (revisa la lista)'):''));
-    if(!rcState.cajaItems.length) limpiarSnapshot();
+    if(!rcState.surtidaItems.length) limpiarSnapshot();
     return;
   }
 
