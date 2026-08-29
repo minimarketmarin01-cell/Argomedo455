@@ -3353,12 +3353,31 @@ function aggregate(sales, invMap){
 function invMapFromItems(items){const m={};items.forEach(it=>{m[it.ref]={nombre:it.nombre,prov:it.prov,coste:it.coste,precio:it.precio,stock:it.stock,track:it.track,barcode:it.barcode||''};});return m;}
 
 // ===================== PERSISTENCIA =====================
+// INVMAP se arma siempre desde DB.items (invMapFromItems) — no es un dato aparte, es
+// puro derivado. No se guarda en localStorage: con ~3000 productos casi duplicaba el
+// tamaño del caché local sin necesidad, y era la causa real de "memoria del navegador
+// llena" en dispositivos con poco espacio de almacenamiento — el guardado real de cada
+// acción ya está en D1 (el servidor) mucho antes de este paso; persist() solo mantiene
+// una copia local para que la app abra al instante la próxima vez, no es la fuente de
+// verdad de nada.
+let _avisoMemoriaLlenaMostrado=false;
 function persist(){
   try{
-    localStorage.setItem('cumpas_db',JSON.stringify({DB,INVMAP,SRC}));
+    localStorage.setItem('cumpas_db',JSON.stringify({DB,SRC}));
   }catch(e){
     if(e&&(e.name==='QuotaExceededError'||e.code===22)){
-      showToast('No se pudo guardar: memoria del navegador llena.');
+      // Reintento: a veces el motor necesita espacio libre ADEMÁS del que ya ocupa la
+      // clave vieja para escribir la nueva (no la sobreescribe "in place") — borrarla
+      // primero y reintentar una vez alcanza para la mayoría de los casos.
+      try{
+        localStorage.removeItem('cumpas_db');
+        localStorage.setItem('cumpas_db',JSON.stringify({DB,SRC}));
+        return;
+      }catch(e2){}
+      if(!_avisoMemoriaLlenaMostrado){
+        _avisoMemoriaLlenaMostrado=true;
+        showToast('Los cambios ya se guardaron en el servidor — solo no se pudo guardar una copia local por falta de espacio en este celular.');
+      }
     }else{
       showToast('No se pudieron guardar los datos en este dispositivo.');
     }
@@ -3367,7 +3386,7 @@ function persist(){
 function restore(){
   try{
     const v=localStorage.getItem('cumpas_db');
-    if(v){const o=JSON.parse(v);if(o&&o.DB){DB=o.DB;INVMAP=o.INVMAP;SRC=o.SRC||'datos guardados';return true;}}
+    if(v){const o=JSON.parse(v);if(o&&o.DB){DB=o.DB;INVMAP=invMapFromItems(DB.items);SRC=o.SRC||'datos guardados';return true;}}
   }catch(e){}
   return false;
 }
@@ -9756,7 +9775,7 @@ function vcAplicarFiltro(){
     // también en Lista. _vcTodos trae ambos (el backend solo excluye 'Revisado'), así que acá
     // se filtra el resto: Lista = todo lo que no esté Retirado ni Revisado.
     let base=_vcTodos.filter(l=>l.estado!=='Retirado');
-    if(provFiltro)base=base.filter(l=>l.categoria===provFiltro);
+    if(provFiltro)base=base.filter(l=>vcProveedorDe(l)===provFiltro); // mismo campo que arma el desplegable (vcProveedorDe) — antes comparaba contra l.categoria, que ya no es lo que ofrece el buscador
     // Filtro rápido de días (7/15/30/Todos) — reemplaza el filtro de categoría que antes solo
     // vivía en "Por góndola" (eliminado, fusionado acá). Los vencidos SIEMPRE se muestran sin
     // importar el filtro: son lo más urgente, nunca deberían quedar ocultos por accidente.
@@ -9804,7 +9823,7 @@ function vcBuscarCatalogo(q,provFiltro){
     const s=((it.nombre||'')+' '+(it.ref||'')+' '+(it.barcode||'')).toLowerCase();
     return words.every(w=>s.includes(w));
   });
-  if(provFiltro)prods=prods.filter(it=>it.prov===provFiltro); // it.prov = categoría/proveedor propio de la WebApp, igual campo que l.categoria en los lotes
+  if(provFiltro)prods=prods.filter(it=>it.prov===provFiltro); // it.prov = proveedor real de la WebApp, mismo campo que vcProveedorDe usa como primera opción
   prods=prods.slice(0,80);
   if(!prods.length){box.innerHTML='<div class="vc-empty">Sin coincidencias en el catálogo.</div>';return;}
   // FIX: mismo criterio que vcAplicarFiltro — un lote Retirado vive en Pendientes, no en la
@@ -10006,9 +10025,12 @@ async function daCargarBadgeSolo(){
 // Nombre de proveedor a mostrar/agrupar por lote: prioriza el proveedor real de la WebApp
 // (mismo campo que usa itemsFor en Armar pedido) y cae a la categoría de Loyverse si el
 // producto todavía no tiene proveedor real asignado — así ningún lote queda "sin grupo".
+// it.prov (el proveedor TEXT que escribe Recepción/Crear producto) va primero: es la
+// fuente que de verdad se usa en Los Cumpas — it.proveedorNombre (el FK en paralelo)
+// queda casi siempre vacío acá, a diferencia de Marín, donde sí es la fuente principal.
 function vcProveedorDe(l){
   const it=(DB.items||[]).find(x=>x.ref===l.sku);
-  return (it&&it.proveedorNombre)||l.categoria||'Sin proveedor';
+  return (it&&(it.prov||it.proveedorNombre))||l.categoria||'Sin proveedor';
 }
 // Filtra una lista de lotes por texto (nombre/SKU/código de barras, vía join con DB.items — el
 // lote no trae barcode directo) y/o por proveedor exacto (vcProveedorDe por defecto). Usado por
@@ -10991,8 +11013,11 @@ document.getElementById('vc-add-btn').onclick=vcShowForm;
 const _vcLFiltro=vcWireBuscadorInteligente('vc-l',{
   getLotes:()=>_vcTodos.filter(l=>l.estado!=='Retirado'),
   onFiltroChange:()=>{vcRecalcularProgTotal();vcAplicarFiltro();},
-  vistaParaReabrir:'lista',
-  proveedorDe:l=>l.categoria   // Lista sigue filtrando por categoría Loyverse, igual que antes de unificar el buscador
+  vistaParaReabrir:'lista'
+  // Las 3 pestañas (Lista/Pendientes/Descuentos) usan el mismo proveedor real (vcProveedorDe,
+  // por defecto) — en Marín, Lista filtraba por categoría Loyverse en vez de proveedor
+  // (el placeholder decía "proveedor" pero mostraba categorías); en Los Cumpas el
+  // proveedor es el dato que de verdad se usa en el resto de la app, así que se unifica.
 });
 const _vcPendFiltro=vcWireBuscadorInteligente('vc-pend',{
   getLotes:()=>_vcTodos.filter(l=>l.estado==='Retirado'),
