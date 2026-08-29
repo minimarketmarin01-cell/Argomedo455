@@ -1200,8 +1200,15 @@ async function calcularABC(env, periodoDias) {
   const dias = Number(periodoDias) || 30;
   const desde = fechaISO(new Date(Date.now() - dias * 86400000));
 
+  // Ingreso real por línea (portado de Marín 376): usa `ventas.venta`, el monto real
+  // del recibo en el momento de la venta (ver aplicarVentas) — no `cantidad * precio
+  // actual`, que distorsiona la clasificación de cualquier producto cuyo precio haya
+  // cambiado desde que se vendió (promociones, ajustes de precio, etc). Antes de la
+  // Fase 1 la tabla `ventas` no guardaba `venta`, así que las filas de esa época quedan
+  // en 0 (no hay backfill) — para esas se usa `cantidad * precio actual` como respaldo,
+  // igual que antes, en vez de perder esas ventas de la clasificación por completo.
   const { results: rows } = await env.DB.prepare(
-    `SELECT v.sku AS sku, SUM(v.cantidad * p.precio) AS venta_total
+    `SELECT v.sku AS sku, SUM(CASE WHEN v.venta != 0 THEN v.venta ELSE v.cantidad * p.precio END) AS venta_total
      FROM ventas v JOIN productos p ON p.sku = v.sku
      WHERE v.fecha_venta >= ?
      GROUP BY v.sku
