@@ -2728,7 +2728,7 @@ async function listaVencimientos(env, { estado, sku } = {}) {
   const params = [];
   if (sku) { sql += " AND sku = ?"; params.push(sku); }
   if (estado && estado !== "todos") { sql += " AND estado = ?"; params.push(estado); }
-  else if (!estado) { sql += " AND estado NOT IN ('Cambiado','Descuento recibido','Desechado')"; }
+  else if (!estado) { sql += " AND estado NOT IN ('Cambiado','Descuento recibido','Desechado','Revisado')"; }
   sql += " ORDER BY (fecha_vencimiento = '') ASC, id DESC";
   const { results } = await env.DB.prepare(sql).bind(...params).all();
   return results.map(r => {

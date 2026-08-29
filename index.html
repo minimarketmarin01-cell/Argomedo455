@@ -4369,7 +4369,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-25.18';
+const APP_VERSION='2026-08-29.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -10022,15 +10022,16 @@ async function daCargarBadgeSolo(){
     daActualizarBadge();
   }catch(e){/* si falla, el badge simplemente se queda vacío hasta que se entre a la pestaña */}
 }
-// Nombre de proveedor a mostrar/agrupar por lote: prioriza el proveedor real de la WebApp
-// (mismo campo que usa itemsFor en Armar pedido) y cae a la categoría de Loyverse si el
-// producto todavía no tiene proveedor real asignado — así ningún lote queda "sin grupo".
-// it.prov (el proveedor TEXT que escribe Recepción/Crear producto) va primero: es la
-// fuente que de verdad se usa en Los Cumpas — it.proveedorNombre (el FK en paralelo)
-// queda casi siempre vacío acá, a diferencia de Marín, donde sí es la fuente principal.
+// Nombre de proveedor a mostrar/agrupar por lote: proveedor real de la WebApp (mismo
+// campo que usa itemsFor en Armar pedido), nunca la categoría de Loyverse — a pedido
+// explícito del dueño ("uso los proveedores de la web app, no las categorías de
+// Loyverse"). it.prov (el proveedor TEXT que escribe Recepción/Crear producto) va
+// primero; it.proveedorNombre (asignado desde Gestionar proveedores, FK) es el
+// respaldo. Un producto sin ninguno de los dos cae en "Sin proveedor" — antes caía en
+// la categoría de Loyverse, que es justo lo que no se quiere mostrar acá.
 function vcProveedorDe(l){
   const it=(DB.items||[]).find(x=>x.ref===l.sku);
-  return (it&&(it.prov||it.proveedorNombre))||l.categoria||'Sin proveedor';
+  return (it&&(it.prov||it.proveedorNombre))||'Sin proveedor';
 }
 // Filtra una lista de lotes por texto (nombre/SKU/código de barras, vía join con DB.items — el
 // lote no trae barcode directo) y/o por proveedor exacto (vcProveedorDe por defecto). Usado por
