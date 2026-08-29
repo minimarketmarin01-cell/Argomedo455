@@ -1768,6 +1768,127 @@ async function accionEliminarCalculoFactura(env, payload) {
 }
 
 // ============================================================
+//  MAPEO DE CATEGORÍAS (portado de Marín 376, adaptado a que el proveedor "real" de
+//  Argomedo es productos.proveedor TEXT — proveedor_id es el FK nuevo en paralelo,
+//  ver §4 del plan "modelo dual"). "sin_proveedor" mira la columna TEXT, que es la
+//  que de verdad usa el resto de la app hoy (Recepción, Crear producto, etc.).
+// ============================================================
+async function repCategoriasResumen(env) {
+  const { results: categorias } = await env.DB.prepare(
+    "SELECT categoria, COUNT(*) AS total, " +
+    "SUM(CASE WHEN proveedor IS NULL OR TRIM(proveedor)='' OR proveedor='SIN PROVEEDOR' THEN 1 ELSE 0 END) AS sin_proveedor, " +
+    "SUM(CASE WHEN sector IS NULL OR TRIM(sector)='' THEN 1 ELSE 0 END) AS sin_sector, " +
+    "MAX(nombre) AS ejemplo FROM productos " +
+    "WHERE categoria IS NOT NULL AND TRIM(categoria) != '' " +
+    "GROUP BY categoria ORDER BY total DESC"
+  ).all();
+  const desglose = await get(env,
+    "SELECT " +
+    "SUM(CASE WHEN categoria IS NULL OR TRIM(categoria)='' THEN 1 ELSE 0 END) AS sin_categoria, " +
+    "SUM(CASE WHEN sector IS NULL OR TRIM(sector)='' THEN 1 ELSE 0 END) AS sin_sector, " +
+    "SUM(CASE WHEN proveedor IS NULL OR TRIM(proveedor)='' OR proveedor='SIN PROVEEDOR' THEN 1 ELSE 0 END) AS sin_proveedor, " +
+    "COUNT(*) AS total FROM productos");
+  return { categorias, total: categorias.length, desglose };
+}
+
+// Lista los productos de UNA categoría de Loyverse, para el modo "seleccionar dentro
+// de la categoría" de Mapeo de categorías (ej. una categoría mezclada con productos de
+// varios proveedores: acá se ven todos para marcar solo los que correspondan a cada uno).
+async function repCategoriaProductos(env, categoria) {
+  const { results: productos } = await env.DB.prepare(
+    "SELECT sku, nombre, id_loyverse, proveedor, sector FROM productos WHERE categoria = ? ORDER BY nombre LIMIT 2000"
+  ).bind(categoria).all();
+  const skus = productos.map(p => p.sku);
+  const adicionalesPorSku = {};
+  // D1 limita cuántos parámetros puede llevar una sola sentencia (~100) — se trocea
+  // en lotes de 90 SKUs por consulta, mismo fix que ya tiene Marín para esto.
+  const LOTE = 90;
+  for (let i = 0; i < skus.length; i += LOTE) {
+    const parte = skus.slice(i, i + LOTE);
+    if (!parte.length) continue;
+    const { results: filas } = await env.DB.prepare(
+      "SELECT pe.sku, pv.nombre FROM producto_proveedor_extra pe JOIN proveedores pv ON pv.id = pe.proveedor_id " +
+      "WHERE pe.sku IN (" + parte.map(() => "?").join(",") + ")"
+    ).bind(...parte).all();
+    filas.forEach(f => { (adicionalesPorSku[f.sku] = adicionalesPorSku[f.sku] || []).push(f.nombre); });
+  }
+  productos.forEach(p => { p.proveedores_adicionales = adicionalesPorSku[p.sku] || []; });
+  return { productos, total: productos.length };
+}
+
+// POST { action:'mapear_categoria', payload:{categoria,proveedor,sector,skus?} } → asigna
+// proveedor y/o sector a TODOS los productos de una categoría de Loyverse de una sola vez
+// (o solo a los `skus` indicados, para categorías mezcladas). Nunca pisa un proveedor/
+// sector que un producto ya tenga — solo rellena lo que le falte. También aprende el
+// patrón (categoría→proveedor/sector) para que clasificar_producto lo reuse sin IA.
+async function accionMapearCategoria(env, payload) {
+  const categoria = String((payload && payload.categoria) || "").trim();
+  if (!categoria) throw new Error("Falta la categoría");
+  const proveedor = payload && payload.proveedor ? String(payload.proveedor).trim() : null;
+  const sector = payload && payload.sector ? String(payload.sector).trim() : null;
+  if (!proveedor && !sector) throw new Error("Indica al menos un proveedor o un sector para esta categoría");
+  let proveedorId = null;
+  if (proveedor) {
+    await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedor);
+    const prov = await get(env, "SELECT id FROM proveedores WHERE nombre = ?", proveedor);
+    proveedorId = prov ? prov.id : null;
+  }
+  if (sector) await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sector);
+
+  const skusTodos = Array.isArray(payload && payload.skus) ? payload.skus.map(String).filter(Boolean) : null;
+  const where = skusTodos && skusTodos.length
+    ? `categoria = ? AND sku IN (${skusTodos.map(() => "?").join(",")})`
+    : "categoria = ?";
+  const params = skusTodos && skusTodos.length ? [categoria, ...skusTodos] : [categoria];
+
+  let cambiados = 0;
+  if (proveedor) {
+    const { meta } = await run(env, `UPDATE productos SET proveedor = ? WHERE ${where} AND (proveedor IS NULL OR TRIM(proveedor)='' OR proveedor='SIN PROVEEDOR')`, proveedor, ...params);
+    cambiados += (meta && meta.changes) || 0;
+  }
+  if (sector) {
+    const { meta } = await run(env, `UPDATE productos SET sector = ? WHERE ${where} AND (sector IS NULL OR TRIM(sector)='')`, sector, ...params);
+    cambiados += (meta && meta.changes) || 0;
+  }
+
+  // Aprendizaje por patrón solo tiene sentido para "toda la categoría" — una selección
+  // parcial ensuciaría la próxima categoría completa que se intente mapear de un tirón.
+  if (!skusTodos) {
+    const patron = categoria.toUpperCase();
+    await run(env,
+      "INSERT INTO producto_clasificacion_aprendida (patron, proveedor_id, sector, actualizado_en) VALUES (?,?,?,?) " +
+      "ON CONFLICT(patron) DO UPDATE SET " +
+      "proveedor_id = COALESCE(excluded.proveedor_id, producto_clasificacion_aprendida.proveedor_id), " +
+      "sector = COALESCE(excluded.sector, producto_clasificacion_aprendida.sector), actualizado_en = excluded.actualizado_en",
+      patron, proveedorId, sector, fechaHoraDDMMAAAA());
+  }
+
+  return { categoria, proveedor, sector, productosActualizados: cambiados };
+}
+
+// POST { action:'guardar_clasificacion', payload:{patron,proveedor,sector} } → guarda
+// (o actualiza) un patrón aprendido a mano, sin pasar por Mapeo de categorías — no
+// necesita IA, es un INSERT directo.
+async function accionGuardarClasificacion(env, payload) {
+  const patron = String((payload && payload.patron) || "").trim().toUpperCase();
+  if (!patron) throw new Error("Falta el patrón");
+  const proveedor = payload && payload.proveedor ? String(payload.proveedor).trim() : null;
+  const sector = payload && payload.sector ? String(payload.sector).trim() : null;
+  if (!proveedor && !sector) throw new Error("Indica al menos un proveedor o un sector");
+  let proveedorId = null;
+  if (proveedor) {
+    await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedor);
+    const prov = await get(env, "SELECT id FROM proveedores WHERE nombre = ?", proveedor);
+    proveedorId = prov ? prov.id : null;
+  }
+  await run(env,
+    "INSERT INTO producto_clasificacion_aprendida (patron, proveedor_id, sector, actualizado_en) VALUES (?,?,?,?) " +
+    "ON CONFLICT(patron) DO UPDATE SET proveedor_id = excluded.proveedor_id, sector = excluded.sector, actualizado_en = excluded.actualizado_en",
+    patron, proveedorId, sector, fechaHoraDDMMAAAA());
+  return { patron, proveedor, sector };
+}
+
+// ============================================================
 //  CATÁLOGO COMPACTO (D1 → frontend)
 //  Se usa para cargar TODOS los productos una sola vez al abrir
 //  la app (igual que Marín) y buscar después en el teléfono sin
@@ -3813,6 +3934,36 @@ export default {
       // POST { action:'eliminar_calculo_factura', payload:{factura_id} }
       if (action === "eliminar_calculo_factura") {
         const resultado = await accionEliminarCalculoFactura(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=categorias_resumen → resumen de categorías de Loyverse con
+      // cuántos productos les faltan proveedor/sector (Mapeo de categorías).
+      if (action === "categorias_resumen") {
+        const resultado = await repCategoriasResumen(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=categoria_productos&categoria=XXXX → productos de una categoría,
+      // para el modo "seleccionar dentro de la categoría" de Mapeo de categorías.
+      if (action === "categoria_productos") {
+        const categoria = url.searchParams.get("categoria") || "";
+        if (!categoria) return json({ ok: false, error: "Falta el parámetro categoria" }, 400);
+        const resultado = await repCategoriaProductos(env, categoria);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'mapear_categoria', payload:{categoria,proveedor,sector,skus?} }
+      if (action === "mapear_categoria") {
+        const resultado = await accionMapearCategoria(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'guardar_clasificacion', payload:{patron,proveedor,sector} } →
+      // guarda un patrón aprendido a mano, sin IA.
+      if (action === "guardar_clasificacion") {
+        const resultado = await accionGuardarClasificacion(env, payload);
         return json({ ok: true, ...resultado });
       }
 
