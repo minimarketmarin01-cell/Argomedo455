@@ -2590,6 +2590,33 @@ async function accionMermaMotivo(env, payload) {
   return { id, sku: merma.sku, nombre: merma.producto, motivoAnterior: merma.motivo, motivo };
 }
 
+// POST { action:'eliminar_merma', payload:{filaIndex} } (portado de Marín 376) →
+// deshace una merma registrada por error: restaura el stock descontado en Loyverse
+// (reusa sumarStockLoyverse, sin el tope-en-0 de recepción) y borra el registro.
+async function accionEliminarMerma(env, payload) {
+  const fi = Number((payload && payload.filaIndex) || 0);
+  if (!fi) throw new Error("Falta el identificador de la merma");
+  const row = await get(env, "SELECT * FROM mermas WHERE id = ?", fi);
+  if (!row) throw new Error("Merma no encontrada");
+
+  let stockNuevo = null, avisoStock = null;
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", row.sku);
+  if (it) {
+    try {
+      const res = await sumarStockLoyverse(env, it, row.cantidad);
+      if (res.ok) stockNuevo = res.despues;
+      else avisoStock = "⚠️ No se pudo restaurar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+    } catch (e) {
+      avisoStock = "⚠️ No se pudo restaurar el stock en Loyverse. Revísalo a mano.";
+    }
+  } else {
+    avisoStock = "⚠️ El producto ya no existe en el catálogo — no se pudo restaurar el stock, solo se borró el registro.";
+  }
+
+  await run(env, "DELETE FROM mermas WHERE id = ?", fi);
+  return { filaIndex: fi, sku: row.sku, cantidadRevertida: row.cantidad, stockNuevo, avisoStock };
+}
+
 // POST { action:'aplicar_descuento_vencimiento', payload:{id,precio,responsable} }
 // Reutiliza accionEditarProducto para sincronizar el precio con Loyverse (misma
 // función que usa Ficha de producto) — acá solo se decide CUÁNDO llamarla y qué
@@ -3889,6 +3916,14 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'eliminar_merma', payload:{filaIndex} } → deshace una merma
+      // registrada por error, restaurando el stock en Loyverse.
+      if (action === "eliminar_merma") {
+        const resultado = await accionEliminarMerma(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
       // GET /?action=llegadas → productos con stock que subió directo en Loyverse
       // (sin pasar por Recibir mercadería ni un ajuste de la app) y todavía no
       // tienen fecha de vencimiento asignada.
@@ -4018,6 +4053,13 @@ export default {
       if (action === "abc_calcular") {
         const periodo = url.searchParams.get("periodo") || 30;
         const resultado = await calcularABC(env, periodo);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'sugerir_precio_abc', payload:{sku,margen} } → calcula el precio
+      // sugerido SIN aplicarlo (vista previa antes de aplicar_precio_abc).
+      if (action === "sugerir_precio_abc") {
+        const resultado = await accionSugerirPrecioABC(env, payload);
         return json({ ok: true, ...resultado });
       }
 
