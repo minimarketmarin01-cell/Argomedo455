@@ -39,8 +39,8 @@ function json(data, status = 200) {
 // plan §7) — si falta, tira un error especial (codigo:'FALTA_SECRETO') que el catch
 // del dispatcher principal convierte en {ok:false,codigo,secreto} con HTTP 200, en vez
 // de una excepción sin capturar. Las funciones que dependen de una API externa
-// (procesar_factura, buscar_imagen_producto, quitar_fondo_producto, y el fallback a IA
-// de clasificar_producto) llaman esto como primera línea.
+// (buscar_imagen_producto, quitar_fondo_producto, y el fallback a IA de
+// clasificar_producto) llaman esto como primera línea.
 function requiereSecreto(env, nombreSecreto, comoConseguirlo) {
   if (env[nombreSecreto]) return;
   const err = new Error("Falta configurar el secreto " + nombreSecreto + " en Cloudflare" + (comoConseguirlo ? " (" + comoConseguirlo + ")" : ""));
@@ -457,20 +457,6 @@ async function asegurarTablas(env) {
   )`);
   await run(env, `CREATE INDEX IF NOT EXISTS idx_historial_precios_sku ON historial_precios (sku)`);
 
-  // Cálculos guardados de la Calculadora de precios (por foto de factura) — cada fila
-  // pertenece a un factura_id, varias filas por factura.
-  await run(env, `CREATE TABLE IF NOT EXISTS facturas_calculos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    factura_id TEXT,
-    fecha TEXT,
-    producto TEXT,
-    costo_unitario REAL,
-    margen REAL,
-    precio_venta REAL,
-    precio_psicologico REAL,
-    categoria TEXT,
-    responsable TEXT
-  )`);
 
   // Clasificación (proveedor/sector) aprendida por patrón de categoría o de nombre de
   // producto — funciona sin IA (lookup por patrón exacto); solo si no hay patrón
@@ -524,6 +510,21 @@ async function asegurarTablas(env) {
   await run(env, `CREATE TABLE IF NOT EXISTS sectores_personalizados (
     nombre TEXT PRIMARY KEY
   )`);
+
+  // ==========================================================
+  //  FASE 2 — Los Cumpas se pone al día con los ~90 commits de Marín Pedidos desde
+  //  el fork de Fase 1 (ver plan "FASE 2").
+  // ==========================================================
+
+  // auditoria: cantidad — sin esto, "eliminar_movimiento_stock" (deshacer una recepción
+  // duplicada) no puede saber cuánto revertir. Filas de antes de esta migración quedan
+  // con cantidad=NULL y simplemente no son revertibles automáticamente.
+  try {
+    await run(env, `ALTER TABLE auditoria ADD COLUMN cantidad REAL`);
+  } catch (e) { /* ya existía */ }
+
+  // pedidos_pendientes.estado ya admite 'confirmado'/'recibido' (Fase 1) — 'incompleto'
+  // es un tercer valor posible, no necesita columna nueva ni migración de datos.
 }
 
 // ============================================================
@@ -753,13 +754,18 @@ async function probarLoyverse(env) {
 // ============================================================
 // GET simple (una página), con reintento automático si Loyverse responde
 // "too many requests" (429) o un error temporal de servidor (5xx).
+// Timeout de las llamadas a Loyverse (portado de Marín 376) — sin esto, un fetch()
+// colgado dejaba el Worker esperando para siempre y el frontend con "Guardando…" pegado.
+const LOYVERSE_TIMEOUT_MS = 12000;
+
 async function loyverseGet(env, endpoint, params, intento = 0) {
   const qs = new URLSearchParams();
   Object.keys(params || {}).forEach(k => {
     if (params[k] !== null && params[k] !== undefined && params[k] !== "") qs.set(k, params[k]);
   });
   const res = await fetch(LOYVERSE_API + endpoint + "?" + qs.toString(), {
-    headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN }
+    headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN },
+    signal: AbortSignal.timeout(LOYVERSE_TIMEOUT_MS)
   });
   if (res.status === 429 || res.status >= 500) {
     if (intento >= 5) throw new Error(endpoint + " HTTP " + res.status + " tras 5 reintentos");
@@ -790,7 +796,8 @@ async function loyversePost(env, endpoint, body) {
   const res = await fetch(LOYVERSE_API + endpoint, {
     method: "POST",
     headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN, "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(LOYVERSE_TIMEOUT_MS)
   });
   if (!res.ok) throw new Error(endpoint + " HTTP " + res.status + ": " + (await res.text()).slice(0, 200));
   return res.json();
@@ -1346,6 +1353,179 @@ async function repConsumoCategoria(env, dias) {
 }
 
 // ============================================================
+//  GRÁFICOS "VENTAS POR DÍA" / "MERMAS POR DÍA" + DIAGNÓSTICOS (portado de Marín 376,
+//  Fase 2) — devuelven filas crudas; agrupar/filtrar por sector/proveedor/mes/motivo es
+//  trabajo del frontend, no del servidor.
+// ============================================================
+
+// Filas crudas de ventas para el gráfico "Ventas por día". A diferencia de Marín (que
+// tiene una tabla rodante `ventas_diarias` de 90 días + un espejo permanente
+// `ventas_diarias_historico` para esto), Los Cumpas ya tiene una única tabla `ventas`
+// permanente y nunca purgada — se lee directo de ahí, sin crear nada nuevo.
+async function repVentasSeries(env, desdeParam, hastaParam, diasParam) {
+  const hasta = /^\d{4}-\d{2}-\d{2}$/.test(hastaParam || "") ? hastaParam : fechaISO();
+  let desde = /^\d{4}-\d{2}-\d{2}$/.test(desdeParam || "") ? desdeParam : null;
+  if (!desde) {
+    const dias = Math.min(400, Math.max(7, Number(diasParam) || 90));
+    desde = new Date(new Date(hasta + "T00:00:00Z").getTime() - dias * 86400000).toISOString().slice(0, 10);
+  }
+  const { results } = await env.DB.prepare(
+    `SELECT v.fecha_venta AS fecha, v.sku, v.cantidad AS unidades, p.nombre,
+            p.sector, COALESCE(pr.nombre, p.proveedor) AS proveedor
+     FROM ventas v
+     JOIN productos p ON p.sku = v.sku
+     LEFT JOIN proveedores pr ON pr.id = p.proveedor_id
+     WHERE v.fecha_venta >= ? AND v.fecha_venta <= ?
+     ORDER BY v.fecha_venta`
+  ).bind(desde, hasta).all();
+  return { desde, hasta, filas: results };
+}
+
+// Filas crudas de mermas para el gráfico "Mermas por día".
+async function repMermasSeries(env, diasParam) {
+  const dias = Math.min(400, Math.max(7, Number(diasParam) || 180));
+  const { results } = await env.DB.prepare(
+    "SELECT fecha, sku, producto, categoria, cantidad, costo_total, motivo FROM mermas ORDER BY id DESC LIMIT 5000"
+  ).all();
+  const corte = Date.now() - dias * 86400000;
+  const filas = [];
+  for (const r of results) {
+    const f = parseFechaDDMMAAAA(r.fecha);
+    if (!f || f.getTime() < corte) continue;
+    filas.push({ fecha: r.fecha, sku: r.sku, nombre: r.producto, categoria: r.categoria, cantidad: r.cantidad, costoTotal: r.costo_total, motivo: r.motivo });
+  }
+  return { dias, filas };
+}
+
+// Diagnóstico de solo lectura para "Gestionar proveedores" — qué tablas dependen de
+// `proveedores` (por FK real, no por nombre TEXT) y detecta proveedores duplicados por
+// nombre. Adaptado al modelo de Los Cumpas: la tabla de proveedores "extra" real es
+// `producto_proveedor_extra` (equivalente a `producto_proveedor_id` de Marín) — el
+// proveedor PRINCIPAL de un producto sigue viviendo en `productos.proveedor` (TEXT),
+// que este diagnóstico no puede rastrear por FK porque no lo es.
+async function repDiagProveedores(env, nombreFiltro) {
+  const { results: tablas } = await env.DB.prepare(
+    "SELECT name, sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL " +
+    "AND (sql LIKE '%REFERENCES proveedores%' OR sql LIKE '%REFERENCES `proveedores`%')"
+  ).all();
+  const candidatos = nombreFiltro
+    ? (await env.DB.prepare("SELECT id, nombre FROM proveedores WHERE nombre LIKE ?").bind("%" + nombreFiltro + "%").all()).results
+    : [];
+  const conteos = {};
+  for (const t of tablas) {
+    for (const c of candidatos) {
+      try {
+        const row = await get(env, `SELECT COUNT(*) as n FROM ${t.name} WHERE proveedor_id = ?`, c.id);
+        conteos[t.name + "#" + c.id] = row ? row.n : 0;
+      } catch (e) { conteos[t.name + "#" + c.id] = "error: " + e.message; }
+    }
+  }
+  const { results: duplicados } = await env.DB.prepare(
+    "SELECT nombre, COUNT(*) as n, GROUP_CONCAT(id) as ids FROM proveedores GROUP BY nombre HAVING COUNT(*) > 1"
+  ).all();
+  return { tablasConFkProveedores: tablas, candidatos, conteos, proveedoresDuplicados: duplicados };
+}
+
+// Productos que recibieron mercadería (auditoria.accion='recepcion_stock') en las
+// últimas 2 semanas y HOY siguen con stock negativo — casos candidatos a haber
+// perdido una venta concurrente (Loyverse) durante la recepción.
+function _parseFechaHoraTextoAuditoria(s) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/.exec(String(s || "").trim());
+  if (!m) return null;
+  return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0));
+}
+async function repRecepcionesNegativas(env) {
+  const { results: rows } = await env.DB.prepare(
+    "SELECT sku, fecha, motivo FROM auditoria WHERE accion = 'recepcion_stock' ORDER BY id DESC LIMIT 2000"
+  ).all();
+  const corte = new Date(Date.now() - 14 * 86400000);
+  const porSku = {};
+  for (const r of rows) {
+    const f = _parseFechaHoraTextoAuditoria(r.fecha);
+    if (!f || f < corte) continue;
+    if (porSku[r.sku] && porSku[r.sku].fechaObj >= f) continue;
+    const m = /\+([\d.]+)/.exec(r.motivo || "");
+    porSku[r.sku] = { fecha: r.fecha, fechaObj: f, unidadesRecibidas: m ? Number(m[1]) : null };
+  }
+  if (!Object.keys(porSku).length) return [];
+  const { results: productos } = await env.DB.prepare(
+    "SELECT sku, nombre, categoria, stock FROM productos WHERE track_stock = 1 AND stock < 0"
+  ).all();
+  const out = productos.filter(p => porSku[p.sku]).map(p => ({
+    sku: p.sku, nombre: p.nombre, categoria: p.categoria, stock: p.stock,
+    ultimaRecepcion: porSku[p.sku].fecha, unidadesRecibidas: porSku[p.sku].unidadesRecibidas
+  }));
+  out.sort((a, b) => a.stock - b.stock);
+  return out;
+}
+
+// Todos los movimientos de auditoría de una fecha (AAAA-MM-DD, formato de <input type=date>)
+// — reusa `auditoria`, mismo origen que Historial de mermas.
+async function repMovimientosDia(env, fechaISOParam) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(fechaISOParam || "").trim());
+  if (!m) return { fecha: fechaISOParam || "", total: 0, items: [] };
+  const patron = m[3] + "/" + m[2] + "/" + m[1] + "%";
+  const { results: rows } = await env.DB.prepare("SELECT * FROM auditoria WHERE fecha LIKE ? ORDER BY id DESC").bind(patron).all();
+  const items = rows.map(r => ({
+    filaIndex: r.id, fecha: r.fecha, accion: r.accion, sku: r.sku, nombre: r.producto,
+    categoria: r.categoria, stock: r.stock, cantidad: r.cantidad, motivo: r.motivo,
+    responsable: r.responsable
+  }));
+  return { fecha: fechaISOParam, total: items.length, items };
+}
+
+// Borra un movimiento de RECEPCIÓN duplicado (auditoria.accion='recepcion_stock') y
+// revierte el stock sumado. Solo reversible si la fila tiene `cantidad` guardada
+// (columna agregada en esta misma fase — filas de antes de la migración quedan con
+// cantidad=NULL y no se pueden revertir automáticamente).
+async function accionEliminarMovimientoStock(env, payload) {
+  const id = Number((payload && payload.id) || 0);
+  if (!id) throw new Error("Falta el identificador del movimiento");
+  const row = await get(env, "SELECT * FROM auditoria WHERE id = ?", id);
+  if (!row) throw new Error("Movimiento no encontrado");
+  if (row.accion !== "recepcion_stock") throw new Error("Solo se pueden eliminar movimientos de recepción");
+  if (row.cantidad == null) throw new Error("Este movimiento es muy antiguo y no guardó la cantidad — no se puede revertir automáticamente");
+
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", row.sku);
+  if (!it) throw new Error("SKU no encontrado en el catálogo: " + row.sku);
+
+  let avisoStock, nuevoStock = null;
+  try {
+    const res = await sumarStockLoyverse(env, it, -row.cantidad);
+    if (res && res.ok) {
+      nuevoStock = res.despues;
+    } else if (res) {
+      avisoStock = "⚠️ No se pudo revertir el stock en Loyverse (" + (res.motivo || "") + "). Revísalo a mano.";
+    }
+  } catch (e) {
+    avisoStock = "⚠️ No se pudo revertir el stock en Loyverse. Revísalo a mano.";
+  }
+
+  await run(env, "DELETE FROM auditoria WHERE id = ?", id);
+
+  const out = { sku: row.sku, nombre: row.producto, cantidad: row.cantidad, nuevoStock };
+  if (avisoStock) out.avisoStock = avisoStock;
+  return out;
+}
+
+// "Finalizar como incompleto" — un pedido confirmado ('confirmado') cuyos productos NO
+// llegaron pasa a 'incompleto', lo que para el resto de la app (chip "Ya pedido a X")
+// equivale a "ya no pendiente": el producto vuelve a estar disponible para pedirse de
+// nuevo. NO es un DELETE (conserva el historial de qué se pidió y no llegó) y no toca
+// filas ya en 'recibido' (la cantidad recibida no decide si un artículo "cuenta").
+async function accionFinalizarPedidoIncompleto(env, payload) {
+  payload = payload || {};
+  const skus = Array.isArray(payload.skus) ? [...new Set(payload.skus.map(s => String(s)).filter(Boolean))] : [];
+  if (!skus.length) throw new Error("No hay productos para finalizar como incompleto");
+  const placeholders = skus.map(() => "?").join(",");
+  const res = await run(env,
+    `UPDATE pedidos_pendientes SET estado = 'incompleto' WHERE estado = 'confirmado' AND sku IN (${placeholders})`,
+    ...skus);
+  const cambiados = (res && res.meta && res.meta.changes) || 0;
+  return { cambiados, skus };
+}
+
+// ============================================================
 //  RIESGO DE QUIEBRE — productos de alta rotación (clase ABC A o B, ver
 //  módulo Precio sugerido) con cobertura urgente o sin stock, excluyendo
 //  los marcados a mano. Mismo criterio que ya usa Armar pedido
@@ -1725,63 +1905,6 @@ async function repHistorialPrestamos(env, limite) {
 }
 
 // ============================================================
-//  CALCULADORA DE PRECIOS — GUARDAR CÁLCULOS DE FACTURA (portado de Marín 376) —
-//  guarda en D1 los cálculos de precio ya revisados/confirmados por el usuario, tabla
-//  propia (facturas_calculos), sin tocar vencimientos/mermas/productos. Todas las
-//  filas de una misma foto de factura comparten factura_id, así queda historial.
-// ============================================================
-async function accionGuardarCalculoPrecio(env, payload) {
-  const items = Array.isArray(payload && payload.items) ? payload.items : [];
-  if (!items.length) throw new Error("No hay productos para guardar");
-  const facturaIdProvista = payload && payload.factura_id;
-  const facturaId = facturaIdProvista || ("FC-" + Date.now());
-  const fecha = fechaHoraDDMMAAAA();
-  const responsable = (payload && payload.responsable) || "";
-  // Si viene un factura_id existente (edición desde el historial), se reemplazan sus
-  // filas en vez de insertar unas nuevas al lado — evita que "editar y guardar" duplique.
-  if (facturaIdProvista) {
-    await run(env, "DELETE FROM facturas_calculos WHERE factura_id = ?", facturaIdProvista);
-  }
-  const stmts = items.map(it => env.DB.prepare(
-    `INSERT INTO facturas_calculos (factura_id, fecha, producto, costo_unitario, margen, precio_venta, precio_psicologico, categoria, responsable)
-     VALUES (?,?,?,?,?,?,?,?,?)`
-  ).bind(
-    facturaId, fecha, String(it.producto || "").trim(),
-    Number(it.costo_unitario) || 0, Number(it.margen) || 0,
-    Number(it.precio_venta) || 0, Number(it.precio_psicologico) || 0,
-    String(it.categoria || ""), responsable
-  ));
-  await batchRun(env, stmts);
-  return { factura_id: facturaId, guardados: items.length };
-}
-
-// Lee el historial completo agrupado por factura_id.
-async function accionListarCalculosFactura(env) {
-  const { results: rows } = await env.DB.prepare("SELECT * FROM facturas_calculos ORDER BY id DESC").all();
-  const porFactura = {};
-  const orden = [];
-  rows.forEach(r => {
-    if (!porFactura[r.factura_id]) {
-      porFactura[r.factura_id] = { facturaId: r.factura_id, fecha: r.fecha, items: [] };
-      orden.push(r.factura_id);
-    }
-    porFactura[r.factura_id].items.push({
-      producto: r.producto, costo_unitario: r.costo_unitario, margen: r.margen,
-      precio_venta: r.precio_venta, precio_psicologico: r.precio_psicologico, categoria: r.categoria
-    });
-  });
-  return { historial: orden.map(id => porFactura[id]) };
-}
-
-// Elimina todas las filas de una factura.
-async function accionEliminarCalculoFactura(env, payload) {
-  const facturaId = payload && payload.factura_id;
-  if (!facturaId) throw new Error("Falta factura_id");
-  await run(env, "DELETE FROM facturas_calculos WHERE factura_id = ?", facturaId);
-  return { factura_id: facturaId };
-}
-
-// ============================================================
 //  MAPEO DE CATEGORÍAS (portado de Marín 376, adaptado a que el proveedor "real" de
 //  Argomedo es productos.proveedor TEXT — proveedor_id es el FK nuevo en paralelo,
 //  ver §4 del plan "modelo dual"). "sin_proveedor" mira la columna TEXT, que es la
@@ -1913,13 +2036,10 @@ async function accionGuardarClasificacion(env, payload) {
 //  tire una excepción sin secreto.
 // ============================================================
 
-// OCR de facturas con Claude (visión) — nunca escribe nada solo: el frontend siempre
-// muestra una tabla editable para que el usuario revise/corrija antes de guardar (ver
-// accionGuardarCalculoPrecio). Secreto: ANTHROPIC_API_KEY.
-// OCR de facturas (foto → productos vía Claude) eliminado a pedido del dueño — Marín
-// Pedidos ya no tiene este módulo. La Calculadora de precios sigue funcionando por peso/
-// kilo y sigue pudiendo editar/guardar cálculos ya existentes (guardar_calculo_precio/
-// listar_calculos_factura/eliminar_calculo_factura, sin cambios, no son exclusivas de esto).
+// OCR de facturas (foto → productos vía Claude) y el módulo "Calculadora de precios"
+// completo fueron eliminados a pedido del dueño — Marín Pedidos ya no tiene ninguno de
+// los dos (Fase 2: el cálculo de precio ahora vive como widget embebido — PriceCalc/
+// PcWidget — dentro de Ficha de producto, Crear producto y Recepción).
 
 // Busca fotos de empaque/producto candidatas para un nombre, vía Searlo (motor de
 // búsqueda tipo Google, sin IA). Secreto: SEARLO_API_KEY.
@@ -2247,11 +2367,11 @@ async function accionLoteNuevo(env, payload) {
       if (res.ok) {
         out.nuevoStock = res.despues;
         await run(env,
-          `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
-           VALUES (?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable, cantidad)
+           VALUES (?,?,?,?,?,?,?,?,?,?)`,
           fechaHoraDDMMAAAA(), "recepcion_stock", sku, it.nombre, it.categoria, it.id_loyverse, res.despues,
           "Recepción de mercadería: +" + cantidad + " " + unidad + " (" + res.antes + " → " + res.despues + ")" +
-          (tieneFecha ? " · vence " + fechaTxt : ""), payload.responsable || "");
+          (tieneFecha ? " · vence " + fechaTxt : ""), payload.responsable || "", cantidad);
       } else {
         out.avisoStock = "⚠️ No se pudo sumar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
       }
@@ -2668,7 +2788,9 @@ async function accionVencimientoEstado(env, payload) {
 // sumó stock al recibirse, esa parte se corrige por separado con un ajuste de stock.
 async function accionEliminarLoteVencimiento(env, payload) {
   payload = payload || {};
-  const id = Number(payload.id);
+  // Los Cumpas llama a este id "id"; Marín Pedidos (Fase 2) lo llama "filaIndex" —
+  // mismo campo (vencimientos.id), se aceptan los dos nombres.
+  const id = Number(payload.id || payload.filaIndex);
   if (!id) throw new Error("Falta el id del lote");
   const lote = await get(env, "SELECT * FROM vencimientos WHERE id = ?", id);
   if (!lote) throw new Error("Lote no encontrado");
@@ -2679,7 +2801,25 @@ async function accionEliminarLoteVencimiento(env, payload) {
     fechaHoraDDMMAAAA(), "vencimiento_eliminado", lote.sku, lote.producto, lote.categoria, null, null,
     "Lote eliminado de Vencimientos (" + lote.cantidad + " " + lote.unidad + ", vencía " + (lote.fecha_vencimiento || "sin fecha") + ")",
     payload.responsable || "");
-  return { id };
+
+  const out = { id };
+  // Marín Pedidos (Ficha de producto → eliminar lote) opcionalmente manda `cantidad`
+  // para revertir la recepción en Loyverse a la vez que se borra el lote — sin esto,
+  // el stock quedaría "adelantado" respecto al lote que ya no existe.
+  const cantidadRevertir = Number(payload.cantidad) || 0;
+  if (cantidadRevertir > 0) {
+    const it = await get(env, "SELECT * FROM productos WHERE sku = ?", payload.sku || lote.sku);
+    if (it) {
+      try {
+        const res = await sumarStockLoyverse(env, it, -cantidadRevertir);
+        if (res && res.ok) out.nuevoStock = res.despues;
+        else if (res) out.avisoStock = "⚠️ No se pudo revertir el stock en Loyverse (" + (res.motivo || "") + "). Revísalo a mano.";
+      } catch (e) {
+        out.avisoStock = "⚠️ No se pudo revertir el stock en Loyverse. Revísalo a mano.";
+      }
+    }
+  }
+  return out;
 }
 
 // POST { action:'vencimiento_fecha', payload:{id,fechaVencimiento,responsable} } → corrige
@@ -3468,6 +3608,14 @@ async function repFichaProducto(env, sku) {
   const { results: mermas } = await env.DB.prepare("SELECT * FROM mermas WHERE sku = ? ORDER BY id DESC LIMIT 20").bind(sku).all();
   const { results: auditoria } = await env.DB.prepare("SELECT * FROM auditoria WHERE sku = ? ORDER BY id DESC LIMIT 30").bind(sku).all();
   const { results: historialPrecios } = await env.DB.prepare("SELECT * FROM historial_precios WHERE sku = ? ORDER BY id DESC LIMIT 20").bind(sku).all();
+  // Ventas diarias recientes (portado de Marín 376, Fase 2) — Marín las lee de su
+  // propia tabla `ventas_diarias`; Los Cumpas agrupa directo sobre `ventas` (permanente,
+  // nunca purgada), que ya cumple el mismo rol. 21 días = 3 semanas, de sobra para el
+  // historial de movimientos de la ficha.
+  const { results: ventasDiarias } = await env.DB.prepare(
+    "SELECT fecha_venta AS fecha, SUM(cantidad) AS unidades, SUM(venta) AS venta, SUM(utilidad) AS utilidad " +
+    "FROM ventas WHERE sku = ? GROUP BY fecha_venta ORDER BY fecha_venta DESC LIMIT 21"
+  ).bind(sku).all();
 
   const fechasCandidatas = [];
   if (auditoria[0]) fechasCandidatas.push(auditoria[0].fecha);
@@ -3503,7 +3651,8 @@ async function repFichaProducto(env, sku) {
       estado: l.estado, prioridad: l.prioridad, accion: l.accion, precioRecomendado: l.precio_recomendado
     })),
     mermasRecientes: mermas.map(m => ({ fecha: m.fecha, cantidad: m.cantidad, motivo: m.motivo, costoTotal: m.costo_total, responsable: m.responsable })),
-    movimientos: auditoria.map(a => ({ fecha: a.fecha, accion: a.accion, stock: a.stock, motivo: a.motivo, responsable: a.responsable })),
+    movimientos: auditoria.map(a => ({ id: a.id, fecha: a.fecha, accion: a.accion, stock: a.stock, cantidad: a.cantidad, motivo: a.motivo, responsable: a.responsable })),
+    ventasDiarias: ventasDiarias.map(v => ({ fecha: v.fecha, unidades: v.unidades, venta: v.venta, utilidad: v.utilidad })),
     historialPrecios: historialPrecios.map(h => ({
       fecha: h.fecha, precioAntes: h.precio_antes, precioDespues: h.precio_despues,
       costoAntes: h.costo_antes, costoDespues: h.costo_despues, responsable: h.responsable
@@ -3595,10 +3744,18 @@ async function accionEliminarProducto(env, payload) {
   if (!it) throw new Error("Producto no encontrado: " + sku);
 
   if (it.id_loyverse) {
-    const res = await fetch(LOYVERSE_API + "/items/" + it.id_loyverse, {
-      method: "DELETE",
-      headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN }
-    });
+    let res;
+    try {
+      res = await fetch(LOYVERSE_API + "/items/" + it.id_loyverse, {
+        method: "DELETE",
+        headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN },
+        signal: AbortSignal.timeout(20000)
+      });
+    } catch (fetchErr) {
+      throw new Error(fetchErr.name === "TimeoutError" || fetchErr.name === "AbortError"
+        ? "Loyverse no respondió a tiempo (20s) — vuelve a intentar"
+        : "No se pudo contactar a Loyverse: " + fetchErr.message);
+    }
     // 404 = ya no existe en Loyverse (igual se limpia de D1 abajo); cualquier otro
     // error sí se reporta, porque puede ser una falla real que conviene saber.
     if (!res.ok && res.status !== 404) {
@@ -4105,6 +4262,33 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'eliminar_lote', payload:{filaIndex,sku,cantidad,responsable} } →
+      // mismo borrado de lote de Marín Pedidos (Fase 2, desde Ficha de producto), pero
+      // opcionalmente revierte stock en Loyverse si se manda `cantidad`. Respuesta
+      // envuelta en `fila` porque así la espera el frontend de Marín.
+      if (action === "eliminar_lote") {
+        const resultado = await accionEliminarLoteVencimiento(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, fila: resultado });
+      }
+
+      // POST { action:'eliminar_movimiento_stock', payload:{id} } → borra un movimiento
+      // de RECEPCIÓN duplicado y revierte el stock sumado (portado de Marín 376, Fase 2).
+      if (action === "eliminar_movimiento_stock") {
+        const resultado = await accionEliminarMovimientoStock(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, fila: resultado });
+      }
+
+      // POST { action:'finalizar_pedido_incompleto', payload:{skus} } → un pedido
+      // confirmado cuyos productos no llegaron vuelve a estar disponible para pedirse
+      // (portado de Marín 376, Fase 2).
+      if (action === "finalizar_pedido_incompleto") {
+        const resultado = await accionFinalizarPedidoIncompleto(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
       // POST { action:'marcar_descuento_factura', payload:{filaIndex,montoDescuento,revisadoPor} }
       // → cierra un lote "Retirado" cuando el proveedor lo cambió con descuento en la
       // factura en vez de reponer el producto físico.
@@ -4211,23 +4395,15 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
-      // GET /?action=listar_calculos_factura → historial de la Calculadora de precios,
-      // agrupado por factura_id.
-      if (action === "listar_calculos_factura") {
-        const resultado = await accionListarCalculosFactura(env);
-        return json({ ok: true, ...resultado });
-      }
-
-      // POST { action:'guardar_calculo_precio', payload:{factura_id?,items,responsable} }
-      if (action === "guardar_calculo_precio") {
-        const resultado = await accionGuardarCalculoPrecio(env, payload);
-        return json({ ok: true, ...resultado });
-      }
-
-      // POST { action:'eliminar_calculo_factura', payload:{factura_id} }
-      if (action === "eliminar_calculo_factura") {
-        const resultado = await accionEliminarCalculoFactura(env, payload);
-        return json({ ok: true, ...resultado });
+      // GET /?action=recargar_historial → botón de respaldo de Marín 376 para
+      // reconstruir su ventana rodante de ventas tras un corte de webhooks. La tabla
+      // `ventas` de Los Cumpas es permanente y nunca se purga (no es una ventana
+      // rodante), así que acá no hay nada que "reconstruir" — se responde con el mismo
+      // contrato que espera el frontend (payload completo del dashboard) para que el
+      // botón no falle, con un mensaje que refleja lo que realmente pasó.
+      if (action === "recargar_historial") {
+        const resultado = await payloadDashboard(env, true, "El historial de ventas de Los Cumpas no se purga — no había nada que recargar.");
+        return json(resultado);
       }
 
       // GET /?action=catalogo_crear → categorías e impuestos de Loyverse, para los
@@ -4315,8 +4491,8 @@ export default {
 
       // GET /?action=capacidades → qué secretos externos están cargados (nunca los
       // valores) — el frontend usa esto para deshabilitar preventivamente los botones
-      // de OCR de facturas / búsqueda de fotos / quitar fondo, con un aviso claro, en
-      // vez de dejar que el usuario los intente para nada.
+      // de búsqueda de fotos / quitar fondo, con un aviso claro, en vez de dejar que
+      // el usuario los intente para nada.
       if (action === "capacidades") {
         return json({
           ok: true,
@@ -4388,6 +4564,39 @@ export default {
         return json({ ok: true, resumen });
       }
 
+      // GET /?action=ventas_series[&desde=AAAA-MM-DD&hasta=AAAA-MM-DD|&dias=90]  →
+      // filas crudas para el gráfico "Ventas por día" (portado de Marín 376, Fase 2).
+      if (action === "ventas_series") {
+        const r = await repVentasSeries(env, url.searchParams.get("desde"), url.searchParams.get("hasta"), url.searchParams.get("dias"));
+        return json({ ok: true, ...r });
+      }
+
+      // GET /?action=mermas_series[&dias=180]  →  filas crudas para el gráfico
+      // "Mermas por día" (portado de Marín 376, Fase 2).
+      if (action === "mermas_series") {
+        const r = await repMermasSeries(env, url.searchParams.get("dias"));
+        return json({ ok: true, ...r });
+      }
+
+      // GET /?action=diag_proveedores[&nombre=XXX]  →  diagnóstico de solo lectura para
+      // "Gestionar proveedores" (portado de Marín 376, Fase 2).
+      if (action === "diag_proveedores") {
+        const r = await repDiagProveedores(env, url.searchParams.get("nombre"));
+        return json({ ok: true, ...r });
+      }
+
+      // GET /?action=recepciones_negativas  →  productos recibidos en las últimas 2
+      // semanas que hoy siguen con stock negativo (portado de Marín 376, Fase 2).
+      if (action === "recepciones_negativas") {
+        return json({ ok: true, productos: await repRecepcionesNegativas(env) });
+      }
+
+      // GET /?action=reporte_dia&fecha=AAAA-MM-DD  →  todos los movimientos de una
+      // fecha (portado de Marín 376, Fase 2).
+      if (action === "reporte_dia") {
+        return json({ ok: true, reporte: await repMovimientosDia(env, url.searchParams.get("fecha")) });
+      }
+
       // GET /?action=riesgo_excluidos  →  SKUs excluidos a mano del módulo
       // "Riesgo de quiebre" (el resto del cálculo lo hace el frontend con
       // DB.items, igual que Armar pedido).
@@ -4416,9 +4625,19 @@ export default {
       }
 
       // POST { action:'favorito', payload:{sku,favorito} } → marca/desmarca
-      // un producto como favorito en Armar pedido.
+      // un producto como favorito en Armar pedido. Marín Pedidos (Fase 2) llama a esto
+      // con dos acciones separadas (marcar_favorito/quitar_favorito, sin el flag
+      // `favorito` en el payload) — se aceptan ambos nombres sin duplicar la tabla.
       if (action === "favorito") {
         const resultado = await accionFavorito(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+      if (action === "marcar_favorito") {
+        const resultado = await accionFavorito(env, { ...payload, favorito: true });
+        return json({ ok: true, ...resultado });
+      }
+      if (action === "quitar_favorito") {
+        const resultado = await accionFavorito(env, { ...payload, favorito: false });
         return json({ ok: true, ...resultado });
       }
 
