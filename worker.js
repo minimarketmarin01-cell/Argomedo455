@@ -2034,6 +2034,13 @@ async function accionLoteNuevo(env, payload) {
       out.avisoStock = (out.avisoStock ? out.avisoStock + " " : "") + "⚠️ No se pudo actualizar costo/precio: falta id de Loyverse.";
     } else {
       try {
+        // Deja registro en historial_precios ANTES de escribir en Loyverse (igual que
+        // en accionEditarProducto).
+        await run(env,
+          `INSERT INTO historial_precios (sku, fecha, precio_antes, precio_despues, costo_antes, costo_despues, responsable)
+           VALUES (?,?,?,?,?,?,?)`,
+          sku, fechaHoraDDMMAAAA(), it.precio, precioNuevo != null ? precioNuevo : it.precio,
+          it.costo, costoNuevo != null ? costoNuevo : it.costo, payload.responsable || "");
         await actualizarPrecioCostoLoyverse(env, it.id_loyverse, it.variant_id, precioNuevo, costoNuevo);
         const sets = [], vals = [];
         if (precioNuevo != null) { sets.push("precio = ?"); vals.push(precioNuevo); }
@@ -3264,6 +3271,16 @@ async function accionEditarProducto(env, payload) {
   const soldByWeight = payload.soldByWeight != null ? !!payload.soldByWeight : !!it.sold_by_weight;
   const { storeId } = await obtenerStoreId(env);
 
+  // Deja registro en historial_precios ANTES de escribir en Loyverse (igual que Marín
+  // 376) — es la fuente que después lee Ficha de producto y el futuro proyecto
+  // financiero para reconstruir la evolución de costo/precio.
+  if (precio !== it.precio || costo !== it.costo) {
+    await run(env,
+      `INSERT INTO historial_precios (sku, fecha, precio_antes, precio_despues, costo_antes, costo_despues, responsable)
+       VALUES (?,?,?,?,?,?,?)`,
+      sku, fechaHoraDDMMAAAA(), it.precio, precio, it.costo, costo, payload.responsable || "");
+  }
+
   const variantes = (item.variants || []).map(v => {
     if (v.variant_id !== it.variant_id) return v;
     const copia = Object.assign({}, v, { barcode: nuevoBarcode, cost: costo });
@@ -3935,6 +3952,28 @@ export default {
       if (action === "eliminar_calculo_factura") {
         const resultado = await accionEliminarCalculoFactura(env, payload);
         return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=catalogo_crear → categorías e impuestos de Loyverse, para los
+      // combobox del formulario "Crear producto".
+      if (action === "catalogo_crear") {
+        const [cats, taxes] = await Promise.all([
+          loyverseGetAll(env, "/categories", "categories"),
+          loyverseGetAll(env, "/taxes", "taxes")
+        ]);
+        return json({
+          ok: true,
+          categorias: cats.map(c => ({ id: c.id, name: c.name })),
+          impuestos: taxes.map(t => ({ id: t.id, name: t.name, rate: t.rate }))
+        });
+      }
+
+      // GET /?action=ver_logs[&n=30] → últimos eventos del log interno (avisos push,
+      // chequeos programados, errores de sync) para depurar sin acceso a Cloudflare.
+      if (action === "ver_logs") {
+        const n = Math.min(Number(url.searchParams.get("n")) || 30, 200);
+        const { results: logs } = await env.DB.prepare("SELECT * FROM logs ORDER BY id DESC LIMIT ?").bind(n).all();
+        return json({ ok: true, logs });
       }
 
       // GET /?action=categorias_resumen → resumen de categorías de Loyverse con
