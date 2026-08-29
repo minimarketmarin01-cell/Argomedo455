@@ -348,6 +348,167 @@ async function asegurarTablas(env) {
     fecha TEXT,
     mensaje TEXT
   )`);
+
+  // ==========================================================
+  //  FASE 1 — Los Cumpas pasa a usar la estructura de Marín Pedidos
+  //  (columnas y tablas nuevas que necesitan las funciones portadas
+  //  desde Marín; ver plan "FASE 1" para el detalle de cada una).
+  // ==========================================================
+
+  // ventas: ingreso ($) y utilidad ($) por línea — hoy la tabla solo tenía cantidad.
+  // Queda en 0 para todo lo histórico (no se hace backfill en esta fase); se completa
+  // desde ahora en cada venta nueva (webhook) y en sync_ventas.
+  const columnasVentas = ["venta REAL DEFAULT 0", "utilidad REAL DEFAULT 0"];
+  for (const col of columnasVentas) {
+    try { await run(env, `ALTER TABLE ventas ADD COLUMN ${col}`); } catch (e) { /* ya existía */ }
+  }
+
+  // productos: proveedor_id (FK, en paralelo al `proveedor` TEXT existente — modelo dual,
+  // ver §4 del plan), descripcion (texto libre de Loyverse) y fecha_creacion.
+  const columnasProductos = [
+    "proveedor_id INTEGER REFERENCES proveedores(id)",
+    "descripcion TEXT",
+    "fecha_creacion TEXT"
+  ];
+  for (const col of columnasProductos) {
+    try { await run(env, `ALTER TABLE productos ADD COLUMN ${col}`); } catch (e) { /* ya existía */ }
+  }
+
+  // vencimientos: prioridad/acción/precio recomendado que calcula Marín al evaluar cada
+  // lote, más de dónde salió el costo usado — hoy Los Cumpas no persiste ninguno de los 5.
+  const columnasVencimientosMarin = [
+    "prioridad TEXT",
+    "accion TEXT",
+    "precio_recomendado REAL",
+    "costo_usado REAL",
+    "costo_origen TEXT"
+  ];
+  for (const col of columnasVencimientosMarin) {
+    try { await run(env, `ALTER TABLE vencimientos ADD COLUMN ${col}`); } catch (e) { /* ya existía */ }
+  }
+
+  // pedidos_pendientes: Marín llama "nombre" a lo que acá se llama "producto" — se agrega
+  // sin renombrar la columna existente (se escribe en ambas), más costo/fecha de llegada.
+  const columnasPedidosPendientes = [
+    "nombre TEXT",
+    "canal TEXT",
+    "costo_unitario REAL DEFAULT 0",
+    "costo_total REAL DEFAULT 0",
+    "fecha_llegada_estimada TEXT"
+  ];
+  for (const col of columnasPedidosPendientes) {
+    try { await run(env, `ALTER TABLE pedidos_pendientes ADD COLUMN ${col}`); } catch (e) { /* ya existía */ }
+  }
+
+  // riesgo_excluidos: Marín guarda fecha/responsable de la exclusión (Los Cumpas ya tenía
+  // agregado_en, que se conserva sin cambios en paralelo).
+  const columnasRiesgoExcluidos = ["fecha TEXT", "responsable TEXT"];
+  for (const col of columnasRiesgoExcluidos) {
+    try { await run(env, `ALTER TABLE riesgo_excluidos ADD COLUMN ${col}`); } catch (e) { /* ya existía */ }
+  }
+
+  // Préstamos de mercadería entre Los Cumpas y Marín 376 (ver §6 del plan — el nombre del
+  // socio en el frontend es "Marín 376", esta tabla es neutra respecto a esa distinción).
+  await run(env, `CREATE TABLE IF NOT EXISTS prestamos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT NOT NULL,
+    sucursal TEXT NOT NULL,
+    direccion TEXT NOT NULL,
+    sku TEXT NOT NULL,
+    producto TEXT,
+    cantidad REAL NOT NULL,
+    unidad TEXT,
+    costo_unitario REAL,
+    costo_total REAL,
+    estado TEXT NOT NULL DEFAULT 'pendiente',
+    fecha_devolucion TEXT,
+    responsable TEXT,
+    nota TEXT
+  )`);
+
+  // Evolución de costo/precio por SKU — no existía ni siquiera como CREATE TABLE en el
+  // repo de Marín (vivía solo en su D1 en producción); se diseña completa desde el día
+  // uno acá porque es justo el tipo de dato que el futuro proyecto financiero va a
+  // necesitar leer (ver "Consideración para futura integración financiera" en el plan).
+  await run(env, `CREATE TABLE IF NOT EXISTS historial_precios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sku TEXT NOT NULL,
+    fecha TEXT,
+    precio_antes REAL,
+    precio_despues REAL,
+    costo_antes REAL,
+    costo_despues REAL,
+    responsable TEXT
+  )`);
+  await run(env, `CREATE INDEX IF NOT EXISTS idx_historial_precios_sku ON historial_precios (sku)`);
+
+  // Cálculos guardados de la Calculadora de precios (por foto de factura) — cada fila
+  // pertenece a un factura_id, varias filas por factura.
+  await run(env, `CREATE TABLE IF NOT EXISTS facturas_calculos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    factura_id TEXT,
+    fecha TEXT,
+    producto TEXT,
+    costo_unitario REAL,
+    margen REAL,
+    precio_venta REAL,
+    precio_psicologico REAL,
+    categoria TEXT,
+    responsable TEXT
+  )`);
+
+  // Clasificación (proveedor/sector) aprendida por patrón de categoría o de nombre de
+  // producto — funciona sin IA (lookup por patrón exacto); solo si no hay patrón
+  // aprendido se recurre a IA (§7 del plan).
+  await run(env, `CREATE TABLE IF NOT EXISTS producto_clasificacion_aprendida (
+    patron TEXT PRIMARY KEY,
+    proveedor_id INTEGER,
+    sector TEXT,
+    actualizado_en TEXT
+  )`);
+
+  // Categorías de Loyverse cacheadas con su id real — Mapeo de categorías necesita el id
+  // (no solo el nombre que ya guarda productos.categoria) para poder reasignar productos.
+  await run(env, `CREATE TABLE IF NOT EXISTS categorias_loyverse (
+    id TEXT PRIMARY KEY,
+    nombre TEXT
+  )`);
+
+  // Vida útil por categoría (días de alerta antes de vencer + tipo de manejo) — más
+  // detallada que config_categorias, que se conserva en paralelo sin cambios.
+  await run(env, `CREATE TABLE IF NOT EXISTS config_vida_util (
+    categoria TEXT PRIMARY KEY,
+    dias_alerta INTEGER NOT NULL,
+    tipo TEXT NOT NULL,
+    nota TEXT
+  )`);
+  // Semilla — mismos 13 valores que trae Marín (ver d1_config_vida_util.sql). OR IGNORE
+  // para no pisar un ajuste manual si esta migración se vuelve a correr.
+  const semillaVidaUtil = [
+    ["PAN A GRANEL", 2, "corta", null],
+    ["VERDURAS y ENSALADAS", 3, "corta", null],
+    ["FRUTAS", 3, "corta", null],
+    ["PALTA", 4, "corta", null],
+    ["JAMONES A GRANEL", 5, "corta", null],
+    ["QUESOS EN BARRA", 5, "corta", null],
+    ["LA VAQUITA", 5, "corta", null],
+    ["SOPROLE", 5, "corta", null],
+    ["COLUN", 5, "corta", null],
+    ["CONGELADOS", 15, "larga", null],
+    ["ABARROTES", 30, "larga", null],
+    ["IDEAL", 15, "cambio", "Siempre hacen cambio de producto, nunca rebaja"],
+    ["PAN CASTAÑO", 15, "cambio", "Siempre hacen cambio de producto, nunca rebaja"]
+  ];
+  for (const [categoria, dias, tipo, nota] of semillaVidaUtil) {
+    await run(env, `INSERT OR IGNORE INTO config_vida_util (categoria, dias_alerta, tipo, nota) VALUES (?,?,?,?)`,
+      categoria, dias, tipo, nota);
+  }
+
+  // Sectores creados a mano que no vinieron de Loyverse — Marín los combina con `sectores`
+  // (que ya existe en Los Cumpas) vía una consulta combinada al leer.
+  await run(env, `CREATE TABLE IF NOT EXISTS sectores_personalizados (
+    nombre TEXT PRIMARY KEY
+  )`);
 }
 
 // ============================================================
