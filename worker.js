@@ -1602,6 +1602,172 @@ async function obtenerPedidosPendientesPorSku(env) {
 }
 
 // ============================================================
+//  PRÉSTAMOS DE MERCADERÍA (portado de Marín 376) — un préstamo mueve stock real en
+//  Loyverse en el momento de registrarlo (no espera a la devolución), igual que una
+//  merma o una recepción, así el stock que la app muestra siempre refleja lo que
+//  físicamente hay en el local. La tabla `prestamos` (creada en asegurarTablas) es el
+//  "libro de deudas": qué salió/entró, con quién, y si ya se devolvió. Al marcar
+//  devuelto se revierte el MISMO movimiento (si salió, vuelve a entrar; si entró,
+//  vuelve a salir) — se asume devolución del mismo producto y cantidad exacta.
+//  El nombre del socio ("Marín 376") se fija en el frontend (ver plan §6, renombre de
+//  Préstamos) — acá la tabla es neutra respecto a esa etiqueta.
+// ============================================================
+const SUCURSAL_PRESTAMO_FIJA = "Marín 376";
+
+// direccion: "salida" = Los Cumpas le presta a Marín 376 (sale stock de acá, sumar
+// cuando vuelva). "entrada" = Marín 376 le presta a Los Cumpas (entra stock acá,
+// restar cuando se devuelva).
+async function accionRegistrarPrestamo(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  const direccion = payload.direccion === "entrada" ? "entrada" : "salida";
+  const cantidad = Number(payload.cantidad);
+  if (!cantidad || cantidad <= 0) throw new Error("Cantidad inválida");
+
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("SKU no encontrado en el catálogo: " + sku);
+  const unidad = it.sold_by_weight ? "kg" : "un";
+
+  // Si falta costo, se guarda el que escriba el usuario a mano (no persiste en
+  // Loyverse desde acá — un préstamo sin costo cargado normalmente significa que el
+  // producto nunca lo tuvo; se deja para editarlo desde la Ficha del producto).
+  const costoManual = Number(payload.costoManual);
+  const costoUnit = it.costo || (costoManual > 0 ? costoManual : 0);
+  const costoTotal = Math.round(cantidad * costoUnit);
+  const fecha = fechaHoraDDMMAAAA();
+  const sucursal = SUCURSAL_PRESTAMO_FIJA;
+
+  const insertRes = await run(env,
+    `INSERT INTO prestamos (fecha, sucursal, direccion, sku, producto, cantidad, unidad, costo_unitario, costo_total, estado, responsable, nota)
+     VALUES (?,?,?,?,?,?,?,?,?,'pendiente',?,?)`,
+    fecha, sucursal, direccion, sku, it.nombre, cantidad, unidad, costoUnit, costoTotal,
+    payload.responsable || "", payload.nota || "");
+
+  const out = {
+    id: insertRes.meta.last_row_id, fecha, sucursal, direccion, sku, nombre: it.nombre,
+    cantidad, unidad, costoUnitario: costoUnit, costoTotal, estado: "pendiente"
+  };
+
+  // "salida" (le prestamos al socio) → sale stock de acá, igual que una merma/venta.
+  // "entrada" (el socio nos presta) → entra stock acá, igual que una recepción.
+  try {
+    const res = await sumarStockLoyverse(env, it, direccion === "salida" ? -cantidad : cantidad);
+    if (res.ok) out.nuevoStock = res.despues;
+    else out.avisoStock = "⚠️ No se pudo ajustar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+  } catch (e) {
+    out.avisoStock = "⚠️ No se pudo ajustar el stock en Loyverse. Revísalo a mano.";
+  }
+
+  return out;
+}
+
+// Devuelve el préstamo: revierte el movimiento de stock original. Mismo producto,
+// misma cantidad exacta — si "salida" restó al registrar, la devolución suma; si
+// "entrada" sumó, la devolución resta.
+async function accionDevolverPrestamo(env, payload) {
+  payload = payload || {};
+  const id = Number(payload.id);
+  if (!id) throw new Error("Falta el id del préstamo");
+  const prestamo = await get(env, "SELECT * FROM prestamos WHERE id = ?", id);
+  if (!prestamo) throw new Error("Préstamo no encontrado");
+  if (prestamo.estado === "devuelto") return { id, yaEstaba: true };
+
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", prestamo.sku);
+  const out = { id, sku: prestamo.sku, nombre: prestamo.producto, estado: "devuelto" };
+
+  if (it) {
+    try {
+      const res = await sumarStockLoyverse(env, it, prestamo.direccion === "salida" ? prestamo.cantidad : -prestamo.cantidad);
+      if (res.ok) out.nuevoStock = res.despues;
+      else out.avisoStock = "⚠️ No se pudo ajustar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+    } catch (e) {
+      out.avisoStock = "⚠️ No se pudo ajustar el stock en Loyverse. Revísalo a mano.";
+    }
+  } else {
+    out.avisoStock = "⚠️ El producto ya no existe en el catálogo — no se pudo ajustar el stock.";
+  }
+
+  await run(env, "UPDATE prestamos SET estado = 'devuelto', fecha_devolucion = ? WHERE id = ?", fechaHoraDDMMAAAA(), id);
+  return out;
+}
+
+async function repHistorialPrestamos(env, limite) {
+  const { results: rows } = await env.DB.prepare("SELECT * FROM prestamos ORDER BY id DESC LIMIT ?").bind(limite || 100).all();
+  const pendientes = rows.filter(r => r.estado === "pendiente");
+  return {
+    prestamos: rows.map(r => ({
+      id: r.id, fecha: r.fecha, sucursal: r.sucursal, direccion: r.direccion, sku: r.sku,
+      producto: r.producto, cantidad: r.cantidad, unidad: r.unidad, costoUnitario: r.costo_unitario,
+      costoTotal: r.costo_total, estado: r.estado, fechaDevolucion: r.fecha_devolucion,
+      responsable: r.responsable, nota: r.nota
+    })),
+    resumen: {
+      totalPendientes: pendientes.length,
+      valorPendienteSalidas: pendientes.filter(r => r.direccion === "salida").reduce((s, r) => s + (r.costo_total || 0), 0),
+      valorPendienteEntradas: pendientes.filter(r => r.direccion === "entrada").reduce((s, r) => s + (r.costo_total || 0), 0)
+    }
+  };
+}
+
+// ============================================================
+//  CALCULADORA DE PRECIOS — GUARDAR CÁLCULOS DE FACTURA (portado de Marín 376) —
+//  guarda en D1 los cálculos de precio ya revisados/confirmados por el usuario, tabla
+//  propia (facturas_calculos), sin tocar vencimientos/mermas/productos. Todas las
+//  filas de una misma foto de factura comparten factura_id, así queda historial.
+// ============================================================
+async function accionGuardarCalculoPrecio(env, payload) {
+  const items = Array.isArray(payload && payload.items) ? payload.items : [];
+  if (!items.length) throw new Error("No hay productos para guardar");
+  const facturaIdProvista = payload && payload.factura_id;
+  const facturaId = facturaIdProvista || ("FC-" + Date.now());
+  const fecha = fechaHoraDDMMAAAA();
+  const responsable = (payload && payload.responsable) || "";
+  // Si viene un factura_id existente (edición desde el historial), se reemplazan sus
+  // filas en vez de insertar unas nuevas al lado — evita que "editar y guardar" duplique.
+  if (facturaIdProvista) {
+    await run(env, "DELETE FROM facturas_calculos WHERE factura_id = ?", facturaIdProvista);
+  }
+  const stmts = items.map(it => env.DB.prepare(
+    `INSERT INTO facturas_calculos (factura_id, fecha, producto, costo_unitario, margen, precio_venta, precio_psicologico, categoria, responsable)
+     VALUES (?,?,?,?,?,?,?,?,?)`
+  ).bind(
+    facturaId, fecha, String(it.producto || "").trim(),
+    Number(it.costo_unitario) || 0, Number(it.margen) || 0,
+    Number(it.precio_venta) || 0, Number(it.precio_psicologico) || 0,
+    String(it.categoria || ""), responsable
+  ));
+  await batchRun(env, stmts);
+  return { factura_id: facturaId, guardados: items.length };
+}
+
+// Lee el historial completo agrupado por factura_id.
+async function accionListarCalculosFactura(env) {
+  const { results: rows } = await env.DB.prepare("SELECT * FROM facturas_calculos ORDER BY id DESC").all();
+  const porFactura = {};
+  const orden = [];
+  rows.forEach(r => {
+    if (!porFactura[r.factura_id]) {
+      porFactura[r.factura_id] = { facturaId: r.factura_id, fecha: r.fecha, items: [] };
+      orden.push(r.factura_id);
+    }
+    porFactura[r.factura_id].items.push({
+      producto: r.producto, costo_unitario: r.costo_unitario, margen: r.margen,
+      precio_venta: r.precio_venta, precio_psicologico: r.precio_psicologico, categoria: r.categoria
+    });
+  });
+  return { historial: orden.map(id => porFactura[id]) };
+}
+
+// Elimina todas las filas de una factura.
+async function accionEliminarCalculoFactura(env, payload) {
+  const facturaId = payload && payload.factura_id;
+  if (!facturaId) throw new Error("Falta factura_id");
+  await run(env, "DELETE FROM facturas_calculos WHERE factura_id = ?", facturaId);
+  return { factura_id: facturaId };
+}
+
+// ============================================================
 //  CATÁLOGO COMPACTO (D1 → frontend)
 //  Se usa para cargar TODOS los productos una sola vez al abrir
 //  la app (igual que Marín) y buscar después en el teléfono sin
@@ -3606,6 +3772,47 @@ export default {
       if (action === "ignorar_llegada") {
         const resultado = await accionIgnorarLlegada(env, payload);
         await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=historial_prestamos[&limite=100] → préstamos de mercadería con
+      // Marín 376 (pendientes y devueltos) + resumen de valor pendiente.
+      if (action === "historial_prestamos") {
+        const limite = url.searchParams.get("limite") || "";
+        const resultado = await repHistorialPrestamos(env, Number(limite) || undefined);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'registrar_prestamo', payload:{sku,direccion,cantidad,costoManual,responsable,nota} }
+      if (action === "registrar_prestamo") {
+        const resultado = await accionRegistrarPrestamo(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'devolver_prestamo', payload:{id} }
+      if (action === "devolver_prestamo") {
+        const resultado = await accionDevolverPrestamo(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=listar_calculos_factura → historial de la Calculadora de precios,
+      // agrupado por factura_id.
+      if (action === "listar_calculos_factura") {
+        const resultado = await accionListarCalculosFactura(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'guardar_calculo_precio', payload:{factura_id?,items,responsable} }
+      if (action === "guardar_calculo_precio") {
+        const resultado = await accionGuardarCalculoPrecio(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'eliminar_calculo_factura', payload:{factura_id} }
+      if (action === "eliminar_calculo_factura") {
+        const resultado = await accionEliminarCalculoFactura(env, payload);
         return json({ ok: true, ...resultado });
       }
 
