@@ -4148,8 +4148,17 @@ async function cloudSync(silent,live,full,origen){
         else{showToast('Datos actualizados');}
       }
       return true;
-    }else{if(!silent)showToast('La nube no devolvió datos');return false;}
-  }catch(e){if(!silent)showToast('Error al sincronizar: '+(e&&e.message?e.message:e));return false;}
+    }else{
+      // Un fallo silencioso está bien si YA había datos en pantalla (reintento de fondo);
+      // pero si todavía no se cargó nada ni una vez, quedarse callado deja al usuario con
+      // la app vacía sin ninguna pista de qué pasó — ahí sí se avisa aunque silent=true.
+      if(!silent||_ultimoPayloadFirma===null)showToast('La nube no devolvió datos'+(j&&j.error?(': '+j.error):''));
+      return false;
+    }
+  }catch(e){
+    if(!silent||_ultimoPayloadFirma===null)showToast('Error al sincronizar: '+(e&&e.message?e.message:e));
+    return false;
+  }
   finally{setSyncSpinning(false);}
 }
 // Ícono girando + botones deshabilitados mientras hay una sincronización en curso (evita doble toque)
