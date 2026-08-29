@@ -2822,7 +2822,11 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
             <label>Nombre *</label>
             <input id="cp-nombre" placeholder="Ej: 7 up 2.0L" autocomplete="off" class="mm-input">
           </div>
-          <div class="mm-field">
+          <div class="mm-field hidden">
+            <!-- Categoría de Loyverse oculta a pedido del dueño: Los Cumpas clasifica productos
+                 por proveedor de la WebApp (ver el campo Proveedor más abajo), no por categoría
+                 de Loyverse. El backend (accionCrearProducto) ya guarda "SIN CATEGORÍA" fijo sin
+                 mirar este campo, así que ocultarlo no rompe nada — solo deja de pedirlo. -->
             <label>Categoría *</label>
             <div style="display:flex;gap:8px">
               <div class="cat-combo" id="cat-combo">
@@ -4369,7 +4373,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-29.1';
+const APP_VERSION='2026-08-29.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -8732,9 +8736,10 @@ function cpLlenarSelect(preselectId){
   if(input){const chosen=_cpCats.find(c=>String(c.id)===String(s.value));input.value=chosen?chosen.name:'';}
 }
 function cpValidar(){
+  // La categoría de Loyverse ya no es obligatoria (el campo queda oculto, ver HTML de
+  // #cat-combo) — Los Cumpas no la usa para clasificar, solo el nombre es requerido.
   const nombre=(document.getElementById('cp-nombre').value||'').trim();
-  const cat=document.getElementById('cp-cat').value;
-  document.getElementById('cp-guardar').disabled=!(nombre&&cat);
+  document.getElementById('cp-guardar').disabled=!nombre;
 }
 document.getElementById('cp-nombre').oninput=cpValidar;
 document.getElementById('cp-cat').onchange=cpValidar;
@@ -8958,10 +8963,7 @@ document.getElementById('cp-guardar').onclick=async()=>{
   const btn=document.getElementById('cp-guardar');
   try{
     const nombre=(document.getElementById('cp-nombre').value||'').trim();
-    const sel=document.getElementById('cp-cat');
-    const categoryId=sel.value;
-    const categoriaNombre=(sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].text:'');
-    if(!nombre||!categoryId){cpValidar();showToast('Falta el nombre o la categoría');return;}
+    if(!nombre){cpValidar();showToast('Falta el nombre del producto');return;}
     const precioRaw=(document.getElementById('cp-pr-precio').value||'').replace(/[^\d]/g,'');
     // Loyverse siempre guarda el costo POR UNIDAD, nunca el costo de la caja. cpCostoBruto()
     // ya hace ese trabajo: si el modo es "caja" divide por unidades/caja, y respeta el toggle
@@ -8978,7 +8980,7 @@ document.getElementById('cp-guardar').onclick=async()=>{
     const cpProveedorId=document.getElementById('cp-proveedor').value||null;
     const cpSector=document.getElementById('cp-sector').value||null;
     const payload={
-      nombre:nombre,categoryId:categoryId,categoriaNombre:categoriaNombre,
+      nombre:nombre,
       soldByWeight:_cpVenta==='kg',
       precio:precioRaw?Number(precioRaw):null,
       coste:costoUnitario>0?costoUnitario:0,

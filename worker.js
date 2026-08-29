@@ -4110,7 +4110,17 @@ async function accionCrearProducto(env, payload) {
   const activo = payload.activo !== false; // por defecto SÍ está a la venta (disponible en POS)
   const quiereIva = payload.activarIva !== false; // por defecto SÍ intenta activar IVA (desmarcable para productos exentos)
   const stockMinimo = (payload.stockMinimo != null && payload.stockMinimo !== "") ? Number(payload.stockMinimo) : null;
-  const proveedor = String(payload.proveedor || "").trim();
+  // El formulario de Crear producto manda proveedor_id (select de "Gestionar
+  // proveedores" — el combo real de la WebApp, no texto libre); se resuelve a nombre
+  // acá porque `productos.proveedor` (TEXT) sigue siendo la fuente que de verdad usa
+  // el resto de la app. Se acepta también `proveedor` como string por si algún otro
+  // caller todavía lo manda así.
+  let proveedor = String(payload.proveedor || "").trim();
+  const proveedorId = Number(payload.proveedor_id) || null;
+  if (!proveedor && proveedorId) {
+    const provRow = await get(env, "SELECT nombre FROM proveedores WHERE id = ?", proveedorId);
+    if (provRow) proveedor = provRow.nombre;
+  }
   const sector = String(payload.sector || "").trim();
 
   const { storeId } = await obtenerStoreId(env);
@@ -4182,12 +4192,13 @@ async function accionCrearProducto(env, payload) {
     }
   }
 
-  // Guarda en D1 (categoría queda vacía — se clasifica después desde la app; proveedor
-  // y sector se guardan si vinieron del formulario de Crear producto).
+  // Guarda en D1 (categoría queda vacía — Los Cumpas no usa la categoría de Loyverse
+  // para clasificar productos, solo el proveedor de la WebApp; proveedor y sector se
+  // guardan si vinieron del formulario de Crear producto).
   await run(env,
-    `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, proveedor, sector, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    sku, creado.id, v.variant_id, nombre, "SIN CATEGORÍA", proveedor || null, sector || null, barcode, precio, costo, trackStock ? 0 : null, soldByWeight ? 1 : 0, trackStock ? 1 : 0, ivaConfirmado ? 1 : 0);
+    `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, proveedor, proveedor_id, sector, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sku, creado.id, v.variant_id, nombre, "SIN CATEGORÍA", proveedor || null, proveedorId, sector || null, barcode, precio, costo, trackStock ? 0 : null, soldByWeight ? 1 : 0, trackStock ? 1 : 0, ivaConfirmado ? 1 : 0);
   if (proveedor) await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedor);
   if (sector) await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sector);
 
