@@ -1423,18 +1423,25 @@ async function aplicarVentas(env, receipts) {
     const signo = r.receipt_type === "REFUND" ? -1 : 1;
 
     // Suma por sku dentro del mismo recibo (un producto puede aparecer en más de
-    // una línea si se vendió con distinto precio/descuento).
+    // una línea si se vendió con distinto precio/descuento). venta/utilidad usan los
+    // mismos campos del recibo de Loyverse que ya usa Marín 376 (total_money,
+    // gross_total_money, cost_total) — antes esta tabla solo guardaba cantidad.
     const porSku = {};
     for (const li of r.line_items) {
       const fila = await get(env, "SELECT sku FROM productos WHERE variant_id = ?", li.variant_id);
       if (!fila) continue; // producto no está en D1 todavía
-      porSku[fila.sku] = (porSku[fila.sku] || 0) + signo * (Number(li.quantity) || 0);
+      const acc = porSku[fila.sku] || (porSku[fila.sku] = { cantidad: 0, venta: 0, utilidad: 0 });
+      acc.cantidad += signo * (Number(li.quantity) || 0);
+      acc.venta += signo * (Number(li.total_money) || 0);
+      acc.utilidad += signo * ((Number(li.gross_total_money) || Number(li.total_money) || 0) - (Number(li.cost_total) || 0));
     }
     for (const sku of Object.keys(porSku)) {
+      const acc = porSku[sku];
       await run(env,
-        `INSERT INTO ventas (receipt_id, sku, cantidad, fecha_venta) VALUES (?,?,?,?)
-         ON CONFLICT(receipt_id, sku) DO UPDATE SET cantidad = excluded.cantidad, fecha_venta = excluded.fecha_venta`,
-        receiptId, sku, porSku[sku], fechaVenta);
+        `INSERT INTO ventas (receipt_id, sku, cantidad, fecha_venta, venta, utilidad) VALUES (?,?,?,?,?,?)
+         ON CONFLICT(receipt_id, sku) DO UPDATE SET cantidad = excluded.cantidad, fecha_venta = excluded.fecha_venta,
+           venta = excluded.venta, utilidad = excluded.utilidad`,
+        receiptId, sku, acc.cantidad, fechaVenta, acc.venta, acc.utilidad);
       procesados++;
     }
   }
@@ -2288,6 +2295,129 @@ async function ventasPorSku(env, dias) {
   const mapa = {};
   results.forEach(r => { mapa[r.sku] = r.total || 0; });
   return mapa;
+}
+
+// Resumen de ventas por sku (u_all/u7/u14/u30/u90/rev/prof) en una sola consulta —
+// equivalente a la vista vw_ventas_resumen de Marín, pero calculado sobre la tabla
+// `ventas` de Argomedo (histórico completo, nunca se purga) en vez de una tabla
+// separada de ventas diarias. rev/prof solo son reales desde que se agregaron las
+// columnas venta/utilidad (Fase 1) — antes de eso quedan en 0 para esas filas viejas.
+async function ventasResumenTodas(env) {
+  const ahora = Date.now();
+  const d7 = fechaISO(new Date(ahora - 7 * 86400000));
+  const d14 = fechaISO(new Date(ahora - 14 * 86400000));
+  const d30 = fechaISO(new Date(ahora - 30 * 86400000));
+  const d90 = fechaISO(new Date(ahora - 90 * 86400000));
+  const { results } = await env.DB.prepare(
+    `SELECT sku,
+       SUM(cantidad) AS u_all,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u7,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u14,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u30,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u90,
+       SUM(venta) AS rev,
+       SUM(utilidad) AS prof
+     FROM ventas GROUP BY sku`
+  ).bind(d7, d14, d30, d90).all();
+  return results || [];
+}
+
+// ============================================================
+//  PAYLOAD DEL DASHBOARD (GET sin action) — arma TODO el estado inicial que
+//  necesita el frontend de Marín para arrancar: catálogo, ventas resumidas,
+//  pendientes, proveedores extra, riesgo excluido, favoritos, multiplos,
+//  empaques, palabras. Sin esto la app no carga (ver plan "FASE 1").
+//  Adaptado del payloadDashboard de Marín 376 a que `productos.proveedor` es
+//  TEXT en Argomedo (no FK) y a la tabla `ventas` propia (histórico completo,
+//  nunca se purga, a diferencia de la `ventas_diarias` rodante de Marín).
+// ============================================================
+async function payloadDashboard(env, synced, syncMsg) {
+  await asegurarTablas(env);
+  const { results: productos } = await env.DB.prepare("SELECT * FROM productos").all();
+
+  const { results: proveedoresRows } = await env.DB.prepare("SELECT id, nombre FROM proveedores").all();
+  const proveedorNombrePorId = {};
+  proveedoresRows.forEach(pr => { proveedorNombrePorId[pr.id] = pr.nombre; });
+
+  const itemsRows = {};
+  productos.forEach(p => {
+    itemsRows[p.sku] = {
+      id: p.id_loyverse, vid: p.variant_id || "", ref: p.sku, nombre: p.nombre,
+      prov: p.proveedor || "SIN PROVEEDOR", cat: p.categoria || "", costo: p.costo || 0, precio: p.precio || 0,
+      stock: p.stock, track: !!p.track_stock, barcode: p.barcode || "", peso: !!p.sold_by_weight,
+      creado: p.fecha_creacion || null, descripcion: p.descripcion || "", imagen: p.imagen_url || "",
+      proveedorId: p.proveedor_id || null,
+      proveedorNombre: p.proveedor_id ? (proveedorNombrePorId[p.proveedor_id] || null) : null,
+      sector: p.sector || null
+    };
+  });
+
+  const resumen = await ventasResumenTodas(env);
+  const ventasRows = {};
+  resumen.forEach(r => {
+    ventasRows[r.sku] = {
+      ref: r.sku, u_all: r.u_all || 0, u7: r.u7 || 0, u14: r.u14 || 0, u30: r.u30 || 0, u90: r.u90 || 0,
+      rev: Math.round(r.rev || 0), prof: Math.round(r.prof || 0)
+    };
+  });
+
+  const hoyISO = fechaISO();
+  const { results: ventasHoyRows } = await env.DB.prepare("SELECT DISTINCT sku FROM ventas WHERE fecha_venta = ?").bind(hoyISO).all();
+  const hoyRowsObj = {};
+  ventasHoyRows.forEach(r => { hoyRowsObj[r.sku] = 1; });
+
+  // Pedidos pendientes — se manda siempre junto al resto del dashboard para que el
+  // frontend pueda avisar "ya pedido" sin una consulta extra por producto.
+  let pendientesRows = [];
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT sku, barcode, COALESCE(nombre, producto) AS nombre, proveedor, cantidad, canal, fecha, costo_unitario, costo_total, fecha_llegada_estimada, estado FROM pedidos_pendientes"
+    ).all();
+    pendientesRows = results || [];
+  } catch (err) { /* tabla recién migrada, sin filas todavía */ }
+
+  // Proveedores extra (multi-proveedor por FK) — mapa sku → [id,...] y sku → [nombre,...].
+  // Argomedo solo tiene el mecanismo FK (`producto_proveedor_extra`); no existe el mecanismo
+  // de texto libre más viejo de Marín (`producto_proveedores`), así que provsExtra (texto)
+  // no se manda — el frontend ya sabe convivir sin él (cae a prov/proveedorNombre).
+  let provsIdsExtraObj = {}, provsNombresExtraObj = {};
+  try {
+    const { results: extraRows } = await env.DB.prepare("SELECT sku, proveedor_id FROM producto_proveedor_extra").all();
+    extraRows.forEach(r => {
+      (provsIdsExtraObj[r.sku] = provsIdsExtraObj[r.sku] || []).push(r.proveedor_id);
+      const nombre = proveedorNombrePorId[r.proveedor_id];
+      if (nombre) (provsNombresExtraObj[r.sku] = provsNombresExtraObj[r.sku] || []).push(nombre);
+    });
+  } catch (err) { /* sin filas todavía */ }
+
+  let riesgoExcluidos = [];
+  try { riesgoExcluidos = await repRiesgoExcluidos(env); } catch (err) { /* sin filas todavía */ }
+
+  let favoritos = [];
+  try { favoritos = await repFavoritos(env); } catch (err) { /* sin filas todavía */ }
+
+  let multiplosObj = {}, empaquesObj = {}, palabrasObj = {};
+  try { ({ multiplos: multiplosObj, empaques: empaquesObj, palabras: palabrasObj } = await obtenerMultiplosProducto(env)); }
+  catch (err) { /* sin filas todavía */ }
+
+  return {
+    ok: true,
+    version: "v2",
+    synced: !!synced,
+    syncMsg: syncMsg || "",
+    ventasHoy: ventasHoyRows.length,
+    items: { rows: itemsRows },
+    ventas: { rows: ventasRows, hoy: { fecha: hoyISO, rows: hoyRowsObj } },
+    pendientes: { rows: pendientesRows },
+    provsIdsExtra: provsIdsExtraObj,
+    provsNombresExtra: provsNombresExtraObj,
+    riesgoExcluidos: riesgoExcluidos,
+    favoritos: favoritos,
+    multiplos: multiplosObj,
+    empaques: empaquesObj,
+    palabras: palabrasObj,
+    serverTime: new Date().toISOString()
+  };
 }
 
 
@@ -3268,7 +3398,15 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
-      // Sin acción reconocida: mensaje de bienvenida simple.
+      // GET sin `action` → payload completo del dashboard (bootstrap de Marín Pedidos,
+      // ver plan "FASE 1"). Antes de esto no había equivalente: un GET sin action solo
+      // devolvía el mensaje de bienvenida de más abajo.
+      if (request.method === "GET" && !action) {
+        const resultado = await payloadDashboard(env, false, "");
+        return json(resultado);
+      }
+
+      // Sin acción reconocida (POST sin action, u otra no listada): mensaje de bienvenida.
       return json({
         ok: true,
         mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos, favoritos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir, guardar_multiplo_producto, favorito, marcar_pedido_realizado. Webhook Loyverse: POST /webhook/loyverse",
