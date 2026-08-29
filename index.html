@@ -14,46 +14,54 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  /* ===== PALETA PASTEL — verdes salvia/oliva + lavanda =====
-     Neutros: fondo cálido, tarjetas blancas, bordes casi invisibles. */
-  --ink:#2F3133;--ink2:#3A3D40;--paper:#FAFAF6;--card:#FFFFFF;
-  --line:#E7E7E2;--line2:#F0F0EB;
-  --muted:#6F7578;--text:#2F3133;
+  /* ===== PALETA AZUL MARINO — identidad Los Cumpas (Fase 1) =====
+     Reemplaza la paleta salvia/lavanda de Marín 376, conservando su misma
+     estructura de luminancia/contraste (los ratios documentados abajo siguen
+     midiendo igual) — solo cambia el matiz. Ver plan "FASE 1", §2.
+     Neutros: fondo frío, tarjetas blancas, bordes casi invisibles. */
+  --ink:#12233D;--ink2:#1E3454;--paper:#F7F9FC;--card:#FFFFFF;
+  --line:#E3E8F0;--line2:#EDF1F6;
+  --muted:#5C7593;--text:#12233D;
 
   /* ===== ESTADOS =====
      Cada estado tiene DOS tonos: el pastel (fondos, chips, bordes, puntos) y una
      variante oscura hermana para TEXTO y números — los pasteles solos no alcanzan
      contraste legible (el rojo pastel da 2.97:1 y el salvia 1.85:1 sobre blanco),
-     y el objetivo del rediseño es justamente leer mejor, no solo verse suave. */
+     y el objetivo del rediseño es justamente leer mejor, no solo verse suave.
+     --ambar y --azul se corrigen acá: en Marín eran, por error, idénticos a
+     --verde y --gris respectivamente (mismo hex, dos estados indistinguibles) —
+     con la marca ahora en navy quedaba aún más confuso, así que de paso quedan
+     con su propio valor real. */
   --rojo:#A84A4A;--rojo-soft:#D97B7B;--rojo-bg:#FBEDED;      /* urgente     · texto 5.6:1 */
-  --ambar:#5F7A4C;--ambar-soft:#AFC5A1;--ambar-bg:#E9F1E5;   /* a pedir     · texto 4.8:1 */
+  --ambar:#8A5810;--ambar-soft:#E8C185;--ambar-bg:#FBF1DF;   /* a pedir     · corregido, antes = --verde · texto 5.4:1 */
   --gris:#7A6490;--gris-soft:#CBB8DD;--gris-bg:#EEE6F6;      /* sobrestock  · texto 5.2:1 */
   --verde:#5F7A4C;--verde-bg:#E9F1E5;                        /* saludable                 */
-  --azul:#7A6490;--azul-bg:#EEE6F6;                          /* sin control de stock      */
+  --azul:#1F5A66;--azul-bg:#E3F1F4;                          /* sin control de stock · corregido, antes = --gris · texto 6.7:1 */
 
-  /* Acción / confirmar (Guardar, carrito, checks). Salvia oscuro para que el texto
-     blanco encima siga siendo legible. */
-  --wa:#8FA67B;--wa-d:#6E8659;--gold:#8A7A4E;--gold-bg:#F3F0E2;
+  /* Acción / confirmar (Guardar, carrito, checks). Azul marino de acción, no el
+     navy más oscuro de marca, para que el texto blanco encima siga siendo legible. */
+  --wa:#2C5F9E;--wa-d:#1E4E8C;--gold:#8A7A4E;--gold-bg:#F3F0E2;
   /* Éxito/confirmado (badge "Liquidado", chip "Principal", KPI destacado) — verde vivo
      DISTINTO de --verde (que es uno de los 5 colores de alerta de stock reservados,
-     "saludable"; ver nota más arriba). Antes escrito como hex suelto (dos versiones casi
-     idénticas del mismo verde, con solo unos pocos puntos de diferencia en RGB) repartido
-     en 7 lugares del archivo. */
+     "saludable"; ver nota más arriba). Sin cambio en el rebrand — es un verde de estado,
+     no de marca. */
   --exito:#1E7A3E;--exito-bg:#E3F3E8;
 
   /* ===== MARCA =====
-     Salvia y lavanda pastel. Sin degradados oscuros: la barra superior debe pesar poco. */
-  --salvia:#AFC5A1;--salvia-2:#8FA67B;--salvia-tint:#E9F1E5;
-  --lavanda:#CBB8DD;--lavanda-tint:#EEE6F6;
-  --brand-1:#AFC5A1;--brand-2:#8FA67B;--brand-3:#6E8659;--brand-solid:#8FA67B;
+     Azul marino — header, nav, botones primarios, elementos activos. Sin degradados
+     oscuros: la barra superior debe pesar poco. */
+  --marino:#0B1A33;--marino-hi:#16294D;--marino-tint:#EAF1FA;
+  --salvia:#C3D4EA;--salvia-2:#2C5F9E;--salvia-tint:#EAF1FA;
+  --lavanda:#C3D4EA;--lavanda-tint:#EAF1FA;
+  --brand-1:#2C5F9E;--brand-2:#1E4E8C;--brand-3:#0B1A33;--brand-solid:#1E4E8C;
   --brand-grad:linear-gradient(120deg,var(--brand-1),var(--brand-2));
   --brand-grad-deep:linear-gradient(120deg,var(--brand-2),var(--brand-3));
 
   /* ===== SOMBRAS — todas muy suaves, nada debe verse pesado ===== */
-  --sh-card:0 1px 2px rgba(47,49,51,.04),0 2px 8px rgba(47,49,51,.04);
-  --sh-soft:0 1px 3px rgba(47,49,51,.06);
-  --sh-float:0 4px 14px rgba(47,49,51,.12);
-  --shadow-brand:0 2px 10px rgba(143,166,123,.28);
+  --sh-card:0 1px 2px rgba(11,26,51,.04),0 2px 8px rgba(11,26,51,.04);
+  --sh-soft:0 1px 3px rgba(11,26,51,.06);
+  --sh-float:0 4px 14px rgba(11,26,51,.12);
+  --shadow-brand:0 2px 10px rgba(30,78,140,.28);
 
   --radius-card:18px;--radius-btn:12px;
   /* Escala de radios ya en uso consistente en la práctica (campos de formulario 8-10px,
@@ -64,29 +72,29 @@
      "mínimos cambios estructurales"). */
   --radius-field:9px;--radius-chip:20px;
   --ciruela:#7A6490;--ciruela-hi:#8E76A4;--ciruela-tint:#EEE6F6;
-  --oliva:#8FA67B;--oliva-hi:#AFC5A1;--oliva-tint:#E9F1E5;
-  --magenta:#7A6490;--focus-ring:0 0 0 3px rgba(143,166,123,.30);
+  --oliva:#2C5F9E;--oliva-hi:#C3D4EA;--oliva-tint:#EAF1FA;
+  --magenta:#7A6490;--focus-ring:0 0 0 3px rgba(30,78,140,.30);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{-webkit-text-size-adjust:100%;width:100%;overflow-x:hidden}
 body{font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--text);font-size:14px;line-height:1.4;-webkit-tap-highlight-color:transparent;width:100%;max-width:100%;padding-bottom:calc(78px + env(safe-area-inset-bottom))}
 .mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
 h1,h2,h3{font-family:'Manrope',system-ui,sans-serif}
-.top{background:linear-gradient(135deg,#FBFBF7 0%,#F7F6F0 55%,#F4F2EA 100%);color:var(--ink);width:100%;padding:9px 16px;padding-top:max(9px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:relative}
-.top::after{content:'';position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--line);opacity:1}
+.top{background:var(--marino);color:#fff;width:100%;padding:9px 16px;padding-top:max(9px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:relative}
+.top::after{content:'';position:absolute;left:0;right:0;bottom:0;height:1px;background:rgba(255,255,255,.14);opacity:1}
 .brand{display:flex;align-items:center;gap:9px;min-width:0}
 .brand-mark{width:30px;height:30px;border-radius:9px;flex:none;box-shadow:var(--sh-soft)}
-.brand .mk{font-family:'Manrope';font-weight:800;font-size:17px;letter-spacing:-.02em;color:var(--ink)}
-.brand .loc{color:var(--muted);font-size:11px;font-weight:600}
+.brand .mk{font-family:'Manrope';font-weight:800;font-size:17px;letter-spacing:-.02em;color:#fff}
+.brand .loc{color:#B6C7DE;font-size:11px;font-weight:600}
 .toprt{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-/* Botón secundario: pastel lavanda con sombra muy suave (Catálogo y similares). */
-.loadbtn{display:inline-flex;align-items:center;gap:6px;background:var(--lavanda-tint);border:1px solid #DFD2EC;color:#5A4A6E;border-radius:var(--radius-btn);padding:8px 12px;font-size:12.5px;font-weight:600;font-family:'Manrope';cursor:pointer;box-shadow:var(--sh-soft)}
-.loadbtn:active{background:#E2D6F0}
-/* Botón de acción: salvia pastel (Sincronizar, Guardar). */
-.loadbtn.acc{background:var(--salvia);border-color:var(--salvia-2);color:#33422A}
+/* Botón secundario: celeste pálido con sombra muy suave (Catálogo y similares). */
+.loadbtn{display:inline-flex;align-items:center;gap:6px;background:var(--lavanda-tint);border:1px solid #C9DCF0;color:var(--ink2);border-radius:var(--radius-btn);padding:8px 12px;font-size:12.5px;font-weight:600;font-family:'Manrope';cursor:pointer;box-shadow:var(--sh-soft)}
+.loadbtn:active{background:#D6E5F5}
+/* Botón de acción: celeste pálido (Sincronizar, Guardar). */
+.loadbtn.acc{background:var(--salvia);border-color:var(--salvia-2);color:var(--ink2)}
 .loadbtn.acc:active{background:var(--salvia-2);color:#fff}
-.upd{color:var(--muted);font-size:10.5px;width:100%;margin-top:2px}
-.upd b{color:#c7ccd3}
+.upd{color:#B6C7DE;font-size:10.5px;width:100%;margin-top:2px}
+.upd b{color:#fff}
 /* ===== Encabezado fijo (sticky) de Pedidos: compacto, sin chips ni gráficos ===== */
 .sticky-hdr{position:sticky;top:0;z-index:120;background:var(--card);border-bottom:1px solid var(--line);padding:4px max(10px,env(safe-area-inset-right)) 5px max(10px,env(safe-area-inset-left));box-shadow:0 2px 10px rgba(0,0,0,.05)}
 /* Con el carrito fijo en tablet (z-index 250) siempre visible, el contenedor del buscador
@@ -1266,7 +1274,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
 .scale-list{margin-top:10px;font-size:12px}
 .scale-li{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line2)}
 .scale-li:last-child{border:none}.scale-li .pk{font-family:'JetBrains Mono';font-weight:700}
-.order-head{background:linear-gradient(135deg,#3E4A34,#4E5A42);color:#fff;padding:14px 16px}
+.order-head{background:linear-gradient(135deg,var(--marino),var(--marino-hi));color:#fff;padding:14px 16px}
 .order-head .t{font-family:'Manrope';font-weight:800;font-size:15px;display:flex;align-items:center;gap:8px}
 .order-head .s{color:#aab0ba;font-size:12px;margin-top:3px}
 .wa-ico{width:20px;height:20px;background:var(--wa);border-radius:5px;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:800;font-family:'Manrope'}
@@ -1405,11 +1413,11 @@ html.modo-bliss #tab-inicio:not(.hidden){display:block}
 html.ocultar-contenido-pedido #sticky-hdr,
 html.ocultar-contenido-pedido #tab-pedido .tablecard{display:none}
 #tab-inicio{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
-.in2-hdr{position:sticky;top:0;z-index:20;display:flex;flex-direction:column;gap:2px;padding:10px 14px 8px;background:rgba(252,252,249,.94);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);border-bottom:1px solid var(--line)}
+.in2-hdr{position:sticky;top:0;z-index:20;display:flex;flex-direction:column;gap:2px;padding:10px 14px 8px;background:var(--marino);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);border-bottom:1px solid rgba(255,255,255,.14)}
 .in2-hdr-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.in2-hdr-sub{font-size:10.5px;color:var(--muted);font-weight:600;padding-left:2px;font-family:'JetBrains Mono',monospace}
-.in2-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:none;background:transparent;color:var(--ink2,#444);cursor:pointer;border-radius:8px;flex-shrink:0}
-.in2-icon-btn:active{background:var(--line2,#eee)}
+.in2-hdr-sub{font-size:10.5px;color:#B6C7DE;font-weight:600;padding-left:2px;font-family:'JetBrains Mono',monospace}
+.in2-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:none;background:transparent;color:#fff;cursor:pointer;border-radius:8px;flex-shrink:0}
+.in2-icon-btn:active{background:rgba(255,255,255,.14)}
 .in2-icon-btn.spinning svg{animation:in2-spin .8s linear infinite}
 @keyframes in2-spin{to{transform:rotate(360deg)}}
 /* La barra .top global (Los Cumpas/Mini Market · En vivo · Sincronizar · Catálogo) queda redundante
@@ -1438,10 +1446,12 @@ html.carrito-fijo.ocultar-contenido-pedido #tab-pedido{grid-template-columns:min
 .in2-hdr-left{display:flex;align-items:center;gap:8px;min-width:0}
 .in2-logo{width:30px;height:30px;border-radius:8px;flex-shrink:0;object-fit:cover}
 .in2-hdr-txt{display:flex;flex-direction:column;line-height:1.2;min-width:0}
-.in2-hdr-txt b{font-size:14px;font-weight:800;color:var(--ink)}
-.in2-hdr-txt span{font-size:10.5px;color:var(--muted);font-weight:600}
+.in2-hdr-txt b{font-size:14px;font-weight:800;color:#fff}
+.in2-hdr-txt span{font-size:10.5px;color:#B6C7DE;font-weight:600}
 .in2-hdr-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
-.in2-live{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;color:var(--verde,#3a9d5c);font-family:'JetBrains Mono',monospace}
+/* Verde más claro que --verde (reservado para el estado "saludable" de stock sobre
+   tarjetas blancas) — este vive sobre el header navy, necesita más contraste ahí. */
+.in2-live{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;color:#5FD88A;font-family:'JetBrains Mono',monospace}
 .in2-live-dot{width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;animation:live-pulse 2s ease-in-out infinite}
 .in2-notif-btn{position:relative;background:var(--paper);border:1px solid var(--line);border-radius:10px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--ink);cursor:pointer;flex-shrink:0}
 .in2-notif-btn:active{background:var(--line)}
