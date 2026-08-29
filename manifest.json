@@ -4,8 +4,8 @@
   "description": "Gestión de pedidos y recepción de mercadería con vencimientos para Los Cumpas Mini Market",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#F4FAFE",
-  "theme_color": "#F4FAFE",
+  "background_color": "#0B1A33",
+  "theme_color": "#0B1A33",
   "orientation": "any",
   "icons": [
     {

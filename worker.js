@@ -35,6 +35,20 @@ function json(data, status = 200) {
   });
 }
 
+// Comprueba que un secreto externo esté cargado ANTES de hacer cualquier trabajo (ver
+// plan §7) — si falta, tira un error especial (codigo:'FALTA_SECRETO') que el catch
+// del dispatcher principal convierte en {ok:false,codigo,secreto} con HTTP 200, en vez
+// de una excepción sin capturar. Las funciones que dependen de una API externa
+// (procesar_factura, buscar_imagen_producto, quitar_fondo_producto, y el fallback a IA
+// de clasificar_producto) llaman esto como primera línea.
+function requiereSecreto(env, nombreSecreto, comoConseguirlo) {
+  if (env[nombreSecreto]) return;
+  const err = new Error("Falta configurar el secreto " + nombreSecreto + " en Cloudflare" + (comoConseguirlo ? " (" + comoConseguirlo + ")" : ""));
+  err.codigo = "FALTA_SECRETO";
+  err.secreto = nombreSecreto;
+  throw err;
+}
+
 // ============================================================
 //  HELPERS D1
 // ============================================================
@@ -347,6 +361,168 @@ async function asegurarTablas(env) {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fecha TEXT,
     mensaje TEXT
+  )`);
+
+  // ==========================================================
+  //  FASE 1 — Los Cumpas pasa a usar la estructura de Marín Pedidos
+  //  (columnas y tablas nuevas que necesitan las funciones portadas
+  //  desde Marín; ver plan "FASE 1" para el detalle de cada una).
+  // ==========================================================
+
+  // ventas: ingreso ($) y utilidad ($) por línea — hoy la tabla solo tenía cantidad.
+  // Queda en 0 para todo lo histórico (no se hace backfill en esta fase); se completa
+  // desde ahora en cada venta nueva (webhook) y en sync_ventas.
+  const columnasVentas = ["venta REAL DEFAULT 0", "utilidad REAL DEFAULT 0"];
+  for (const col of columnasVentas) {
+    try { await run(env, `ALTER TABLE ventas ADD COLUMN ${col}`); } catch (e) { /* ya existía */ }
+  }
+
+  // productos: proveedor_id (FK, en paralelo al `proveedor` TEXT existente — modelo dual,
+  // ver §4 del plan), descripcion (texto libre de Loyverse) y fecha_creacion.
+  const columnasProductos = [
+    "proveedor_id INTEGER REFERENCES proveedores(id)",
+    "descripcion TEXT",
+    "fecha_creacion TEXT"
+  ];
+  for (const col of columnasProductos) {
+    try { await run(env, `ALTER TABLE productos ADD COLUMN ${col}`); } catch (e) { /* ya existía */ }
+  }
+
+  // vencimientos: prioridad/acción/precio recomendado que calcula Marín al evaluar cada
+  // lote, más de dónde salió el costo usado — hoy Los Cumpas no persiste ninguno de los 5.
+  const columnasVencimientosMarin = [
+    "prioridad TEXT",
+    "accion TEXT",
+    "precio_recomendado REAL",
+    "costo_usado REAL",
+    "costo_origen TEXT",
+    "monto_descuento REAL"
+  ];
+  for (const col of columnasVencimientosMarin) {
+    try { await run(env, `ALTER TABLE vencimientos ADD COLUMN ${col}`); } catch (e) { /* ya existía */ }
+  }
+
+  // pedidos_pendientes: Marín llama "nombre" a lo que acá se llama "producto" — se agrega
+  // sin renombrar la columna existente (se escribe en ambas), más costo/fecha de llegada.
+  const columnasPedidosPendientes = [
+    "nombre TEXT",
+    "canal TEXT",
+    "costo_unitario REAL DEFAULT 0",
+    "costo_total REAL DEFAULT 0",
+    "fecha_llegada_estimada TEXT"
+  ];
+  for (const col of columnasPedidosPendientes) {
+    try { await run(env, `ALTER TABLE pedidos_pendientes ADD COLUMN ${col}`); } catch (e) { /* ya existía */ }
+  }
+
+  // riesgo_excluidos: Marín guarda fecha/responsable de la exclusión (Los Cumpas ya tenía
+  // agregado_en, que se conserva sin cambios en paralelo).
+  const columnasRiesgoExcluidos = ["fecha TEXT", "responsable TEXT"];
+  for (const col of columnasRiesgoExcluidos) {
+    try { await run(env, `ALTER TABLE riesgo_excluidos ADD COLUMN ${col}`); } catch (e) { /* ya existía */ }
+  }
+
+  // Préstamos de mercadería entre Los Cumpas y Marín 376 (ver §6 del plan — el nombre del
+  // socio en el frontend es "Marín 376", esta tabla es neutra respecto a esa distinción).
+  await run(env, `CREATE TABLE IF NOT EXISTS prestamos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT NOT NULL,
+    sucursal TEXT NOT NULL,
+    direccion TEXT NOT NULL,
+    sku TEXT NOT NULL,
+    producto TEXT,
+    cantidad REAL NOT NULL,
+    unidad TEXT,
+    costo_unitario REAL,
+    costo_total REAL,
+    estado TEXT NOT NULL DEFAULT 'pendiente',
+    fecha_devolucion TEXT,
+    responsable TEXT,
+    nota TEXT
+  )`);
+
+  // Evolución de costo/precio por SKU — no existía ni siquiera como CREATE TABLE en el
+  // repo de Marín (vivía solo en su D1 en producción); se diseña completa desde el día
+  // uno acá porque es justo el tipo de dato que el futuro proyecto financiero va a
+  // necesitar leer (ver "Consideración para futura integración financiera" en el plan).
+  await run(env, `CREATE TABLE IF NOT EXISTS historial_precios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sku TEXT NOT NULL,
+    fecha TEXT,
+    precio_antes REAL,
+    precio_despues REAL,
+    costo_antes REAL,
+    costo_despues REAL,
+    responsable TEXT
+  )`);
+  await run(env, `CREATE INDEX IF NOT EXISTS idx_historial_precios_sku ON historial_precios (sku)`);
+
+  // Cálculos guardados de la Calculadora de precios (por foto de factura) — cada fila
+  // pertenece a un factura_id, varias filas por factura.
+  await run(env, `CREATE TABLE IF NOT EXISTS facturas_calculos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    factura_id TEXT,
+    fecha TEXT,
+    producto TEXT,
+    costo_unitario REAL,
+    margen REAL,
+    precio_venta REAL,
+    precio_psicologico REAL,
+    categoria TEXT,
+    responsable TEXT
+  )`);
+
+  // Clasificación (proveedor/sector) aprendida por patrón de categoría o de nombre de
+  // producto — funciona sin IA (lookup por patrón exacto); solo si no hay patrón
+  // aprendido se recurre a IA (§7 del plan).
+  await run(env, `CREATE TABLE IF NOT EXISTS producto_clasificacion_aprendida (
+    patron TEXT PRIMARY KEY,
+    proveedor_id INTEGER,
+    sector TEXT,
+    actualizado_en TEXT
+  )`);
+
+  // Categorías de Loyverse cacheadas con su id real — Mapeo de categorías necesita el id
+  // (no solo el nombre que ya guarda productos.categoria) para poder reasignar productos.
+  await run(env, `CREATE TABLE IF NOT EXISTS categorias_loyverse (
+    id TEXT PRIMARY KEY,
+    nombre TEXT
+  )`);
+
+  // Vida útil por categoría (días de alerta antes de vencer + tipo de manejo) — más
+  // detallada que config_categorias, que se conserva en paralelo sin cambios.
+  await run(env, `CREATE TABLE IF NOT EXISTS config_vida_util (
+    categoria TEXT PRIMARY KEY,
+    dias_alerta INTEGER NOT NULL,
+    tipo TEXT NOT NULL,
+    nota TEXT
+  )`);
+  // Semilla — mismos 13 valores que trae Marín (ver d1_config_vida_util.sql). OR IGNORE
+  // para no pisar un ajuste manual si esta migración se vuelve a correr.
+  const semillaVidaUtil = [
+    ["PAN A GRANEL", 2, "corta", null],
+    ["VERDURAS y ENSALADAS", 3, "corta", null],
+    ["FRUTAS", 3, "corta", null],
+    ["PALTA", 4, "corta", null],
+    ["JAMONES A GRANEL", 5, "corta", null],
+    ["QUESOS EN BARRA", 5, "corta", null],
+    ["LA VAQUITA", 5, "corta", null],
+    ["SOPROLE", 5, "corta", null],
+    ["COLUN", 5, "corta", null],
+    ["CONGELADOS", 15, "larga", null],
+    ["ABARROTES", 30, "larga", null],
+    ["IDEAL", 15, "cambio", "Siempre hacen cambio de producto, nunca rebaja"],
+    ["PAN CASTAÑO", 15, "cambio", "Siempre hacen cambio de producto, nunca rebaja"]
+  ];
+  for (const [categoria, dias, tipo, nota] of semillaVidaUtil) {
+    await run(env, `INSERT OR IGNORE INTO config_vida_util (categoria, dias_alerta, tipo, nota) VALUES (?,?,?,?)`,
+      categoria, dias, tipo, nota);
+  }
+
+  // Sectores creados a mano que no vinieron de Loyverse — Marín los combina con `sectores`
+  // (que ya existe en Los Cumpas) vía una consulta combinada al leer.
+  await run(env, `CREATE TABLE IF NOT EXISTS sectores_personalizados (
+    nombre TEXT PRIMARY KEY
   )`);
 }
 
@@ -974,10 +1150,15 @@ async function accionAsignarLlegada(env, payload) {
   const fechaTxt = String(payload.fechaVencimiento || "").trim();
   if (!fechaTxt || !parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha de vencimiento inválida (usa DD/MM/AAAA)");
 
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", row.sku);
+  const tablaVidaUtil = await getVidaUtilTabla(env);
+  const calc = await calcularLote(env, { categoria: row.categoria, fechaVencimiento: fechaTxt }, it, null, tablaVidaUtil);
+
   const insertRes = await run(env,
-    `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, fecha_revision, revisado_por)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    row.fecha_deteccion, row.sku, row.nombre, row.categoria, row.unidad, "", row.aumento, fechaTxt, "Pendiente", "", "");
+    `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, prioridad, accion, precio_recomendado, costo_usado, costo_origen, fecha_revision, revisado_por)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    row.fecha_deteccion, row.sku, row.nombre, row.categoria, row.unidad, "", row.aumento, fechaTxt,
+    calc.estado, calc.prioridad, calc.accion, calc.precioRecomendado || null, calc.costoUsado || null, calc.costoOrigen, "", "");
 
   await run(env, "UPDATE llegadas SET estado='asignado', fecha_vencimiento_asignada=?, fecha_resolucion=? WHERE id=?",
     fechaTxt, fechaDDMMAAAA(), fi);
@@ -1262,18 +1443,25 @@ async function aplicarVentas(env, receipts) {
     const signo = r.receipt_type === "REFUND" ? -1 : 1;
 
     // Suma por sku dentro del mismo recibo (un producto puede aparecer en más de
-    // una línea si se vendió con distinto precio/descuento).
+    // una línea si se vendió con distinto precio/descuento). venta/utilidad usan los
+    // mismos campos del recibo de Loyverse que ya usa Marín 376 (total_money,
+    // gross_total_money, cost_total) — antes esta tabla solo guardaba cantidad.
     const porSku = {};
     for (const li of r.line_items) {
       const fila = await get(env, "SELECT sku FROM productos WHERE variant_id = ?", li.variant_id);
       if (!fila) continue; // producto no está en D1 todavía
-      porSku[fila.sku] = (porSku[fila.sku] || 0) + signo * (Number(li.quantity) || 0);
+      const acc = porSku[fila.sku] || (porSku[fila.sku] = { cantidad: 0, venta: 0, utilidad: 0 });
+      acc.cantidad += signo * (Number(li.quantity) || 0);
+      acc.venta += signo * (Number(li.total_money) || 0);
+      acc.utilidad += signo * ((Number(li.gross_total_money) || Number(li.total_money) || 0) - (Number(li.cost_total) || 0));
     }
     for (const sku of Object.keys(porSku)) {
+      const acc = porSku[sku];
       await run(env,
-        `INSERT INTO ventas (receipt_id, sku, cantidad, fecha_venta) VALUES (?,?,?,?)
-         ON CONFLICT(receipt_id, sku) DO UPDATE SET cantidad = excluded.cantidad, fecha_venta = excluded.fecha_venta`,
-        receiptId, sku, porSku[sku], fechaVenta);
+        `INSERT INTO ventas (receipt_id, sku, cantidad, fecha_venta, venta, utilidad) VALUES (?,?,?,?,?,?)
+         ON CONFLICT(receipt_id, sku) DO UPDATE SET cantidad = excluded.cantidad, fecha_venta = excluded.fecha_venta,
+           venta = excluded.venta, utilidad = excluded.utilidad`,
+        receiptId, sku, acc.cantidad, fechaVenta, acc.venta, acc.utilidad);
       procesados++;
     }
   }
@@ -1428,6 +1616,520 @@ async function obtenerPedidosPendientesPorSku(env) {
 }
 
 // ============================================================
+//  PRÉSTAMOS DE MERCADERÍA (portado de Marín 376) — un préstamo mueve stock real en
+//  Loyverse en el momento de registrarlo (no espera a la devolución), igual que una
+//  merma o una recepción, así el stock que la app muestra siempre refleja lo que
+//  físicamente hay en el local. La tabla `prestamos` (creada en asegurarTablas) es el
+//  "libro de deudas": qué salió/entró, con quién, y si ya se devolvió. Al marcar
+//  devuelto se revierte el MISMO movimiento (si salió, vuelve a entrar; si entró,
+//  vuelve a salir) — se asume devolución del mismo producto y cantidad exacta.
+//  El nombre del socio ("Marín 376") se fija en el frontend (ver plan §6, renombre de
+//  Préstamos) — acá la tabla es neutra respecto a esa etiqueta.
+// ============================================================
+const SUCURSAL_PRESTAMO_FIJA = "Marín 376";
+
+// direccion: "salida" = Los Cumpas le presta a Marín 376 (sale stock de acá, sumar
+// cuando vuelva). "entrada" = Marín 376 le presta a Los Cumpas (entra stock acá,
+// restar cuando se devuelva).
+async function accionRegistrarPrestamo(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  const direccion = payload.direccion === "entrada" ? "entrada" : "salida";
+  const cantidad = Number(payload.cantidad);
+  if (!cantidad || cantidad <= 0) throw new Error("Cantidad inválida");
+
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("SKU no encontrado en el catálogo: " + sku);
+  const unidad = it.sold_by_weight ? "kg" : "un";
+
+  // Si falta costo, se guarda el que escriba el usuario a mano (no persiste en
+  // Loyverse desde acá — un préstamo sin costo cargado normalmente significa que el
+  // producto nunca lo tuvo; se deja para editarlo desde la Ficha del producto).
+  const costoManual = Number(payload.costoManual);
+  const costoUnit = it.costo || (costoManual > 0 ? costoManual : 0);
+  const costoTotal = Math.round(cantidad * costoUnit);
+  const fecha = fechaHoraDDMMAAAA();
+  const sucursal = SUCURSAL_PRESTAMO_FIJA;
+
+  const insertRes = await run(env,
+    `INSERT INTO prestamos (fecha, sucursal, direccion, sku, producto, cantidad, unidad, costo_unitario, costo_total, estado, responsable, nota)
+     VALUES (?,?,?,?,?,?,?,?,?,'pendiente',?,?)`,
+    fecha, sucursal, direccion, sku, it.nombre, cantidad, unidad, costoUnit, costoTotal,
+    payload.responsable || "", payload.nota || "");
+
+  const out = {
+    id: insertRes.meta.last_row_id, fecha, sucursal, direccion, sku, nombre: it.nombre,
+    cantidad, unidad, costoUnitario: costoUnit, costoTotal, estado: "pendiente"
+  };
+
+  // "salida" (le prestamos al socio) → sale stock de acá, igual que una merma/venta.
+  // "entrada" (el socio nos presta) → entra stock acá, igual que una recepción.
+  try {
+    const res = await sumarStockLoyverse(env, it, direccion === "salida" ? -cantidad : cantidad);
+    if (res.ok) out.nuevoStock = res.despues;
+    else out.avisoStock = "⚠️ No se pudo ajustar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+  } catch (e) {
+    out.avisoStock = "⚠️ No se pudo ajustar el stock en Loyverse. Revísalo a mano.";
+  }
+
+  return out;
+}
+
+// Devuelve el préstamo: revierte el movimiento de stock original. Mismo producto,
+// misma cantidad exacta — si "salida" restó al registrar, la devolución suma; si
+// "entrada" sumó, la devolución resta.
+async function accionDevolverPrestamo(env, payload) {
+  payload = payload || {};
+  const id = Number(payload.id);
+  if (!id) throw new Error("Falta el id del préstamo");
+  const prestamo = await get(env, "SELECT * FROM prestamos WHERE id = ?", id);
+  if (!prestamo) throw new Error("Préstamo no encontrado");
+  if (prestamo.estado === "devuelto") return { id, yaEstaba: true };
+
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", prestamo.sku);
+  const out = { id, sku: prestamo.sku, nombre: prestamo.producto, estado: "devuelto" };
+
+  if (it) {
+    try {
+      const res = await sumarStockLoyverse(env, it, prestamo.direccion === "salida" ? prestamo.cantidad : -prestamo.cantidad);
+      if (res.ok) out.nuevoStock = res.despues;
+      else out.avisoStock = "⚠️ No se pudo ajustar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+    } catch (e) {
+      out.avisoStock = "⚠️ No se pudo ajustar el stock en Loyverse. Revísalo a mano.";
+    }
+  } else {
+    out.avisoStock = "⚠️ El producto ya no existe en el catálogo — no se pudo ajustar el stock.";
+  }
+
+  await run(env, "UPDATE prestamos SET estado = 'devuelto', fecha_devolucion = ? WHERE id = ?", fechaHoraDDMMAAAA(), id);
+  return out;
+}
+
+async function repHistorialPrestamos(env, limite) {
+  const { results: rows } = await env.DB.prepare("SELECT * FROM prestamos ORDER BY id DESC LIMIT ?").bind(limite || 100).all();
+  const pendientes = rows.filter(r => r.estado === "pendiente");
+  return {
+    prestamos: rows.map(r => ({
+      id: r.id, fecha: r.fecha, sucursal: r.sucursal, direccion: r.direccion, sku: r.sku,
+      producto: r.producto, cantidad: r.cantidad, unidad: r.unidad, costoUnitario: r.costo_unitario,
+      costoTotal: r.costo_total, estado: r.estado, fechaDevolucion: r.fecha_devolucion,
+      responsable: r.responsable, nota: r.nota
+    })),
+    resumen: {
+      totalPendientes: pendientes.length,
+      valorPendienteSalidas: pendientes.filter(r => r.direccion === "salida").reduce((s, r) => s + (r.costo_total || 0), 0),
+      valorPendienteEntradas: pendientes.filter(r => r.direccion === "entrada").reduce((s, r) => s + (r.costo_total || 0), 0)
+    }
+  };
+}
+
+// ============================================================
+//  CALCULADORA DE PRECIOS — GUARDAR CÁLCULOS DE FACTURA (portado de Marín 376) —
+//  guarda en D1 los cálculos de precio ya revisados/confirmados por el usuario, tabla
+//  propia (facturas_calculos), sin tocar vencimientos/mermas/productos. Todas las
+//  filas de una misma foto de factura comparten factura_id, así queda historial.
+// ============================================================
+async function accionGuardarCalculoPrecio(env, payload) {
+  const items = Array.isArray(payload && payload.items) ? payload.items : [];
+  if (!items.length) throw new Error("No hay productos para guardar");
+  const facturaIdProvista = payload && payload.factura_id;
+  const facturaId = facturaIdProvista || ("FC-" + Date.now());
+  const fecha = fechaHoraDDMMAAAA();
+  const responsable = (payload && payload.responsable) || "";
+  // Si viene un factura_id existente (edición desde el historial), se reemplazan sus
+  // filas en vez de insertar unas nuevas al lado — evita que "editar y guardar" duplique.
+  if (facturaIdProvista) {
+    await run(env, "DELETE FROM facturas_calculos WHERE factura_id = ?", facturaIdProvista);
+  }
+  const stmts = items.map(it => env.DB.prepare(
+    `INSERT INTO facturas_calculos (factura_id, fecha, producto, costo_unitario, margen, precio_venta, precio_psicologico, categoria, responsable)
+     VALUES (?,?,?,?,?,?,?,?,?)`
+  ).bind(
+    facturaId, fecha, String(it.producto || "").trim(),
+    Number(it.costo_unitario) || 0, Number(it.margen) || 0,
+    Number(it.precio_venta) || 0, Number(it.precio_psicologico) || 0,
+    String(it.categoria || ""), responsable
+  ));
+  await batchRun(env, stmts);
+  return { factura_id: facturaId, guardados: items.length };
+}
+
+// Lee el historial completo agrupado por factura_id.
+async function accionListarCalculosFactura(env) {
+  const { results: rows } = await env.DB.prepare("SELECT * FROM facturas_calculos ORDER BY id DESC").all();
+  const porFactura = {};
+  const orden = [];
+  rows.forEach(r => {
+    if (!porFactura[r.factura_id]) {
+      porFactura[r.factura_id] = { facturaId: r.factura_id, fecha: r.fecha, items: [] };
+      orden.push(r.factura_id);
+    }
+    porFactura[r.factura_id].items.push({
+      producto: r.producto, costo_unitario: r.costo_unitario, margen: r.margen,
+      precio_venta: r.precio_venta, precio_psicologico: r.precio_psicologico, categoria: r.categoria
+    });
+  });
+  return { historial: orden.map(id => porFactura[id]) };
+}
+
+// Elimina todas las filas de una factura.
+async function accionEliminarCalculoFactura(env, payload) {
+  const facturaId = payload && payload.factura_id;
+  if (!facturaId) throw new Error("Falta factura_id");
+  await run(env, "DELETE FROM facturas_calculos WHERE factura_id = ?", facturaId);
+  return { factura_id: facturaId };
+}
+
+// ============================================================
+//  MAPEO DE CATEGORÍAS (portado de Marín 376, adaptado a que el proveedor "real" de
+//  Argomedo es productos.proveedor TEXT — proveedor_id es el FK nuevo en paralelo,
+//  ver §4 del plan "modelo dual"). "sin_proveedor" mira la columna TEXT, que es la
+//  que de verdad usa el resto de la app hoy (Recepción, Crear producto, etc.).
+// ============================================================
+async function repCategoriasResumen(env) {
+  const { results: categorias } = await env.DB.prepare(
+    "SELECT categoria, COUNT(*) AS total, " +
+    "SUM(CASE WHEN proveedor IS NULL OR TRIM(proveedor)='' OR proveedor='SIN PROVEEDOR' THEN 1 ELSE 0 END) AS sin_proveedor, " +
+    "SUM(CASE WHEN sector IS NULL OR TRIM(sector)='' THEN 1 ELSE 0 END) AS sin_sector, " +
+    "MAX(nombre) AS ejemplo FROM productos " +
+    "WHERE categoria IS NOT NULL AND TRIM(categoria) != '' " +
+    "GROUP BY categoria ORDER BY total DESC"
+  ).all();
+  const desglose = await get(env,
+    "SELECT " +
+    "SUM(CASE WHEN categoria IS NULL OR TRIM(categoria)='' THEN 1 ELSE 0 END) AS sin_categoria, " +
+    "SUM(CASE WHEN sector IS NULL OR TRIM(sector)='' THEN 1 ELSE 0 END) AS sin_sector, " +
+    "SUM(CASE WHEN proveedor IS NULL OR TRIM(proveedor)='' OR proveedor='SIN PROVEEDOR' THEN 1 ELSE 0 END) AS sin_proveedor, " +
+    "COUNT(*) AS total FROM productos");
+  return { categorias, total: categorias.length, desglose };
+}
+
+// Lista los productos de UNA categoría de Loyverse, para el modo "seleccionar dentro
+// de la categoría" de Mapeo de categorías (ej. una categoría mezclada con productos de
+// varios proveedores: acá se ven todos para marcar solo los que correspondan a cada uno).
+async function repCategoriaProductos(env, categoria) {
+  const { results: productos } = await env.DB.prepare(
+    "SELECT sku, nombre, id_loyverse, proveedor, sector FROM productos WHERE categoria = ? ORDER BY nombre LIMIT 2000"
+  ).bind(categoria).all();
+  const skus = productos.map(p => p.sku);
+  const adicionalesPorSku = {};
+  // D1 limita cuántos parámetros puede llevar una sola sentencia (~100) — se trocea
+  // en lotes de 90 SKUs por consulta, mismo fix que ya tiene Marín para esto.
+  const LOTE = 90;
+  for (let i = 0; i < skus.length; i += LOTE) {
+    const parte = skus.slice(i, i + LOTE);
+    if (!parte.length) continue;
+    const { results: filas } = await env.DB.prepare(
+      "SELECT pe.sku, pv.nombre FROM producto_proveedor_extra pe JOIN proveedores pv ON pv.id = pe.proveedor_id " +
+      "WHERE pe.sku IN (" + parte.map(() => "?").join(",") + ")"
+    ).bind(...parte).all();
+    filas.forEach(f => { (adicionalesPorSku[f.sku] = adicionalesPorSku[f.sku] || []).push(f.nombre); });
+  }
+  productos.forEach(p => { p.proveedores_adicionales = adicionalesPorSku[p.sku] || []; });
+  return { productos, total: productos.length };
+}
+
+// POST { action:'mapear_categoria', payload:{categoria,proveedor,sector,skus?} } → asigna
+// proveedor y/o sector a TODOS los productos de una categoría de Loyverse de una sola vez
+// (o solo a los `skus` indicados, para categorías mezcladas). Nunca pisa un proveedor/
+// sector que un producto ya tenga — solo rellena lo que le falte. También aprende el
+// patrón (categoría→proveedor/sector) para que clasificar_producto lo reuse sin IA.
+async function accionMapearCategoria(env, payload) {
+  const categoria = String((payload && payload.categoria) || "").trim();
+  if (!categoria) throw new Error("Falta la categoría");
+  const proveedor = payload && payload.proveedor ? String(payload.proveedor).trim() : null;
+  const sector = payload && payload.sector ? String(payload.sector).trim() : null;
+  if (!proveedor && !sector) throw new Error("Indica al menos un proveedor o un sector para esta categoría");
+  let proveedorId = null;
+  if (proveedor) {
+    await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedor);
+    const prov = await get(env, "SELECT id FROM proveedores WHERE nombre = ?", proveedor);
+    proveedorId = prov ? prov.id : null;
+  }
+  if (sector) await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sector);
+
+  const skusTodos = Array.isArray(payload && payload.skus) ? payload.skus.map(String).filter(Boolean) : null;
+  const where = skusTodos && skusTodos.length
+    ? `categoria = ? AND sku IN (${skusTodos.map(() => "?").join(",")})`
+    : "categoria = ?";
+  const params = skusTodos && skusTodos.length ? [categoria, ...skusTodos] : [categoria];
+
+  let cambiados = 0;
+  if (proveedor) {
+    const { meta } = await run(env, `UPDATE productos SET proveedor = ? WHERE ${where} AND (proveedor IS NULL OR TRIM(proveedor)='' OR proveedor='SIN PROVEEDOR')`, proveedor, ...params);
+    cambiados += (meta && meta.changes) || 0;
+  }
+  if (sector) {
+    const { meta } = await run(env, `UPDATE productos SET sector = ? WHERE ${where} AND (sector IS NULL OR TRIM(sector)='')`, sector, ...params);
+    cambiados += (meta && meta.changes) || 0;
+  }
+
+  // Aprendizaje por patrón solo tiene sentido para "toda la categoría" — una selección
+  // parcial ensuciaría la próxima categoría completa que se intente mapear de un tirón.
+  if (!skusTodos) {
+    const patron = categoria.toUpperCase();
+    await run(env,
+      "INSERT INTO producto_clasificacion_aprendida (patron, proveedor_id, sector, actualizado_en) VALUES (?,?,?,?) " +
+      "ON CONFLICT(patron) DO UPDATE SET " +
+      "proveedor_id = COALESCE(excluded.proveedor_id, producto_clasificacion_aprendida.proveedor_id), " +
+      "sector = COALESCE(excluded.sector, producto_clasificacion_aprendida.sector), actualizado_en = excluded.actualizado_en",
+      patron, proveedorId, sector, fechaHoraDDMMAAAA());
+  }
+
+  return { categoria, proveedor, sector, productosActualizados: cambiados };
+}
+
+// POST { action:'guardar_clasificacion', payload:{patron,proveedor,sector} } → guarda
+// (o actualiza) un patrón aprendido a mano, sin pasar por Mapeo de categorías — no
+// necesita IA, es un INSERT directo.
+// Guarda la confirmación o corrección del usuario como patrón aprendido (mismo
+// contrato que Marín 376: proveedor_id directo, no nombre) — así no vuelve a hacer
+// falta IA la próxima vez que aparezca este mismo producto o categoría.
+async function accionGuardarClasificacion(env, payload) {
+  const patron = String((payload && payload.patron) || "").trim().toUpperCase();
+  if (!patron) throw new Error("Falta el patrón (nombre de producto o categoría) a guardar");
+  const sector = String((payload && payload.sector) || "").trim().toUpperCase();
+  if (!sector) throw new Error("Falta el sector");
+  await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sector);
+  const proveedorId = payload && payload.proveedor_id != null && payload.proveedor_id !== "" ? Number(payload.proveedor_id) : null;
+  if (proveedorId != null) {
+    const existe = await get(env, "SELECT id FROM proveedores WHERE id = ?", proveedorId);
+    if (!existe) throw new Error("El proveedor indicado no existe");
+  }
+  await run(env,
+    "INSERT INTO producto_clasificacion_aprendida (patron, proveedor_id, sector, actualizado_en) VALUES (?,?,?,?) " +
+    "ON CONFLICT(patron) DO UPDATE SET proveedor_id = excluded.proveedor_id, sector = excluded.sector, actualizado_en = excluded.actualizado_en",
+    patron, proveedorId, sector, fechaHoraDDMMAAAA());
+  return { patron, proveedor_id: proveedorId, sector };
+}
+
+// ============================================================
+//  FUNCIONES QUE DEPENDEN DE APIS EXTERNAS (portadas de Marín 376, Fase 1 — ver plan
+//  §7). El código queda completo y funcional; NO van a andar hasta que el dueño cargue
+//  los secretos correspondientes en Cloudflare (wrangler secret put ...). El dispatcher
+//  comprueba el secreto ANTES de llamar a cada una (ver ?action=capacidades más abajo)
+//  y devuelve {ok:false, codigo:'FALTA_SECRETO'} en vez de dejar que la función misma
+//  tire una excepción sin secreto.
+// ============================================================
+
+// OCR de facturas con Claude (visión) — nunca escribe nada solo: el frontend siempre
+// muestra una tabla editable para que el usuario revise/corrija antes de guardar (ver
+// accionGuardarCalculoPrecio). Secreto: ANTHROPIC_API_KEY.
+// OCR de facturas (foto → productos vía Claude) eliminado a pedido del dueño — Marín
+// Pedidos ya no tiene este módulo. La Calculadora de precios sigue funcionando por peso/
+// kilo y sigue pudiendo editar/guardar cálculos ya existentes (guardar_calculo_precio/
+// listar_calculos_factura/eliminar_calculo_factura, sin cambios, no son exclusivas de esto).
+
+// Busca fotos de empaque/producto candidatas para un nombre, vía Searlo (motor de
+// búsqueda tipo Google, sin IA). Secreto: SEARLO_API_KEY.
+async function accionBuscarImagenProducto(env, payload) {
+  requiereSecreto(env, "SEARLO_API_KEY", "cuenta gratis en searlo.tech, wrangler secret put SEARLO_API_KEY");
+  const nombre = payload && payload.nombre;
+  if (!nombre) throw new Error("Falta el nombre del producto");
+
+  const query = nombre + " producto empaque";
+  let res;
+  try {
+    res = await fetch("https://api.searlo.tech/api/v1/search/images?q=" + encodeURIComponent(query), {
+      headers: { "x-api-key": env.SEARLO_API_KEY }
+    });
+  } catch (e) {
+    throw new Error("No se pudo conectar con Searlo: " + e.message);
+  }
+  if (!res.ok) {
+    const errTxt = await res.text().catch(() => "");
+    throw new Error("Searlo no pudo buscar la imagen (" + res.status + "): " + errTxt.slice(0, 200));
+  }
+  const data = await res.json();
+  // La documentación de Searlo muestra dos formas de respuesta según la página — a veces
+  // "images"/"results" (lista plana), a veces "items" anidado como {image:{src,...}}. Se
+  // prueban las dos.
+  const planos = data.results || data.images || [];
+  const anidados = (data.items || []).map(it => ({
+    url: (it.image && (it.image.src || it.image.url)) || it.link || "",
+    fuente: it.source || it.domain || it.title || ""
+  }));
+  const items = planos.length ? planos : anidados;
+  const candidatos = items.map(it => ({
+    url: it.url || it.imageUrl || it.image_url || it.link || it.thumbnailUrl || "",
+    fuente: it.source || it.domain || it.title || ""
+  })).filter(c => c.url && /^https?:\/\//.test(c.url)).slice(0, 4);
+
+  return { candidatos };
+}
+
+// Quita el fondo de una foto (base64) con remove.bg, pidiendo el recorte con
+// transparencia real (canal alpha) — el fondo blanco/sombra se aplican después en el
+// celular (mismo criterio que Marín 376: el Worker solo recorta, no decora). Es un paso
+// SEPARADO de subir_imagen_producto: esto solo devuelve un preview; el usuario decide si
+// lo aplica. Secreto: REMOVEBG_API_KEY.
+async function accionQuitarFondoProducto(env, payload) {
+  requiereSecreto(env, "REMOVEBG_API_KEY", "wrangler secret put REMOVEBG_API_KEY");
+  const imageBase64 = payload && payload.image_base64;
+  if (!imageBase64) throw new Error("Falta la foto a procesar");
+
+  let rbgRes;
+  try {
+    rbgRes = await fetch("https://api.remove.bg/v1.0/removebg", {
+      method: "POST",
+      headers: { "X-Api-Key": env.REMOVEBG_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image_file_b64: imageBase64, size: "auto", format: "png",
+        type: "product", semitransparency: true
+      })
+    });
+  } catch (e) {
+    throw new Error("No se pudo conectar con remove.bg: " + e.message);
+  }
+  if (!rbgRes.ok) {
+    let detalle = "";
+    try {
+      const errJson = await rbgRes.json();
+      detalle = (errJson && errJson.errors && errJson.errors[0] && errJson.errors[0].title) || "";
+    } catch (e) { /* respuesta no era JSON */ }
+    if (rbgRes.status === 402) throw new Error("Se acabaron los créditos gratis de remove.bg este mes");
+    if (rbgRes.status === 403) throw new Error("La API key de remove.bg no es válida");
+    throw new Error("remove.bg rechazó la imagen (" + rbgRes.status + "): " + (detalle || "error desconocido"));
+  }
+
+  const resultBuffer = await rbgRes.arrayBuffer();
+  if (resultBuffer.byteLength > 5 * 1024 * 1024) throw new Error("La imagen procesada quedó demasiado pesada");
+  const bytes = new Uint8Array(resultBuffer);
+  let binaryStr = "";
+  const CHUNK = 8192;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binaryStr += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return { image_base64: btoa(binaryStr), content_type: "image/png" };
+}
+
+// Sube al producto en Loyverse la imagen que el usuario eligió (URL sugerida o bytes
+// directos de la galería / de quitar_fondo_producto). Solo necesita LOYVERSE_API_TOKEN,
+// que ya está configurado — no requiere un secreto nuevo.
+async function accionSubirImagenProducto(env, payload) {
+  const sku = payload && payload.sku;
+  const imageUrl = payload && payload.image_url;
+  const imageBase64Directo = payload && payload.image_base64;
+  if (!sku) throw new Error("Falta el sku del producto");
+  if (!imageUrl && !imageBase64Directo) throw new Error("Falta la imagen elegida");
+  const producto = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!producto || !producto.id_loyverse) throw new Error("Producto sin id de Loyverse — sincroniza el catálogo primero");
+
+  let imageBytes, contentType;
+  if (imageBase64Directo) {
+    const binaryStr = atob(imageBase64Directo);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+    imageBytes = bytes.buffer;
+    contentType = (payload && payload.content_type) || "image/jpeg";
+  } else {
+    let imgRes;
+    try { imgRes = await fetch(imageUrl); } catch (e) { throw new Error("No se pudo descargar la imagen: " + e.message); }
+    if (!imgRes.ok) throw new Error("No se pudo descargar la imagen (código " + imgRes.status + ") — prueba con otra");
+    imageBytes = await imgRes.arrayBuffer();
+    if (imageBytes.byteLength > 5 * 1024 * 1024) throw new Error("La imagen pesa más de 5MB — elige otra de las sugeridas");
+    contentType = imgRes.headers.get("content-type") || (/\.png(\?|$)/i.test(imageUrl) ? "image/png" : "image/jpeg");
+  }
+
+  let uploadRes;
+  try {
+    uploadRes = await fetch(LOYVERSE_API + "/items/" + producto.id_loyverse + "/image", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN, "Content-Type": contentType },
+      body: imageBytes
+    });
+  } catch (e) { throw new Error("No se pudo conectar con Loyverse: " + e.message); }
+  if (!uploadRes.ok) {
+    const errTxt = await uploadRes.text().catch(() => "");
+    throw new Error("Loyverse rechazó la imagen (" + uploadRes.status + "): " + errTxt.slice(0, 200));
+  }
+
+  await new Promise(r => setTimeout(r, 900));
+  const verificado = await loyverseGet(env, "/items/" + producto.id_loyverse, {});
+  const imagenNueva = verificado && verificado.image_url;
+  if (!imagenNueva) {
+    throw new Error("Loyverse aceptó la imagen pero todavía no se confirma — puede tardar unos segundos. Revisa el producto directo en Loyverse en un momento.");
+  }
+  await run(env, "UPDATE productos SET imagen_url=? WHERE sku=?", imagenNueva, sku);
+  return { imagen_url: imagenNueva };
+}
+
+// Sugiere proveedor+sector para UN producto (portado de Marín 376, contrato exacto:
+// payload {nombre,categoria}, nunca sku — no escribe nada solo, el frontend decide si
+// confirma con guardar_clasificacion). Dos niveles: primero busca en
+// producto_clasificacion_aprendida por patrón exacto (nombre o categoría, gratis, sin
+// IA); si no encuentra nada, cae a IA (Claude — requiere ANTHROPIC_API_KEY; el
+// dispatcher ya comprobó el secreto antes de llegar hasta acá cuando no hay patrón).
+async function accionClasificarProducto(env, payload) {
+  const nombreProducto = String((payload && payload.nombre) || "").trim();
+  const categoriaLoyverse = String((payload && payload.categoria) || "").trim();
+  if (!nombreProducto) throw new Error("Falta el nombre del producto");
+
+  const patronProducto = nombreProducto.toUpperCase();
+  const patronCategoria = categoriaLoyverse.toUpperCase();
+
+  let aprendido = await get(env, "SELECT proveedor_id, sector FROM producto_clasificacion_aprendida WHERE patron = ?", patronProducto);
+  if (!aprendido && patronCategoria) {
+    aprendido = await get(env, "SELECT proveedor_id, sector FROM producto_clasificacion_aprendida WHERE patron = ?", patronCategoria);
+  }
+  if (aprendido) {
+    const prov = aprendido.proveedor_id ? await get(env, "SELECT id, nombre FROM proveedores WHERE id = ?", aprendido.proveedor_id) : null;
+    return { proveedor: prov ? prov.nombre : null, proveedor_id: prov ? prov.id : null, sector: aprendido.sector, confianza: "alta", origen: "aprendido" };
+  }
+
+  // Sin patrón aprendido — recién acá hace falta IA (no antes, para no bloquear el
+  // camino gratis con un secreto que la mayoría de las clasificaciones ni necesita).
+  requiereSecreto(env, "ANTHROPIC_API_KEY", "wrangler secret put ANTHROPIC_API_KEY");
+
+  const { results: proveedoresRows } = await env.DB.prepare("SELECT id, nombre FROM proveedores ORDER BY nombre").all();
+  const listaProveedores = proveedoresRows.map(p => p.nombre).join(", ");
+  const { sectores: sectoresCombinados } = await catalogoProveedoresSectores(env);
+
+  const prompt = `Eres un clasificador de productos de un minimarket chileno.
+Producto: "${nombreProducto}"
+Categoría actual en Loyverse: "${categoriaLoyverse || "(sin categoría)"}"
+
+Proveedores conocidos: ${listaProveedores}
+Sectores válidos: ${sectoresCombinados.join(", ")}
+
+Responde SOLO JSON, sin texto adicional:
+{"proveedor":"nombre exacto de la lista, o null si no se puede determinar","sector":"uno de los sectores válidos","confianza":"alta"|"baja"}
+Si el producto no calza claramente con ningún proveedor conocido, usa null y confianza "baja".
+No inventes un proveedor que no esté en la lista.`;
+
+  let res;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 300, messages: [{ role: "user", content: prompt }] })
+    });
+  } catch (e) {
+    throw new Error("No se pudo conectar con Claude: " + e.message);
+  }
+  if (!res.ok) {
+    const errTxt = await res.text().catch(() => "");
+    throw new Error("Claude no pudo clasificar (" + res.status + "): " + errTxt.slice(0, 200));
+  }
+  const data = await res.json();
+  const textBlock = (data.content || []).find(b => b.type === "text");
+  if (!textBlock) throw new Error("Claude no devolvió una clasificación");
+  const raw = textBlock.text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
+  let out;
+  try { out = JSON.parse(raw); } catch (e) { throw new Error("No se pudo interpretar la respuesta de Claude"); }
+
+  const sectorSugerido = sectoresCombinados.includes(String(out.sector || "").toUpperCase()) ? String(out.sector).toUpperCase() : "OTROS";
+  let proveedorSugerido = null, proveedorId = null;
+  if (out.proveedor) {
+    const match = proveedoresRows.find(p => String(p.nombre).trim().toUpperCase() === String(out.proveedor).trim().toUpperCase());
+    if (match) { proveedorSugerido = match.nombre; proveedorId = match.id; }
+  }
+  const confianza = (out.confianza === "alta" && proveedorSugerido) ? "alta" : "baja";
+  return { proveedor: proveedorSugerido, proveedor_id: proveedorId, sector: sectorSugerido, confianza, origen: "ia" };
+}
+
+// ============================================================
 //  CATÁLOGO COMPACTO (D1 → frontend)
 //  Se usa para cargar TODOS los productos una sola vez al abrir
 //  la app (igual que Marín) y buscar después en el teléfono sin
@@ -1519,11 +2221,21 @@ async function accionLoteNuevo(env, payload) {
     //    tenga fecha, para dejar rastro de la recepción, con estado "Sin fecha". Se
     //    omite por completo si no hubo recepción de stock (cantidad 0, solo edición
     //    de precio/costo), para no dejar lotes fantasma en la tabla de vencimientos.
+    //    Con fecha, el estado/prioridad/acción/precio recomendado salen del motor de
+    //    Marín 376 (calcularLote) en vez del "Pendiente" fijo que se usaba antes.
+    let calc;
+    if (tieneFecha) {
+      const tablaVidaUtil = await getVidaUtilTabla(env);
+      calc = await calcularLote(env, { categoria: it.categoria, fechaVencimiento: fechaTxt }, it, null, tablaVidaUtil);
+    } else {
+      calc = { estado: "Sin fecha", prioridad: "—", accion: "Sin vencimiento", precioRecomendado: null, costoUsado: null, costoOrigen: "" };
+    }
     const insertRes = await run(env,
-      `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, fecha_revision, revisado_por)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, prioridad, accion, precio_recomendado, costo_usado, costo_origen, fecha_revision, revisado_por)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       fechaIngreso, sku, it.nombre, it.categoria, unidad, payload.lote || "", cantidad,
-      fechaTxt, tieneFecha ? "Pendiente" : "Sin fecha", "", "");
+      fechaTxt, calc.estado, calc.prioridad, calc.accion, calc.precioRecomendado || null,
+      calc.costoUsado || null, calc.costoOrigen, "", "");
     out.filaIndex = insertRes.meta.last_row_id;
 
     // 2) Sumar stock en Loyverse (el paso más importante — si falla, se avisa pero no
@@ -1563,6 +2275,13 @@ async function accionLoteNuevo(env, payload) {
       out.avisoStock = (out.avisoStock ? out.avisoStock + " " : "") + "⚠️ No se pudo actualizar costo/precio: falta id de Loyverse.";
     } else {
       try {
+        // Deja registro en historial_precios ANTES de escribir en Loyverse (igual que
+        // en accionEditarProducto).
+        await run(env,
+          `INSERT INTO historial_precios (sku, fecha, precio_antes, precio_despues, costo_antes, costo_despues, responsable)
+           VALUES (?,?,?,?,?,?,?)`,
+          sku, fechaHoraDDMMAAAA(), it.precio, precioNuevo != null ? precioNuevo : it.precio,
+          it.costo, costoNuevo != null ? costoNuevo : it.costo, payload.responsable || "");
         await actualizarPrecioCostoLoyverse(env, it.id_loyverse, it.variant_id, precioNuevo, costoNuevo);
         const sets = [], vals = [];
         if (precioNuevo != null) { sets.push("precio = ?"); vals.push(precioNuevo); }
@@ -1679,6 +2398,148 @@ async function historialProducto(env, sku, limit) {
     "SELECT fecha, accion, stock, motivo, responsable FROM auditoria WHERE sku = ? ORDER BY id DESC LIMIT ?"
   ).bind(sku, limit || 30).all();
   return results;
+}
+
+// ============================================================
+//  MOTOR DE PRIORIDAD DE VENCIMIENTOS (portado de Marín 376, Fase 1) —
+//  calcula estado/prioridad/acción/precio recomendado de UN lote según la
+//  vida útil configurada para su categoría (config_vida_util) y los días
+//  que faltan para vencer. Reemplaza, para lotes CON fecha, el "Pendiente"
+//  fijo que Argomedo usaba antes — un lote sin fecha sigue quedando "Sin
+//  fecha" igual que antes, sin pasar por este cálculo. Los estados
+//  manuales propios de Argomedo (Retirado/Cambiado/Descuento recibido/
+//  Desechado/Revisado, ver ESTADOS_VENCIMIENTO) no los toca este motor —
+//  solo calcula la parte "activa, todavía sin revisar" del lote.
+// ============================================================
+const VIDA_UTIL_DEFAULT = { dias: 15, tipo: "larga" };
+
+function redondeoPsicologico(p) {
+  const base = Math.floor(p / 100) * 100;
+  const candidatos = [base + 90, base + 50, base + 190, base + 150];
+  let best = candidatos[0], bd = Math.abs(candidatos[0] - p);
+  candidatos.forEach(c => { const d = Math.abs(c - p); if (d < bd) { bd = d; best = c; } });
+  return best;
+}
+
+async function getVidaUtilTabla(env) {
+  const { results } = await env.DB.prepare("SELECT * FROM config_vida_util").all();
+  const out = {};
+  results.forEach(r => { out[r.categoria] = { dias: r.dias_alerta, tipo: r.tipo, nota: r.nota }; });
+  return out;
+}
+function vidaUtilCat(cat, tabla) {
+  return tabla[cat] || VIDA_UTIL_DEFAULT;
+}
+
+// Margen promedio real de la categoría (mín. 3 productos comparables) — solo se usa
+// para ESTIMAR el costo de un lote cuyo producto no tiene costo cargado en Loyverse.
+async function margenPromedioCategoria(env, cat) {
+  const { results } = await env.DB.prepare(
+    "SELECT costo, precio FROM productos WHERE categoria = ? AND costo > 0 AND precio > 0 AND precio > costo"
+  ).bind(cat).all();
+  if (results.length < 3) return null;
+  const ms = results.map(r => (r.precio - r.costo) / r.precio);
+  return ms.reduce((a, b) => a + b, 0) / ms.length;
+}
+
+// `lote` necesita {categoria, fechaVencimiento} (DD/MM/AAAA); `productoRow` es una fila
+// de `productos` (o null); `ventaRow` trae {u30} (o null); `saltarMargen=true` evita la
+// consulta de margen promedio (se usa en el recálculo masivo, para no hacer N consultas).
+async function calcularLote(env, lote, productoRow, ventaRow, tablaVidaUtil, saltarMargen) {
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const venc = parseFechaDDMMAAAA(lote.fechaVencimiento);
+  if (!venc) return { estado: "Vigente", prioridad: "—", accion: "⚠️ Fecha inválida", precioRecomendado: null, costoUsado: 0, costoOrigen: "" };
+
+  const diasRestantes = Math.round((venc - hoy) / 86400000);
+  const cfgCat = vidaUtilCat(lote.categoria, tablaVidaUtil);
+
+  const it = productoRow || {};
+  const precioActual = it.precio || 0;
+  let costoUsado = it.costo || 0, costoOrigen = "real";
+  if (!costoUsado) {
+    const m = saltarMargen ? null : await margenPromedioCategoria(env, lote.categoria);
+    if (m != null) { costoUsado = Math.round(precioActual * (1 - m)); costoOrigen = "estimado"; }
+    else costoOrigen = "sin_datos";
+  }
+
+  const v = ventaRow || {};
+  const ventaDiaria = (v.u30 || 0) / 30;
+  const cobertura = ventaDiaria > 0 ? (it.stock || 0) / ventaDiaria : Infinity;
+  const acelerar = diasRestantes >= 0 && diasRestantes <= 7 && cobertura > diasRestantes * 1.3;
+
+  let estado, prioridad, accion, descuento = 0;
+  if (diasRestantes <= 0) {
+    if (cfgCat.tipo === "cambio") { estado = "Vencido"; prioridad = "⚫"; accion = "Vencido — gestionar cambio con proveedor"; descuento = 0; }
+    else { estado = "Vencido"; prioridad = "⚫"; accion = "Vencido — retirar y registrar merma"; descuento = 1; }
+  } else if (diasRestantes > cfgCat.dias) {
+    estado = "Vigente"; prioridad = "—"; accion = "—"; descuento = 0;
+  } else if (cfgCat.tipo === "cambio") {
+    estado = "Por vencer";
+    const diasEnVentana = cfgCat.dias - diasRestantes;
+    if (diasEnVentana <= 5) { prioridad = "🟢"; accion = "Gestionar cambio con proveedor"; }
+    else if (diasEnVentana <= 15) { prioridad = "🟡"; accion = "Gestionar cambio con proveedor (urgente)"; }
+    else { prioridad = "🔴"; accion = "Gestionar cambio con proveedor (muy atrasado)"; }
+    descuento = 0;
+  } else {
+    estado = "Por vencer";
+    if (cfgCat.tipo === "corta") {
+      if (diasRestantes >= 5) { prioridad = "🟡"; accion = "Reubicar, sin rebaja"; descuento = 0; }
+      else if (diasRestantes >= 3) { prioridad = "🟠"; accion = "Rebaja 25%"; descuento = 0.25; }
+      else if (diasRestantes >= 1) { prioridad = "🔴"; accion = "Rebaja 45%"; descuento = 0.45; }
+      else { prioridad = "⚫"; accion = "Liquidar al costo"; descuento = 1; }
+      if (acelerar && descuento < 0.45 && diasRestantes >= 1) {
+        prioridad = "🔴"; accion = "Rebaja 45% (acelerado: el stock no alcanza a rotar)"; descuento = 0.45;
+      }
+    } else {
+      const diasEnVentana = cfgCat.dias - diasRestantes;
+      if (diasEnVentana <= 1) { prioridad = "🟢"; accion = "Gestionar cambio con proveedor"; descuento = 0; }
+      else if (diasEnVentana <= 6) { prioridad = "🟡"; accion = "Rebaja 10%"; descuento = 0.10; }
+      else if (diasEnVentana <= 11) { prioridad = "🟠"; accion = "Rebaja 20%"; descuento = 0.20; }
+      else { prioridad = "🔴"; accion = "Liquidación 50%"; descuento = 0.50; }
+      if (acelerar && descuento < 0.50) {
+        prioridad = "🔴"; accion = "Liquidación 50% (acelerado: el stock no alcanza a rotar)"; descuento = 0.50;
+      }
+    }
+  }
+
+  let precioRecomendado = null;
+  if (precioActual > 0 && cfgCat.tipo !== "cambio") {
+    if (descuento === 0) precioRecomendado = (estado === "Vigente") ? null : precioActual;
+    else if (descuento === 1) precioRecomendado = costoUsado || null;
+    else precioRecomendado = redondeoPsicologico(Math.max(Math.round(precioActual * (1 - descuento)), costoUsado || 0));
+  }
+
+  return { estado, prioridad, accion, precioRecomendado, costoUsado, costoOrigen, diasRestantes };
+}
+
+// Recalcula estado/prioridad/acción/precio de TODOS los lotes activos (con fecha,
+// sin revisar todavía y sin un descuento ya activo) — se invoca a pedido
+// (?action=recalcular_vencimientos) y conviene sumarla al cron diario que ya existe.
+async function recalcularVencimientosD1(env) {
+  const { results: rows } = await env.DB.prepare(
+    "SELECT * FROM vencimientos WHERE estado NOT IN ('Revisado','Retirado','Cambiado','Descuento recibido','Desechado') " +
+    "AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento != '' AND sku IS NOT NULL " +
+    "AND (descuento_activo IS NULL OR descuento_activo = 0)"
+  ).all();
+  if (!rows.length) return 0;
+  const [{ results: prodRows }, ventaRows, tablaVidaUtil] = await Promise.all([
+    env.DB.prepare("SELECT * FROM productos").all(),
+    ventasResumenTodas(env),
+    getVidaUtilTabla(env)
+  ]);
+  const prodMap = {}; prodRows.forEach(p => { prodMap[p.sku] = p; });
+  const ventaMap = {}; ventaRows.forEach(v => { ventaMap[v.sku] = v; });
+
+  const stmts = [];
+  for (const row of rows) {
+    const calc = await calcularLote(env, { categoria: row.categoria, fechaVencimiento: row.fecha_vencimiento },
+      prodMap[row.sku], ventaMap[row.sku], tablaVidaUtil, true);
+    stmts.push(env.DB.prepare(
+      "UPDATE vencimientos SET estado=?, prioridad=?, accion=?, precio_recomendado=?, costo_usado=?, costo_origen=? WHERE id=?"
+    ).bind(calc.estado, calc.prioridad, calc.accion, calc.precioRecomendado || null, calc.costoUsado || null, calc.costoOrigen, row.id));
+  }
+  await batchRun(env, stmts, 100);
+  return stmts.length;
 }
 
 // ============================================================
@@ -1830,11 +2691,19 @@ async function accionEditarFechaVencimiento(env, payload) {
   if (!id) throw new Error("Falta el id del lote");
   const fechaTxt = String(payload.fechaVencimiento || "").trim();
   if (!fechaTxt || !parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha inválida (usa DD/MM/AAAA)");
-  const lote = await get(env, "SELECT id, estado FROM vencimientos WHERE id = ?", id);
+  const lote = await get(env, "SELECT * FROM vencimientos WHERE id = ?", id);
   if (!lote) throw new Error("Lote no encontrado");
-  const nuevoEstado = lote.estado === "Sin fecha" ? "Pendiente" : lote.estado;
-  await run(env, "UPDATE vencimientos SET fecha_vencimiento = ?, estado = ? WHERE id = ?", fechaTxt, nuevoEstado, id);
-  return { id, fechaVencimiento: fechaTxt, estado: nuevoEstado };
+
+  // Recalcula estado/prioridad/acción/precio recomendado con la fecha nueva (motor de
+  // Marín 376, ver calcularLote) — antes esto solo pisaba "Sin fecha" por "Pendiente".
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", lote.sku);
+  const tablaVidaUtil = await getVidaUtilTabla(env);
+  const calc = await calcularLote(env, { categoria: lote.categoria, fechaVencimiento: fechaTxt }, it, null, tablaVidaUtil);
+
+  await run(env,
+    "UPDATE vencimientos SET fecha_vencimiento = ?, estado = ?, prioridad = ?, accion = ?, precio_recomendado = ? WHERE id = ?",
+    fechaTxt, calc.estado, calc.prioridad, calc.accion, calc.precioRecomendado || null, id);
+  return { id, fechaVencimiento: fechaTxt, estado: calc.estado, prioridad: calc.prioridad, accion: calc.accion };
 }
 
 // ============================================================
@@ -1962,6 +2831,33 @@ async function accionMermaMotivo(env, payload) {
   return { id, sku: merma.sku, nombre: merma.producto, motivoAnterior: merma.motivo, motivo };
 }
 
+// POST { action:'eliminar_merma', payload:{filaIndex} } (portado de Marín 376) →
+// deshace una merma registrada por error: restaura el stock descontado en Loyverse
+// (reusa sumarStockLoyverse, sin el tope-en-0 de recepción) y borra el registro.
+async function accionEliminarMerma(env, payload) {
+  const fi = Number((payload && payload.filaIndex) || 0);
+  if (!fi) throw new Error("Falta el identificador de la merma");
+  const row = await get(env, "SELECT * FROM mermas WHERE id = ?", fi);
+  if (!row) throw new Error("Merma no encontrada");
+
+  let stockNuevo = null, avisoStock = null;
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", row.sku);
+  if (it) {
+    try {
+      const res = await sumarStockLoyverse(env, it, row.cantidad);
+      if (res.ok) stockNuevo = res.despues;
+      else avisoStock = "⚠️ No se pudo restaurar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+    } catch (e) {
+      avisoStock = "⚠️ No se pudo restaurar el stock en Loyverse. Revísalo a mano.";
+    }
+  } else {
+    avisoStock = "⚠️ El producto ya no existe en el catálogo — no se pudo restaurar el stock, solo se borró el registro.";
+  }
+
+  await run(env, "DELETE FROM mermas WHERE id = ?", fi);
+  return { filaIndex: fi, sku: row.sku, cantidadRevertida: row.cantidad, stockNuevo, avisoStock };
+}
+
 // POST { action:'aplicar_descuento_vencimiento', payload:{id,precio,responsable} }
 // Reutiliza accionEditarProducto para sincronizar el precio con Loyverse (misma
 // función que usa Ficha de producto) — acá solo se decide CUÁNDO llamarla y qué
@@ -2068,6 +2964,41 @@ async function accionCerrarGestionDescuento(env, payload) {
   return { ok: true, sku: lote.sku, nombre: lote.producto, estado: "Revisado", motivo };
 }
 
+// action=precios_pendientes_restaurar (portado de Marín 376) — lotes cerrados por
+// "agotado" o "Cerrar gestión" cuyo precio de descuento nunca volvió a Loyverse (se
+// detecta comparando el precio actual del producto con el precio_aplicado guardado:
+// si siguen iguales, lo más probable es que nunca se restauró).
+async function repPreciosPendientesRestaurar(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT v.*, p.precio AS precio_actual FROM vencimientos v JOIN productos p ON p.sku = v.sku " +
+    "WHERE v.descuento_activo = 0 AND v.motivo_cierre IN ('descuento_agotado','descuento_cerrado_manual') " +
+    "AND v.precio_original IS NOT NULL AND v.precio_aplicado IS NOT NULL " +
+    "AND ABS(p.precio - v.precio_aplicado) < 0.5 ORDER BY v.fecha_revision DESC LIMIT 100"
+  ).all();
+  return results.map(r => ({
+    filaIndex: r.id, sku: r.sku, nombre: r.producto,
+    precioOriginal: r.precio_original, precioAplicado: r.precio_aplicado, precioActual: r.precio_actual,
+    fechaCierre: r.fecha_revision
+  }));
+}
+
+// POST { action:'restaurar_precio_descuento', payload:{filaIndex,responsable} } →
+// restaura a mano el precio original de un lote detectado por precios_pendientes_restaurar
+// (reusa accionEditarProducto, mismo mecanismo que ya usa chequearYRevertirDescuentosVencidos).
+async function accionRestaurarPrecioDescuento(env, payload) {
+  payload = payload || {};
+  const row = await get(env, "SELECT * FROM vencimientos WHERE id = ?", Number(payload.filaIndex));
+  if (!row) throw new Error("Lote no encontrado");
+  if (row.precio_original == null) throw new Error("Este lote no tiene un precio original guardado para restaurar");
+  await accionEditarProducto(env, { sku: row.sku, precio: row.precio_original, responsable: payload.responsable || "manual" });
+  if (row.descuento_activo) {
+    await run(env,
+      "UPDATE vencimientos SET estado='Revisado', descuento_activo=0, motivo_cierre='vencido_con_descuento', fecha_revision=?, revisado_por=? WHERE id=?",
+      fechaHoraDDMMAAAA(), payload.responsable || "manual", row.id);
+  }
+  return { sku: row.sku, nombre: row.producto };
+}
+
 // Corre desde scheduled() (mismo cron de las 8:00/15:00) — un lote con
 // descuento_activo=1 cuya fecha_vencimiento ya pasó se considera "no se vendió a
 // tiempo ni con rebaja": se restaura el precio normal en Loyverse y se cierra a
@@ -2129,6 +3060,129 @@ async function ventasPorSku(env, dias) {
   return mapa;
 }
 
+// Resumen de ventas por sku (u_all/u7/u14/u30/u90/rev/prof) en una sola consulta —
+// equivalente a la vista vw_ventas_resumen de Marín, pero calculado sobre la tabla
+// `ventas` de Argomedo (histórico completo, nunca se purga) en vez de una tabla
+// separada de ventas diarias. rev/prof solo son reales desde que se agregaron las
+// columnas venta/utilidad (Fase 1) — antes de eso quedan en 0 para esas filas viejas.
+async function ventasResumenTodas(env) {
+  const ahora = Date.now();
+  const d7 = fechaISO(new Date(ahora - 7 * 86400000));
+  const d14 = fechaISO(new Date(ahora - 14 * 86400000));
+  const d30 = fechaISO(new Date(ahora - 30 * 86400000));
+  const d90 = fechaISO(new Date(ahora - 90 * 86400000));
+  const { results } = await env.DB.prepare(
+    `SELECT sku,
+       SUM(cantidad) AS u_all,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u7,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u14,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u30,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u90,
+       SUM(venta) AS rev,
+       SUM(utilidad) AS prof
+     FROM ventas GROUP BY sku`
+  ).bind(d7, d14, d30, d90).all();
+  return results || [];
+}
+
+// ============================================================
+//  PAYLOAD DEL DASHBOARD (GET sin action) — arma TODO el estado inicial que
+//  necesita el frontend de Marín para arrancar: catálogo, ventas resumidas,
+//  pendientes, proveedores extra, riesgo excluido, favoritos, multiplos,
+//  empaques, palabras. Sin esto la app no carga (ver plan "FASE 1").
+//  Adaptado del payloadDashboard de Marín 376 a que `productos.proveedor` es
+//  TEXT en Argomedo (no FK) y a la tabla `ventas` propia (histórico completo,
+//  nunca se purga, a diferencia de la `ventas_diarias` rodante de Marín).
+// ============================================================
+async function payloadDashboard(env, synced, syncMsg) {
+  await asegurarTablas(env);
+  const { results: productos } = await env.DB.prepare("SELECT * FROM productos").all();
+
+  const { results: proveedoresRows } = await env.DB.prepare("SELECT id, nombre FROM proveedores").all();
+  const proveedorNombrePorId = {};
+  proveedoresRows.forEach(pr => { proveedorNombrePorId[pr.id] = pr.nombre; });
+
+  const itemsRows = {};
+  productos.forEach(p => {
+    itemsRows[p.sku] = {
+      id: p.id_loyverse, vid: p.variant_id || "", ref: p.sku, nombre: p.nombre,
+      prov: p.proveedor || "SIN PROVEEDOR", cat: p.categoria || "", costo: p.costo || 0, precio: p.precio || 0,
+      stock: p.stock, track: !!p.track_stock, barcode: p.barcode || "", peso: !!p.sold_by_weight,
+      creado: p.fecha_creacion || null, descripcion: p.descripcion || "", imagen: p.imagen_url || "",
+      proveedorId: p.proveedor_id || null,
+      proveedorNombre: p.proveedor_id ? (proveedorNombrePorId[p.proveedor_id] || null) : null,
+      sector: p.sector || null
+    };
+  });
+
+  const resumen = await ventasResumenTodas(env);
+  const ventasRows = {};
+  resumen.forEach(r => {
+    ventasRows[r.sku] = {
+      ref: r.sku, u_all: r.u_all || 0, u7: r.u7 || 0, u14: r.u14 || 0, u30: r.u30 || 0, u90: r.u90 || 0,
+      rev: Math.round(r.rev || 0), prof: Math.round(r.prof || 0)
+    };
+  });
+
+  const hoyISO = fechaISO();
+  const { results: ventasHoyRows } = await env.DB.prepare("SELECT DISTINCT sku FROM ventas WHERE fecha_venta = ?").bind(hoyISO).all();
+  const hoyRowsObj = {};
+  ventasHoyRows.forEach(r => { hoyRowsObj[r.sku] = 1; });
+
+  // Pedidos pendientes — se manda siempre junto al resto del dashboard para que el
+  // frontend pueda avisar "ya pedido" sin una consulta extra por producto.
+  let pendientesRows = [];
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT sku, barcode, COALESCE(nombre, producto) AS nombre, proveedor, cantidad, canal, fecha, costo_unitario, costo_total, fecha_llegada_estimada, estado FROM pedidos_pendientes"
+    ).all();
+    pendientesRows = results || [];
+  } catch (err) { /* tabla recién migrada, sin filas todavía */ }
+
+  // Proveedores extra (multi-proveedor por FK) — mapa sku → [id,...] y sku → [nombre,...].
+  // Argomedo solo tiene el mecanismo FK (`producto_proveedor_extra`); no existe el mecanismo
+  // de texto libre más viejo de Marín (`producto_proveedores`), así que provsExtra (texto)
+  // no se manda — el frontend ya sabe convivir sin él (cae a prov/proveedorNombre).
+  let provsIdsExtraObj = {}, provsNombresExtraObj = {};
+  try {
+    const { results: extraRows } = await env.DB.prepare("SELECT sku, proveedor_id FROM producto_proveedor_extra").all();
+    extraRows.forEach(r => {
+      (provsIdsExtraObj[r.sku] = provsIdsExtraObj[r.sku] || []).push(r.proveedor_id);
+      const nombre = proveedorNombrePorId[r.proveedor_id];
+      if (nombre) (provsNombresExtraObj[r.sku] = provsNombresExtraObj[r.sku] || []).push(nombre);
+    });
+  } catch (err) { /* sin filas todavía */ }
+
+  let riesgoExcluidos = [];
+  try { riesgoExcluidos = await repRiesgoExcluidos(env); } catch (err) { /* sin filas todavía */ }
+
+  let favoritos = [];
+  try { favoritos = await repFavoritos(env); } catch (err) { /* sin filas todavía */ }
+
+  let multiplosObj = {}, empaquesObj = {}, palabrasObj = {};
+  try { ({ multiplos: multiplosObj, empaques: empaquesObj, palabras: palabrasObj } = await obtenerMultiplosProducto(env)); }
+  catch (err) { /* sin filas todavía */ }
+
+  return {
+    ok: true,
+    version: "v2",
+    synced: !!synced,
+    syncMsg: syncMsg || "",
+    ventasHoy: ventasHoyRows.length,
+    items: { rows: itemsRows },
+    ventas: { rows: ventasRows, hoy: { fecha: hoyISO, rows: hoyRowsObj } },
+    pendientes: { rows: pendientesRows },
+    provsIdsExtra: provsIdsExtraObj,
+    provsNombresExtra: provsNombresExtraObj,
+    riesgoExcluidos: riesgoExcluidos,
+    favoritos: favoritos,
+    multiplos: multiplosObj,
+    empaques: empaquesObj,
+    palabras: palabrasObj,
+    serverTime: new Date().toISOString()
+  };
+}
+
 
 //  buscador con creación rápida (Módulo 3). Se combinan con los
 //  valores ya usados en `productos` por si algún producto viejo
@@ -2157,6 +3211,104 @@ async function accionCrearProveedor(env, payload) {
   if (!nombre) throw new Error("Falta el nombre del proveedor");
   await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", nombre);
   return { nombre };
+}
+
+// POST { action:'renombrar_proveedor', payload:{id,nombre} } (portado de Marín 376)
+// → renombra un proveedor del catálogo (por id, no por nombre — evita ambigüedad si
+// dos filas comparten nombre visible con espacios distintos).
+async function accionRenombrarProveedor(env, payload) {
+  const id = Number((payload && payload.id) || 0);
+  const nombreNuevo = String((payload && payload.nombre) || "").trim();
+  if (!id) throw new Error("Falta el id del proveedor");
+  if (!nombreNuevo) throw new Error("Falta el nombre nuevo");
+  const actual = await get(env, "SELECT id, nombre FROM proveedores WHERE id = ?", id);
+  if (!actual) throw new Error("Ese proveedor no existe");
+  const chocaCon = await get(env, "SELECT id FROM proveedores WHERE id != ? AND nombre = ?", id, nombreNuevo);
+  if (chocaCon) throw new Error("Ya existe otro proveedor con ese nombre: " + nombreNuevo);
+  await run(env, "UPDATE proveedores SET nombre = ? WHERE id = ?", nombreNuevo, id);
+  // El nombre principal de producto (productos.proveedor, TEXT) se guarda por copia, no por
+  // FK — hay que propagar el renombre ahí también para no dejarlo desactualizado.
+  await run(env, "UPDATE productos SET proveedor = ? WHERE proveedor = ?", nombreNuevo, actual.nombre);
+  return { proveedor: { id, nombre: nombreNuevo }, nombreAnterior: actual.nombre };
+}
+
+// POST { action:'renombrar_sector', payload:{actual,nuevo} } (portado de Marín 376) →
+// renombra un sector; si el nombre destino ya existe, se fusionan (los productos del
+// sector viejo pasan al nuevo, y el nombre viejo se retira del catálogo).
+async function accionRenombrarSector(env, payload) {
+  const actualNombre = String((payload && payload.actual) || "").trim();
+  const nuevoNombre = String((payload && payload.nuevo) || "").trim();
+  if (!actualNombre) throw new Error("Falta el sector actual");
+  if (!nuevoNombre) throw new Error("Falta el nombre nuevo");
+  if (actualNombre === nuevoNombre) return { sinCambios: true, productosActualizados: 0 };
+
+  const yaExisteDestino = await get(env, "SELECT id FROM sectores WHERE nombre = ?", nuevoNombre);
+  const fusionado = !!yaExisteDestino;
+  if (!fusionado) await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", nuevoNombre);
+
+  const { meta } = await run(env, "UPDATE productos SET sector = ? WHERE sector = ?", nuevoNombre, actualNombre);
+  await run(env, "DELETE FROM sectores WHERE nombre = ?", actualNombre);
+  await run(env, "DELETE FROM sectores_personalizados WHERE nombre = ?", actualNombre);
+  if (!fusionado) await run(env, "INSERT OR IGNORE INTO sectores_personalizados (nombre) VALUES (?)", nuevoNombre);
+
+  return { sectorAnterior: actualNombre, sectorNuevo: nuevoNombre, fusionado, productosActualizados: (meta && meta.changes) || 0 };
+}
+
+// POST { action:'editar_codigo_barras', payload:{sku,barcode} } (portado de Marín 376)
+// → reusa accionEditarProducto (que ya valida duplicados y reenvía a Loyverse), sin
+// duplicar esa lógica en una función aparte.
+async function accionEditarCodigoBarras(env, payload) {
+  const sku = String((payload && payload.sku) || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  return accionEditarProducto(env, { sku, barcode: String((payload && payload.barcode) || "").trim(), responsable: payload && payload.responsable });
+}
+
+// POST { action:'crear_categoria', payload:{nombre} } (portado de Marín 376) → crea una
+// categoría nueva directo en Loyverse (evita duplicar si ya existe una con ese nombre).
+async function accionCrearCategoria(env, payload) {
+  const nombre = String((payload && payload.nombre) || "").trim();
+  if (!nombre) throw new Error("Falta el nombre de la categoría");
+  const existentes = await loyverseGetAll(env, "/categories", "categories");
+  const dup = existentes.find(c => String(c.name || "").trim().toUpperCase() === nombre.toUpperCase());
+  if (dup) return { categoria: { id: dup.id, name: dup.name }, yaExistia: true };
+  const creada = await loyversePost(env, "/categories", { name: nombre });
+  if (!creada || !creada.id) throw new Error("Loyverse no devolvió la categoría creada");
+  return { categoria: { id: creada.id, name: creada.name } };
+}
+
+// POST { action:'consumo_interno', payload:{items:[{sku,cantidad,costoManual}],responsable} }
+// (portado de Marín 376) → registra varias mermas de una con motivo fijo "consumo_interno"
+// (reusa accionMerma, sin duplicar la lógica de descuento de stock/costo).
+async function accionConsumoInterno(env, payload) {
+  const items = Array.isArray(payload && payload.items) ? payload.items : [];
+  if (!items.length) throw new Error("No hay productos para registrar");
+  let total = 0, n = 0, avisoStock = "";
+  for (const it of items) {
+    const r = await accionMerma(env, {
+      sku: it.sku, cantidad: it.cantidad, costoManual: it.costoManual,
+      motivo: "consumo_interno", origen: "manual", responsable: payload.responsable
+    });
+    total += r.costoTotal || 0;
+    n++;
+    if (r.avisoStock) avisoStock = r.avisoStock;
+  }
+  return { resumen: { n, total, avisoStock } };
+}
+
+// POST { action:'marcar_descuento_factura', payload:{filaIndex,montoDescuento,revisadoPor} }
+// (portado de Marín 376) → cierra un lote "Retirado" cuando el proveedor lo cambió con
+// descuento en la factura (en vez de reponer el producto físico).
+async function accionMarcarDescuentoFactura(env, payload) {
+  const fi = Number((payload && payload.filaIndex) || 0);
+  const row = await get(env, "SELECT * FROM vencimientos WHERE id = ?", fi);
+  if (!row) throw new Error("Lote no encontrado");
+  if (row.estado !== "Retirado") throw new Error("Este lote no está en estado 'Retirado' — puede que ya se haya cerrado.");
+  const monto = payload && payload.montoDescuento != null && payload.montoDescuento !== "" && !isNaN(Number(payload.montoDescuento))
+    ? Number(payload.montoDescuento) : null;
+  await run(env,
+    "UPDATE vencimientos SET estado='Revisado', motivo_cierre='descuento_factura', monto_descuento=?, fecha_revision=?, revisado_por=? WHERE id=?",
+    monto, fechaHoraDDMMAAAA(), (payload && payload.revisadoPor) || "", fi);
+  return { sku: row.sku, nombre: row.producto, categoria: row.categoria, unidad: row.unidad, lote: row.lote, cantidad: row.cantidad, montoDescuento: monto };
 }
 
 // ============================================================
@@ -2276,6 +3428,89 @@ async function fichaProducto(env, sku) {
   return it;
 }
 
+// Resumen de ventas de UN sku (u7/u14/u30/u90/rev/prof) — misma ventana de fechas
+// que ventasResumenTodas(), pero acotado a un solo producto.
+async function ventaResumenUnSku(env, sku) {
+  const ahora = Date.now();
+  const d7 = fechaISO(new Date(ahora - 7 * 86400000));
+  const d14 = fechaISO(new Date(ahora - 14 * 86400000));
+  const d30 = fechaISO(new Date(ahora - 30 * 86400000));
+  const d90 = fechaISO(new Date(ahora - 90 * 86400000));
+  return get(env,
+    `SELECT sku,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u7,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u14,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u30,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u90,
+       SUM(venta) AS rev, SUM(utilidad) AS prof
+     FROM ventas WHERE sku = ? GROUP BY sku`,
+    d7, d14, d30, d90, sku);
+}
+
+// ============================================================
+//  FICHA COMPLETA DE PRODUCTO (portado de Marín 376, ver repFichaProducto) —
+//  producto + ventas + lotes activos + mermas recientes + movimientos de
+//  auditoría + historial de precios + proveedor (principal y extras). El
+//  ?action=ficha_producto de Argomedo devolvía solo el producto plano
+//  (ver fichaProducto arriba, que se conserva para no romper nada existente);
+//  esta versión es la que consume el frontend de Marín.
+// ============================================================
+async function repFichaProducto(env, sku) {
+  const producto = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!producto) throw new Error("SKU no encontrado en el catálogo: " + sku);
+  const venta = await ventaResumenUnSku(env, sku);
+
+  const { results: lotes } = await env.DB.prepare("SELECT * FROM vencimientos WHERE sku = ? ORDER BY fecha_vencimiento ASC").bind(sku).all();
+  const ordenPrio = { "⚫": 0, "🔴": 1, "🟠": 2, "🟡": 3, "🟢": 4, "—": 5 };
+  const lotesActivos = lotes.filter(l => l.estado !== "Revisado")
+    .sort((a, b) => (ordenPrio[a.prioridad] ?? 9) - (ordenPrio[b.prioridad] ?? 9));
+
+  const { results: mermas } = await env.DB.prepare("SELECT * FROM mermas WHERE sku = ? ORDER BY id DESC LIMIT 20").bind(sku).all();
+  const { results: auditoria } = await env.DB.prepare("SELECT * FROM auditoria WHERE sku = ? ORDER BY id DESC LIMIT 30").bind(sku).all();
+  const { results: historialPrecios } = await env.DB.prepare("SELECT * FROM historial_precios WHERE sku = ? ORDER BY id DESC LIMIT 20").bind(sku).all();
+
+  const fechasCandidatas = [];
+  if (auditoria[0]) fechasCandidatas.push(auditoria[0].fecha);
+  if (mermas[0]) fechasCandidatas.push(mermas[0].fecha);
+  if (lotes[0]) fechasCandidatas.push(lotes[0].fecha_ingreso);
+  const ultimaModificacion = fechasCandidatas.sort((a, b) => {
+    const da = parseFechaDDMMAAAA((a || "").slice(0, 10)), db = parseFechaDDMMAAAA((b || "").slice(0, 10));
+    return (db ? db.getTime() : 0) - (da ? da.getTime() : 0);
+  })[0] || null;
+
+  const proveedor = producto.proveedor_id ? await get(env, "SELECT id, nombre FROM proveedores WHERE id = ?", producto.proveedor_id) : null;
+  const { results: proveedoresExtraRows } = await env.DB.prepare(
+    "SELECT pv.id, pv.nombre FROM producto_proveedor_extra pe JOIN proveedores pv ON pv.id = pe.proveedor_id WHERE pe.sku = ? ORDER BY pv.nombre"
+  ).bind(sku).all();
+
+  return {
+    producto: {
+      sku: producto.sku, nombre: producto.nombre, categoria: producto.categoria,
+      barcode: producto.barcode, costo: producto.costo, precio: producto.precio,
+      margen: producto.precio > 0 ? Math.round((1 - producto.costo / producto.precio) * 100) : null,
+      stock: producto.stock, trackStock: !!producto.track_stock, soldByWeight: !!producto.sold_by_weight,
+      descripcion: producto.descripcion || "", idLoyverse: producto.id_loyverse || "",
+      imagen: producto.imagen_url || "",
+      proveedorId: producto.proveedor_id || null, proveedor: proveedor ? proveedor.nombre : (producto.proveedor || null),
+      sector: producto.sector || null,
+      proveedoresExtra: proveedoresExtraRows.map(r => r.nombre),
+      proveedoresIdsExtra: proveedoresExtraRows.map(r => ({ id: r.id, nombre: r.nombre })),
+      ultimaModificacion
+    },
+    ventas: venta ? { u7: venta.u7 || 0, u14: venta.u14 || 0, u30: venta.u30 || 0, u90: venta.u90 || 0, rev: Math.round(venta.rev || 0), prof: Math.round(venta.prof || 0) } : null,
+    lotes: lotesActivos.map(l => ({
+      filaIndex: l.id, lote: l.lote, cantidad: l.cantidad, fechaVencimiento: l.fecha_vencimiento,
+      estado: l.estado, prioridad: l.prioridad, accion: l.accion, precioRecomendado: l.precio_recomendado
+    })),
+    mermasRecientes: mermas.map(m => ({ fecha: m.fecha, cantidad: m.cantidad, motivo: m.motivo, costoTotal: m.costo_total, responsable: m.responsable })),
+    movimientos: auditoria.map(a => ({ fecha: a.fecha, accion: a.accion, stock: a.stock, motivo: a.motivo, responsable: a.responsable })),
+    historialPrecios: historialPrecios.map(h => ({
+      fecha: h.fecha, precioAntes: h.precio_antes, precioDespues: h.precio_despues,
+      costoAntes: h.costo_antes, costoDespues: h.costo_despues, responsable: h.responsable
+    }))
+  };
+}
+
 // ============================================================
 //  EDITAR PRODUCTO (ficha completa) — reenvía el ítem completo a
 //  Loyverse con los campos que vinieron en el payload, igual que
@@ -2303,6 +3538,16 @@ async function accionEditarProducto(env, payload) {
   const costo = payload.costo != null && payload.costo !== "" ? Number(payload.costo) : it.costo;
   const soldByWeight = payload.soldByWeight != null ? !!payload.soldByWeight : !!it.sold_by_weight;
   const { storeId } = await obtenerStoreId(env);
+
+  // Deja registro en historial_precios ANTES de escribir en Loyverse (igual que Marín
+  // 376) — es la fuente que después lee Ficha de producto y el futuro proyecto
+  // financiero para reconstruir la evolución de costo/precio.
+  if (precio !== it.precio || costo !== it.costo) {
+    await run(env,
+      `INSERT INTO historial_precios (sku, fecha, precio_antes, precio_despues, costo_antes, costo_despues, responsable)
+       VALUES (?,?,?,?,?,?,?)`,
+      sku, fechaHoraDDMMAAAA(), it.precio, precio, it.costo, costo, payload.responsable || "");
+  }
 
   const variantes = (item.variants || []).map(v => {
     if (v.variant_id !== it.variant_id) return v;
@@ -2689,10 +3934,18 @@ export default {
       }
 
       // GET /?action=sync  →  trae el catálogo completo de Loyverse y lo guarda en D1
-      if (action === "sync") {
-        const resultado = await sincronizarCatalogo(env);
-        await marcarCatalogoActualizado(env);
-        return json({ ok: true, ...resultado });
+      if (action === "sync" || action === "full") {
+        // Marín espera de vuelta el payload completo del dashboard (con synced/syncMsg),
+        // no solo el resultado del sync — así el mismo botón "Sincronizar" reemplaza los
+        // datos en pantalla sin necesitar un segundo request.
+        let synced = false, syncMsg = "";
+        try {
+          const resultado = await sincronizarCatalogo(env);
+          await marcarCatalogoActualizado(env);
+          synced = true;
+          syncMsg = "Catálogo sincronizado" + (resultado && resultado.total != null ? ": " + resultado.total + " productos" : "");
+        } catch (err) { syncMsg = err.message; }
+        return json(await payloadDashboard(env, synced, syncMsg));
       }
 
       // GET /?action=catalogo  →  devuelve TODO el catálogo compacto desde D1 (sin tocar
@@ -2789,13 +4042,50 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'renombrar_proveedor', payload:{id,nombre} }
+      if (action === "renombrar_proveedor") {
+        const resultado = await accionRenombrarProveedor(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'renombrar_sector', payload:{actual,nuevo} }
+      if (action === "renombrar_sector") {
+        const resultado = await accionRenombrarSector(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'crear_categoria', payload:{nombre} } → crea una categoría
+      // nueva directo en Loyverse (sin duplicar si ya existe).
+      if (action === "crear_categoria") {
+        const resultado = await accionCrearCategoria(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
       // GET /?action=vencimientos[&estado=Pendiente|Revisado|todos][&sku=XXXX]
       // → lotes con fecha de vencimiento, con días restantes y urgencia calculados.
       if (action === "vencimientos") {
         const estado = url.searchParams.get("estado") || "";
         const sku = url.searchParams.get("sku") || "";
         const lista = await listaVencimientos(env, { estado, sku });
-        return json({ ok: true, lista });
+        // `lotes` (además de `lista`) — Marín Pedidos espera esta clave; se manda la
+        // misma lista con los nombres de campo que su frontend usa (filaIndex/etc).
+        const lotes = lista.map(r => ({
+          filaIndex: r.id, sku: r.sku, nombre: r.producto, categoria: r.categoria, unidad: r.unidad,
+          lote: r.lote, cantidad: r.cantidad, fechaVencimiento: r.fecha_vencimiento, estado: r.estado,
+          prioridad: r.prioridad, accion: r.accion, precioRecomendado: r.precio_recomendado || null,
+          costoUsado: r.costo_usado || null, costoOrigen: r.costo_origen
+        }));
+        return json({ ok: true, lista, lotes });
+      }
+
+      // GET /?action=recalcular_vencimientos → recalcula estado/prioridad/acción/precio
+      // recomendado de todos los lotes activos (motor de Marín 376, ver calcularLote).
+      if (action === "recalcular_vencimientos") {
+        const recalculados = await recalcularVencimientosD1(env);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, recalculados });
       }
 
       // POST { action:'vencimiento_estado', payload:{id,estado,responsable,retirarStock,cantidadRetiro} }
@@ -2815,9 +4105,18 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'marcar_descuento_factura', payload:{filaIndex,montoDescuento,revisadoPor} }
+      // → cierra un lote "Retirado" cuando el proveedor lo cambió con descuento en la
+      // factura en vez de reponer el producto físico.
+      if (action === "marcar_descuento_factura") {
+        const resultado = await accionMarcarDescuentoFactura(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
       // POST { action:'vencimiento_fecha', payload:{id,fechaVencimiento,responsable} }
       // → corrige la fecha de vencimiento de un lote ya creado.
-      if (action === "vencimiento_fecha") {
+      if (action === "vencimiento_fecha" || action === "editar_fecha_venc") {
         const resultado = await accionEditarFechaVencimiento(env, payload);
         await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
@@ -2827,8 +4126,16 @@ export default {
       // → registra una merma (pérdida): guarda el registro en `mermas` con el costo
       //   de Loyverse (o el digitado a mano si el producto no lo tiene cargado) y
       //   descuenta el stock en Loyverse, igual que un ajuste negativo.
-      if (action === "registrar_merma") {
+      if (action === "registrar_merma" || action === "merma") {
         const resultado = await accionMerma(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'consumo_interno', payload:{items:[{sku,cantidad,costoManual}],responsable} }
+      // → registra varias mermas de una con motivo fijo "consumo_interno".
+      if (action === "consumo_interno") {
+        const resultado = await accionConsumoInterno(env, payload);
         await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
@@ -2845,8 +4152,16 @@ export default {
 
       // POST { action:'merma_motivo', payload:{id,motivo,responsable} } → corrige el
       // motivo de una merma ya registrada (no vuelve a tocar el stock).
-      if (action === "merma_motivo") {
+      if (action === "merma_motivo" || action === "corregir_motivo_merma") {
         const resultado = await accionMermaMotivo(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'eliminar_merma', payload:{filaIndex} } → deshace una merma
+      // registrada por error, restaurando el stock en Loyverse.
+      if (action === "eliminar_merma") {
+        const resultado = await accionEliminarMerma(env, payload);
+        await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
 
@@ -2874,6 +4189,145 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // GET /?action=historial_prestamos[&limite=100] → préstamos de mercadería con
+      // Marín 376 (pendientes y devueltos) + resumen de valor pendiente.
+      if (action === "historial_prestamos") {
+        const limite = url.searchParams.get("limite") || "";
+        const resultado = await repHistorialPrestamos(env, Number(limite) || undefined);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'registrar_prestamo', payload:{sku,direccion,cantidad,costoManual,responsable,nota} }
+      if (action === "registrar_prestamo") {
+        const resultado = await accionRegistrarPrestamo(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'devolver_prestamo', payload:{id} }
+      if (action === "devolver_prestamo") {
+        const resultado = await accionDevolverPrestamo(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=listar_calculos_factura → historial de la Calculadora de precios,
+      // agrupado por factura_id.
+      if (action === "listar_calculos_factura") {
+        const resultado = await accionListarCalculosFactura(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'guardar_calculo_precio', payload:{factura_id?,items,responsable} }
+      if (action === "guardar_calculo_precio") {
+        const resultado = await accionGuardarCalculoPrecio(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'eliminar_calculo_factura', payload:{factura_id} }
+      if (action === "eliminar_calculo_factura") {
+        const resultado = await accionEliminarCalculoFactura(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=catalogo_crear → categorías e impuestos de Loyverse, para los
+      // combobox del formulario "Crear producto".
+      if (action === "catalogo_crear") {
+        const [cats, taxes] = await Promise.all([
+          loyverseGetAll(env, "/categories", "categories"),
+          loyverseGetAll(env, "/taxes", "taxes")
+        ]);
+        return json({
+          ok: true,
+          categorias: cats.map(c => ({ id: c.id, name: c.name })),
+          impuestos: taxes.map(t => ({ id: t.id, name: t.name, rate: t.rate }))
+        });
+      }
+
+      // GET /?action=ver_logs[&n=30] → últimos eventos del log interno (avisos push,
+      // chequeos programados, errores de sync) para depurar sin acceso a Cloudflare.
+      if (action === "ver_logs") {
+        const n = Math.min(Number(url.searchParams.get("n")) || 30, 200);
+        const { results: logs } = await env.DB.prepare("SELECT * FROM logs ORDER BY id DESC LIMIT ?").bind(n).all();
+        return json({ ok: true, logs });
+      }
+
+      // GET /?action=categorias_resumen → resumen de categorías de Loyverse con
+      // cuántos productos les faltan proveedor/sector (Mapeo de categorías).
+      if (action === "categorias_resumen") {
+        const resultado = await repCategoriasResumen(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=categoria_productos&categoria=XXXX → productos de una categoría,
+      // para el modo "seleccionar dentro de la categoría" de Mapeo de categorías.
+      if (action === "categoria_productos") {
+        const categoria = url.searchParams.get("categoria") || "";
+        if (!categoria) return json({ ok: false, error: "Falta el parámetro categoria" }, 400);
+        const resultado = await repCategoriaProductos(env, categoria);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'mapear_categoria', payload:{categoria,proveedor,sector,skus?} }
+      if (action === "mapear_categoria") {
+        const resultado = await accionMapearCategoria(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'guardar_clasificacion', payload:{patron,proveedor,sector} } →
+      // guarda un patrón aprendido a mano, sin IA.
+      if (action === "guardar_clasificacion") {
+        const resultado = await accionGuardarClasificacion(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'clasificar_producto', payload:{nombre,categoria} } → sugiere
+      // proveedor+sector (patrón aprendido, o IA si no hay ninguno — requiere
+      // ANTHROPIC_API_KEY). No escribe nada: el frontend confirma con
+      // guardar_clasificacion o editar_producto.
+      if (action === "clasificar_producto") {
+        const resultado = await accionClasificarProducto(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'buscar_imagen_producto', payload:{nombre} } → candidatos de foto
+      // vía Searlo (requiere SEARLO_API_KEY).
+      if (action === "buscar_imagen_producto") {
+        const resultado = await accionBuscarImagenProducto(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'quitar_fondo_producto', payload:{image_base64} } → recorte con
+      // remove.bg (requiere REMOVEBG_API_KEY). Devuelve un preview, no sube nada solo.
+      if (action === "quitar_fondo_producto") {
+        const resultado = await accionQuitarFondoProducto(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'subir_imagen_producto', payload:{sku,image_url|image_base64,content_type} }
+      // → sube la imagen elegida a Loyverse. Solo necesita LOYVERSE_API_TOKEN (ya configurado).
+      if (action === "subir_imagen_producto") {
+        const resultado = await accionSubirImagenProducto(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=capacidades → qué secretos externos están cargados (nunca los
+      // valores) — el frontend usa esto para deshabilitar preventivamente los botones
+      // de OCR de facturas / búsqueda de fotos / quitar fondo, con un aviso claro, en
+      // vez de dejar que el usuario los intente para nada.
+      if (action === "capacidades") {
+        return json({
+          ok: true,
+          capacidades: {
+            buscar_imagen: !!env.SEARLO_API_KEY,
+            quitar_fondo: !!env.REMOVEBG_API_KEY,
+            clasificar_ia: !!env.ANTHROPIC_API_KEY
+          }
+        });
+      }
+
       // GET /?action=abc  →  última clasificación ABC calculada (sku, clase, % de
       // participación, venta total). Vacío hasta el primer "abc_calcular".
       if (action === "abc") {
@@ -2886,6 +4340,13 @@ export default {
       if (action === "abc_calcular") {
         const periodo = url.searchParams.get("periodo") || 30;
         const resultado = await calcularABC(env, periodo);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'sugerir_precio_abc', payload:{sku,margen} } → calcula el precio
+      // sugerido SIN aplicarlo (vista previa antes de aplicar_precio_abc).
+      if (action === "sugerir_precio_abc") {
+        const resultado = await accionSugerirPrecioABC(env, payload);
         return json({ ok: true, ...resultado });
       }
 
@@ -2937,8 +4398,13 @@ export default {
 
       // POST { action:'riesgo_excluir', payload:{sku,excluido} } → marca/
       // desmarca un producto como excluido de "Riesgo de quiebre".
-      if (action === "riesgo_excluir") {
-        const resultado = await accionRiesgoExcluir(env, payload);
+      if (action === "riesgo_excluir" || action === "excluir_riesgo" || action === "incluir_riesgo") {
+        // Marín usa dos acciones separadas (excluir_riesgo/incluir_riesgo) en vez de un
+        // flag `excluido` en el payload — se traduce acá para reusar accionRiesgoExcluir.
+        const p = action === "excluir_riesgo" ? { ...payload, excluido: true }
+          : action === "incluir_riesgo" ? { ...payload, excluido: false }
+          : payload;
+        const resultado = await accionRiesgoExcluir(env, p);
         return json({ ok: true, ...resultado });
       }
 
@@ -2960,7 +4426,10 @@ export default {
       // y todavía en gestión (sin cerrar).
       if (action === "descuentos_activos") {
         const lista = await repDescuentosActivos(env);
-        return json({ ok: true, lista });
+        // `lotes` (además de `lista`) — mismo criterio que ?action=vencimientos; acá
+        // los nombres de campo ya coinciden, solo cambia `id` por `filaIndex`.
+        const lotes = lista.map(r => ({ ...r, filaIndex: r.id }));
+        return json({ ok: true, lista, lotes });
       }
 
       // POST { action:'aplicar_descuento_vencimiento', payload:{id,precio,responsable} }
@@ -2987,6 +4456,20 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // GET /?action=precios_pendientes_restaurar → lotes cerrados cuyo precio de
+      // descuento nunca volvió a Loyverse (ver repPreciosPendientesRestaurar).
+      if (action === "precios_pendientes_restaurar") {
+        const lotes = await repPreciosPendientesRestaurar(env);
+        return json({ ok: true, lotes });
+      }
+
+      // POST { action:'restaurar_precio_descuento', payload:{filaIndex,responsable} }
+      if (action === "restaurar_precio_descuento") {
+        const resultado = await accionRestaurarPrecioDescuento(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
       // GET /?action=sync_ventas[&dias=14]  →  trae recibos recientes de Loyverse y
       // los guarda en `ventas`. SOLO manual (botón "Actualizar ventas" en Armar pedido)
       // — el día a día lo cubre el webhook receipts.update, no hay polling automático.
@@ -3010,20 +4493,34 @@ export default {
       if (action === "ficha_producto") {
         const sku = url.searchParams.get("sku") || "";
         const it = await fichaProducto(env, sku);
-        return json({ ok: true, item: it });
+        const ficha = await repFichaProducto(env, sku);
+        return json({ ok: true, item: it, ficha });
       }
 
       // POST { action:'agregar_proveedor_extra', payload:{sku,proveedor} } → asigna
       // un proveedor ADICIONAL a un producto (no reemplaza el principal).
-      if (action === "agregar_proveedor_extra") {
-        const resultado = await accionAgregarProveedorExtra(env, payload);
+      if (action === "agregar_proveedor_extra" || action === "agregar_proveedor_id_extra") {
+        // Marín usa proveedor_id (FK) para esta variante; Argomedo resuelve por nombre
+        // — se traduce acá para reusar accionAgregarProveedorExtra sin duplicar lógica.
+        let p = payload;
+        if (action === "agregar_proveedor_id_extra") {
+          const prov = await get(env, "SELECT nombre FROM proveedores WHERE id = ?", Number(payload && payload.proveedor_id));
+          if (!prov) return json({ ok: false, error: "Ese proveedor no existe" }, 400);
+          p = { sku: payload && payload.sku, proveedor: prov.nombre };
+        }
+        const resultado = await accionAgregarProveedorExtra(env, p);
         return json({ ok: true, ...resultado });
       }
 
       // POST { action:'quitar_proveedor_extra', payload:{sku,proveedor} } → quita
       // un proveedor adicional de un producto.
-      if (action === "quitar_proveedor_extra") {
-        const resultado = await accionQuitarProveedorExtra(env, payload);
+      if (action === "quitar_proveedor_extra" || action === "quitar_proveedor_id_extra") {
+        let p = payload;
+        if (action === "quitar_proveedor_id_extra") {
+          const prov = await get(env, "SELECT nombre FROM proveedores WHERE id = ?", Number(payload && payload.proveedor_id));
+          p = { sku: payload && payload.sku, proveedor: prov ? prov.nombre : "" };
+        }
+        const resultado = await accionQuitarProveedorExtra(env, p);
         return json({ ok: true, ...resultado });
       }
 
@@ -3035,12 +4532,36 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'editar_codigo_barras', payload:{sku,barcode} } → reusa
+      // accionEditarProducto (valida duplicados y reenvía a Loyverse).
+      if (action === "editar_codigo_barras") {
+        const resultado = await accionEditarCodigoBarras(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
       // POST { action:'eliminar_producto', payload:{sku} }  →  borra el producto en
       // Loyverse (irreversible) y lo quita de D1.
       if (action === "eliminar_producto") {
         const resultado = await accionEliminarProducto(env, payload);
         await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'eliminar_productos', payload:{items:[{sku,...}]} } → variante en
+      // lote de Marín (varios productos de una): reusa accionEliminarProducto por sku,
+      // sin duplicar la lógica de borrado en Loyverse.
+      if (action === "eliminar_productos") {
+        const items = Array.isArray(payload && payload.items) ? payload.items : [];
+        if (!items.length) return json({ ok: false, error: "No hay productos para eliminar" }, 400);
+        let eliminados = 0;
+        const errores = [];
+        for (const it of items) {
+          try { await accionEliminarProducto(env, { sku: it && it.sku }); eliminados++; }
+          catch (e) { errores.push({ sku: it && it.sku, error: e.message }); }
+        }
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, eliminados, errores });
       }
 
       // GET /?action=proveedores_conteo  →  lista de proveedores con cantidad de productos.
@@ -3054,6 +4575,27 @@ export default {
         const proveedor = url.searchParams.get("proveedor") || "";
         const lista = await productosDeProveedor(env, proveedor);
         return json({ ok: true, lista });
+      }
+
+      // GET /?action=proveedores  →  acción combinada que espera Marín (Argomedo la
+      // tenía partida en proveedores_conteo + proveedores_sectores). Trae proveedores
+      // con id + cantidad de productos (principal o extra), y sectores combinados
+      // (catálogo + creados a mano).
+      if (action === "proveedores") {
+        const { results: proveedoresRows } = await env.DB.prepare(
+          `SELECT pr.id, pr.nombre, COUNT(DISTINCT t.sku) AS productos
+           FROM proveedores pr
+           LEFT JOIN (
+             SELECT proveedor AS nombre, sku FROM productos WHERE proveedor IS NOT NULL AND proveedor != ''
+             UNION ALL
+             SELECT pv.nombre AS nombre, pe.sku FROM producto_proveedor_extra pe JOIN proveedores pv ON pv.id = pe.proveedor_id
+           ) t ON t.nombre = pr.nombre
+           GROUP BY pr.id, pr.nombre ORDER BY pr.nombre`
+        ).all();
+        const { sectores } = await catalogoProveedoresSectores(env);
+        const { results: sectoresPersRows } = await env.DB.prepare("SELECT nombre FROM sectores_personalizados").all();
+        const sectoresCombinados = [...new Set([...sectores, ...sectoresPersRows.map(r => r.nombre)])].sort((a, b) => a.localeCompare(b, "es"));
+        return json({ ok: true, proveedores: proveedoresRows, sectores: sectoresCombinados });
       }
 
       // POST { action:'guardar_multiplo_producto', payload:{sku,multiplo,empaque,palabra} }
@@ -3107,12 +4649,27 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
-      // Sin acción reconocida: mensaje de bienvenida simple.
+      // GET sin `action` → payload completo del dashboard (bootstrap de Marín Pedidos,
+      // ver plan "FASE 1"). Antes de esto no había equivalente: un GET sin action solo
+      // devolvía el mensaje de bienvenida de más abajo.
+      if (request.method === "GET" && !action) {
+        const resultado = await payloadDashboard(env, false, "");
+        return json(resultado);
+      }
+
+      // Sin acción reconocida (POST sin action, u otra no listada): mensaje de bienvenida.
       return json({
         ok: true,
         mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos, favoritos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir, guardar_multiplo_producto, favorito, marcar_pedido_realizado. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
+      // Falta un secreto externo (ANTHROPIC_API_KEY/SEARLO_API_KEY/REMOVEBG_API_KEY) —
+      // se responde HTTP 200 con un código reconocible en vez de un 500 genérico, para
+      // que el frontend pueda mostrar "falta configurar X" en vez de un error confuso
+      // (ver requiereSecreto() y §7 del plan).
+      if (e && e.codigo === "FALTA_SECRETO") {
+        return json({ ok: false, error: e.message, codigo: "FALTA_SECRETO", secreto: e.secreto });
+      }
       return json({ ok: false, error: e.message }, 500);
     }
   },
