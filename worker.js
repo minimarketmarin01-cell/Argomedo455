@@ -1916,79 +1916,10 @@ async function accionGuardarClasificacion(env, payload) {
 // OCR de facturas con Claude (visión) — nunca escribe nada solo: el frontend siempre
 // muestra una tabla editable para que el usuario revise/corrija antes de guardar (ver
 // accionGuardarCalculoPrecio). Secreto: ANTHROPIC_API_KEY.
-async function accionProcesarFactura(env, payload) {
-  requiereSecreto(env, "ANTHROPIC_API_KEY", "wrangler secret put ANTHROPIC_API_KEY");
-  const imagenB64 = payload && payload.imagen_base64;
-  const mediaType = (payload && payload.media_type) || "image/jpeg";
-  if (!imagenB64) throw new Error("Falta la imagen de la factura");
-
-  const prompt = "Esta imagen es una factura o boleta de un proveedor de un minimarket chileno. " +
-    "Las facturas de este tipo suelen tener columnas en este orden: CANTIDAD, CÓDIGO, " +
-    "DESCRIPCIÓN PRODUCTO, P. UNITARIO, DESCUENTO %, DESCUENTO $, $ TOTALES. " +
-    "Extrae cada producto/línea de la factura y responde SOLO con un array JSON, sin texto antes ni " +
-    "después, sin marcadores de código (nada de ```), con esta forma exacta:\n" +
-    '[{"producto":"nombre tal como aparece","cantidad":numero,"costo_unitario":numero,"incluye_iva":true|false,"categoria_sugerida":"bebidas|snacks|confites|abarrotes|premium|otro"}]\n' +
-    "Reglas de mapeo — son las más importantes, léelas con cuidado porque son la causa más común " +
-    "de error: \"cantidad\" va SIEMPRE de la columna CANTIDAD (la primera columna numérica, a la " +
-    "izquierda, normalmente un número chico como 1, 2, 5, 10, 24). \"costo_unitario\" va SIEMPRE de " +
-    "la columna P. UNITARIO (el precio de ESA línea/presentación tal como está impreso, antes de " +
-    "descuentos) — NUNCA tomes el valor de la columna $ TOTALES (que ya viene multiplicado por la " +
-    "cantidad) ni el de DESCUENTO $ para \"costo_unitario\". Si tienes dudas entre dos columnas " +
-    "numéricas parecidas, la que está más a la izquierda (después de la descripción) suele ser P. " +
-    "UNITARIO, y la de más a la derecha suele ser $ TOTALES. \"incluye_iva\" es true si el documento " +
-    "indica que los precios incluyen IVA (19% en Chile), false si son netos (por ejemplo si hay un " +
-    "recuadro aparte de \"NETO\" + \"19% IVA\" + \"TOTAL\" al pie, los precios de la tabla son netos), " +
-    "y tu mejor estimación si no está explícito. \"categoria_sugerida\" es tu mejor clasificación del " +
-    "producto entre esas 6 opciones exactas, según el nombre. Si un dato no se lee con claridad, usa " +
-    "tu mejor lectura igual — el usuario revisa cada fila antes de guardar nada. Si no hay ningún " +
-    "producto legible, responde con [].";
-
-  let res;
-  try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 2000,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: imagenB64 } },
-            { type: "text", text: prompt }
-          ]
-        }]
-      })
-    });
-  } catch (e) {
-    throw new Error("No se pudo conectar con Claude: " + e.message);
-  }
-  if (!res.ok) {
-    const errTxt = await res.text().catch(() => "");
-    throw new Error("Claude no pudo procesar la imagen (" + res.status + "): " + errTxt.slice(0, 200));
-  }
-  const data = await res.json();
-  const textBlock = (data.content || []).find(b => b.type === "text");
-  if (!textBlock) throw new Error("Claude no devolvió texto con los productos");
-  const raw = textBlock.text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
-  let items;
-  try { items = JSON.parse(raw); } catch (e) { throw new Error("No se pudo interpretar la respuesta de Claude como lista de productos"); }
-  if (!Array.isArray(items)) throw new Error("Formato inesperado en la respuesta de Claude");
-
-  items = items.map(it => ({
-    producto: String(it.producto || it.nombre || "").trim(),
-    cantidad: Number(it.cantidad) || 0,
-    costo_unitario: Number(it.costo_unitario) || 0,
-    incluye_iva: !!it.incluye_iva,
-    categoria_sugerida: String(it.categoria_sugerida || "otro").toLowerCase().trim()
-  })).filter(it => it.producto);
-
-  return { items };
-}
+// OCR de facturas (foto → productos vía Claude) eliminado a pedido del dueño — Marín
+// Pedidos ya no tiene este módulo. La Calculadora de precios sigue funcionando por peso/
+// kilo y sigue pudiendo editar/guardar cálculos ya existentes (guardar_calculo_precio/
+// listar_calculos_factura/eliminar_calculo_factura, sin cambios, no son exclusivas de esto).
 
 // Busca fotos de empaque/producto candidatas para un nombre, vía Searlo (motor de
 // búsqueda tipo Google, sin IA). Secreto: SEARLO_API_KEY.
@@ -4360,13 +4291,6 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
-      // POST { action:'procesar_factura', payload:{imagen_base64,media_type} } → OCR de
-      // factura con Claude (requiere ANTHROPIC_API_KEY). Nunca escribe nada solo.
-      if (action === "procesar_factura") {
-        const resultado = await accionProcesarFactura(env, payload);
-        return json({ ok: true, ...resultado });
-      }
-
       // POST { action:'buscar_imagen_producto', payload:{nombre} } → candidatos de foto
       // vía Searlo (requiere SEARLO_API_KEY).
       if (action === "buscar_imagen_producto") {
@@ -4397,7 +4321,6 @@ export default {
         return json({
           ok: true,
           capacidades: {
-            ocr_factura: !!env.ANTHROPIC_API_KEY,
             buscar_imagen: !!env.SEARLO_API_KEY,
             quitar_fondo: !!env.REMOVEBG_API_KEY,
             clasificar_ia: !!env.ANTHROPIC_API_KEY

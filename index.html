@@ -1174,14 +1174,6 @@ html.modo-bliss .fila-pedir .qword{text-align:center;max-width:100px;font-size:9
 .fc-hist-act:active{background:var(--line)}
 .fc-hist-act-danger{color:var(--rojo)}
 .fc-hist-act-danger:active{background:#FCE9E7}
-.fc-scan-box{padding:22px 8px 6px;text-align:center}.fc-scan-frame{position:relative;width:100%;max-width:220px;height:118px;margin:0 auto 14px;border-radius:12px;overflow:hidden;background:linear-gradient(135deg,var(--paper),#EFEBDF);border:1.5px solid var(--line)}
-.fc-scan-frame::before{content:'';position:absolute;inset:0;opacity:.35;background:
-  linear-gradient(var(--line2) 1px,transparent 1px) 0 0/100% 25%,
-  linear-gradient(90deg,var(--line2) 1px,transparent 1px) 0 0/25% 100%}
-.fc-scan-beam{position:absolute;left:0;right:0;top:-34%;height:34%;background:linear-gradient(180deg,rgba(31,168,85,0) 0%,rgba(31,168,85,.4) 45%,rgba(31,168,85,.9) 50%,rgba(31,168,85,.4) 55%,rgba(31,168,85,0) 100%);animation:fcScanMove 1.8s ease-in-out infinite}
-@keyframes fcScanMove{0%{top:-34%}50%{top:100%}100%{top:-34%}}
-.fc-scan-txt{color:var(--muted);font-size:13px;font-weight:600}
-@media(prefers-reduced-motion:reduce){.fc-scan-beam{animation:none;top:33%}}
 .fc-hist-item-meta{display:block;font-size:10px;color:var(--muted);margin-top:1px}
 .fc-hist-item-body{padding:0 11px}
 .fc-hist-item-body:not(.collapsed){padding:8px 11px}
@@ -2702,34 +2694,6 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
   <div class="mm-card">
     <div class="mm-head"><h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mm-head-ic"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="11" x2="8" y2="11.01"/><line x1="12" y1="11" x2="12" y2="11.01"/><line x1="16" y1="11" x2="16" y2="11.01"/><line x1="8" y1="15" x2="8" y2="15.01"/><line x1="12" y1="15" x2="12" y2="15.01"/><line x1="16" y1="15" x2="16" y2="17"/><line x1="8" y1="19" x2="12" y2="19"/></svg>Calculadora de precios</h3></div>
     <div class="mm-body">
-      <div class="fc-tabs">
-        <button type="button" class="fc-tab-btn active" data-fctab="foto"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg> Foto de factura</button>
-        <button type="button" class="fc-tab-btn" data-fctab="peso"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="12" y1="3" x2="12" y2="21"/><path d="M6 8l-3 6a3 3 0 0 0 6 0Z"/><path d="M18 8l-3 6a3 3 0 0 0 6 0Z"/><line x1="6" y1="4" x2="18" y2="4"/></svg> Por peso / kilo</button>
-      </div>
-      <div id="fc-tab-foto">
-      <div id="fc-paso-foto">
-        <div style="display:flex;gap:8px">
-          <label class="loadbtn" id="fc-foto-label" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;white-space:nowrap;font-size:12.5px">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13.5" r="3.2"/></svg>
-            Tomar foto
-            <input type="file" accept="image/*" capture="environment" id="fc-input" style="display:none">
-          </label>
-          <label class="loadbtn" id="fc-galeria-label" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;white-space:nowrap;font-size:12.5px">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-            Subir de Galería
-            <input type="file" accept="image/*" id="fc-input-galeria" style="display:none">
-          </label>
-        </div>
-        <div id="fc-preview-wrap" class="hidden" style="margin-top:12px">
-          <img id="fc-preview" style="width:100%;border-radius:10px;border:1px solid var(--line);display:block">
-          <button class="mm-save" id="fc-procesar" style="width:100%;margin-top:10px">Procesar factura</button>
-        </div>
-        <div id="fc-loading" class="hidden fc-scan-box">
-          <div class="fc-scan-frame"><div class="fc-scan-beam"></div></div>
-          <div class="fc-scan-txt">Analizando factura con Claude…</div>
-        </div>
-        <div id="fc-error" class="hidden" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:#FCE9E7;color:var(--rojo);font-size:12.5px"></div>
-      </div>
       <div id="fc-resultados" class="hidden">
         <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">Revisa y corrige cada fila antes de guardar — nada se guarda automáticamente.</div>
         <div id="fc-iva-banner" class="fc-iva-banner hidden"></div>
@@ -2746,10 +2710,9 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
         <div id="fc-list"></div>
         <button class="loadbtn fc-ps-todos" id="fc-ps-todos" type="button"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><rect x="4" y="4" width="16" height="17" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="17" x2="13" y2="17"/></svg> Aplicar proveedor/sector de la 1ª fila a todas</button>
         <button class="mm-save" id="fc-guardar" style="margin-top:6px">Guardar cálculos</button>
-        <button class="loadbtn" id="fc-otra" style="width:100%;margin-top:8px">Escanear otra factura</button>
+        <button class="loadbtn" id="fc-otra" style="width:100%;margin-top:8px">Volver</button>
       </div>
-      </div>
-      <div id="fc-tab-peso" class="hidden">
+      <div id="fc-tab-peso">
         <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">Para productos que se venden al peso (frutas, verduras, cecinas, etc.) — elige el producto y en cuántos kilos rinde el lote que compraste.</div>
         <div class="fc-peso-grid">
           <div class="fc-field">
@@ -7921,51 +7884,16 @@ function fcCalcularPrecioFinal(costo,margenObjetivo,modo){
   const margenReal=precioFinal>0?((precioFinal-costo)/precioFinal*100):0;
   return {ventaExacta,precioFinal,margenReal};
 }
-let _fcImagenB64=null,_fcMediaType='image/jpeg',_fcItems=[],_fcEditandoIdx=null;
+// Escaneo de facturas por foto (OCR con IA) eliminado — Marín Pedidos ya no lo tiene.
+// _fcItems/_fcEditandoIdx se conservan: siguen siendo el estado de trabajo del editor de
+// líneas (#fc-resultados), que ahora solo se alcanza editando un cálculo ya guardado desde
+// el historial (fcEditarDesdeHistorial), no desde un escaneo fresco.
+let _fcItems=[],_fcEditandoIdx=null;
 function fcReset(){
-  _fcImagenB64=null;_fcItems=[];_fcEditandoIdx=null;
-  document.getElementById('fc-input').value='';
-  document.getElementById('fc-input-galeria').value='';
-  document.getElementById('fc-preview-wrap').classList.add('hidden');
-  document.getElementById('fc-loading').classList.add('hidden');
-  document.getElementById('fc-error').classList.add('hidden');
+  _fcItems=[];_fcEditandoIdx=null;
   document.getElementById('fc-resultados').classList.add('hidden');
-  document.getElementById('fc-paso-foto').classList.remove('hidden');
+  document.getElementById('fc-tab-peso').classList.remove('hidden');
 }
-function fcCargarArchivo(ev){
-  const file=ev.target.files&&ev.target.files[0];
-  if(!file)return;
-  _fcMediaType=file.type||'image/jpeg';
-  const reader=new FileReader();
-  reader.onload=()=>{
-    _fcImagenB64=String(reader.result).split(',')[1]||'';
-    document.getElementById('fc-preview').src=reader.result;
-    document.getElementById('fc-preview-wrap').classList.remove('hidden');
-    document.getElementById('fc-error').classList.add('hidden');
-  };
-  reader.readAsDataURL(file);
-}
-document.getElementById('fc-input').addEventListener('change',fcCargarArchivo);
-document.getElementById('fc-input-galeria').addEventListener('change',fcCargarArchivo);
-document.getElementById('fc-procesar').onclick=async()=>{
-  if(!_fcImagenB64)return;
-  const err=document.getElementById('fc-error');err.classList.add('hidden');
-  document.getElementById('fc-preview-wrap').classList.add('hidden');
-  document.getElementById('fc-loading').classList.remove('hidden');
-  try{
-    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'procesar_factura',payload:{imagen_base64:_fcImagenB64,media_type:_fcMediaType}})});
-    const j=await res.json();
-    if(!j||!j.ok)throw new Error((j&&j.error)||'No se pudo procesar la factura');
-    _fcItems=(j.items||[]).map((it,i)=>({id:'fc'+i,...it}));
-    if(!_fcItems.length){err.textContent='No se detectaron productos legibles en la foto. Prueba con más luz o más cerca.';err.classList.remove('hidden');document.getElementById('fc-preview-wrap').classList.remove('hidden');}
-    else fcRenderResultados();
-  }catch(e){
-    err.textContent=''+e.message;err.classList.remove('hidden');
-    document.getElementById('fc-preview-wrap').classList.remove('hidden');
-  }finally{
-    document.getElementById('fc-loading').classList.add('hidden');
-  }
-};
 // ---- IVA inteligente ----
 // Si el costo extraído de la factura NO incluye IVA (o Claude no está seguro), se le suma
 // automáticamente el 19% para usar el costo BRUTO real como base del margen y precio de
@@ -8036,7 +7964,7 @@ function fcRenderIvaBanner(){
   _fcItems.forEach(it=>{ if(it.margen==null) it.incluye_iva=r.incluye_iva; }); // no pisa filas ya editadas a mano
 }
 function fcRenderResultados(){
-  document.getElementById('fc-paso-foto').classList.add('hidden');
+  document.getElementById('fc-tab-peso').classList.add('hidden');
   const wrap=document.getElementById('fc-resultados');wrap.classList.remove('hidden');
   const list=document.getElementById('fc-list');
   // Detección Chocman: preinicializa el toggle "viene por caja" (32 u) una sola vez, el
@@ -8976,14 +8904,6 @@ document.getElementById('fc-hist-body').addEventListener('input',ev=>{
 });
 document.getElementById('fc-otra').onclick=fcReset;
 document.getElementById('fc-cerrar').onclick=()=>{cerrarModal('fc-ov');fcReset();try{localStorage.removeItem(FC_VISTA_LS_KEY);}catch(e){}};
-// ---- Pestañas: Foto de factura / Por peso-kilo ----
-document.querySelectorAll('.fc-tab-btn').forEach(btn=>{
-  btn.addEventListener('click',()=>{
-    document.querySelectorAll('.fc-tab-btn').forEach(b=>b.classList.toggle('active',b===btn));
-    document.getElementById('fc-tab-foto').classList.toggle('hidden',btn.dataset.fctab!=='foto');
-    document.getElementById('fc-tab-peso').classList.toggle('hidden',btn.dataset.fctab!=='peso');
-  });
-});
 // ---- Calculadora por peso/kilo (frutas, verduras, cecinas, etc.) ----
 // Mismo motor de cálculo que el resto del módulo (fcVenta vía fcCalcularPrecioFinalBoton) —
 // solo cambia el primer paso: costo del lote ÷ kilos netos = costo real por kilo.
