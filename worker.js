@@ -35,6 +35,20 @@ function json(data, status = 200) {
   });
 }
 
+// Comprueba que un secreto externo esté cargado ANTES de hacer cualquier trabajo (ver
+// plan §7) — si falta, tira un error especial (codigo:'FALTA_SECRETO') que el catch
+// del dispatcher principal convierte en {ok:false,codigo,secreto} con HTTP 200, en vez
+// de una excepción sin capturar. Las funciones que dependen de una API externa
+// (procesar_factura, buscar_imagen_producto, quitar_fondo_producto, y el fallback a IA
+// de clasificar_producto) llaman esto como primera línea.
+function requiereSecreto(env, nombreSecreto, comoConseguirlo) {
+  if (env[nombreSecreto]) return;
+  const err = new Error("Falta configurar el secreto " + nombreSecreto + " en Cloudflare" + (comoConseguirlo ? " (" + comoConseguirlo + ")" : ""));
+  err.codigo = "FALTA_SECRETO";
+  err.secreto = nombreSecreto;
+  throw err;
+}
+
 // ============================================================
 //  HELPERS D1
 // ============================================================
@@ -1869,23 +1883,319 @@ async function accionMapearCategoria(env, payload) {
 // POST { action:'guardar_clasificacion', payload:{patron,proveedor,sector} } → guarda
 // (o actualiza) un patrón aprendido a mano, sin pasar por Mapeo de categorías — no
 // necesita IA, es un INSERT directo.
+// Guarda la confirmación o corrección del usuario como patrón aprendido (mismo
+// contrato que Marín 376: proveedor_id directo, no nombre) — así no vuelve a hacer
+// falta IA la próxima vez que aparezca este mismo producto o categoría.
 async function accionGuardarClasificacion(env, payload) {
   const patron = String((payload && payload.patron) || "").trim().toUpperCase();
-  if (!patron) throw new Error("Falta el patrón");
-  const proveedor = payload && payload.proveedor ? String(payload.proveedor).trim() : null;
-  const sector = payload && payload.sector ? String(payload.sector).trim() : null;
-  if (!proveedor && !sector) throw new Error("Indica al menos un proveedor o un sector");
-  let proveedorId = null;
-  if (proveedor) {
-    await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedor);
-    const prov = await get(env, "SELECT id FROM proveedores WHERE nombre = ?", proveedor);
-    proveedorId = prov ? prov.id : null;
+  if (!patron) throw new Error("Falta el patrón (nombre de producto o categoría) a guardar");
+  const sector = String((payload && payload.sector) || "").trim().toUpperCase();
+  if (!sector) throw new Error("Falta el sector");
+  await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sector);
+  const proveedorId = payload && payload.proveedor_id != null && payload.proveedor_id !== "" ? Number(payload.proveedor_id) : null;
+  if (proveedorId != null) {
+    const existe = await get(env, "SELECT id FROM proveedores WHERE id = ?", proveedorId);
+    if (!existe) throw new Error("El proveedor indicado no existe");
   }
   await run(env,
     "INSERT INTO producto_clasificacion_aprendida (patron, proveedor_id, sector, actualizado_en) VALUES (?,?,?,?) " +
     "ON CONFLICT(patron) DO UPDATE SET proveedor_id = excluded.proveedor_id, sector = excluded.sector, actualizado_en = excluded.actualizado_en",
     patron, proveedorId, sector, fechaHoraDDMMAAAA());
-  return { patron, proveedor, sector };
+  return { patron, proveedor_id: proveedorId, sector };
+}
+
+// ============================================================
+//  FUNCIONES QUE DEPENDEN DE APIS EXTERNAS (portadas de Marín 376, Fase 1 — ver plan
+//  §7). El código queda completo y funcional; NO van a andar hasta que el dueño cargue
+//  los secretos correspondientes en Cloudflare (wrangler secret put ...). El dispatcher
+//  comprueba el secreto ANTES de llamar a cada una (ver ?action=capacidades más abajo)
+//  y devuelve {ok:false, codigo:'FALTA_SECRETO'} en vez de dejar que la función misma
+//  tire una excepción sin secreto.
+// ============================================================
+
+// OCR de facturas con Claude (visión) — nunca escribe nada solo: el frontend siempre
+// muestra una tabla editable para que el usuario revise/corrija antes de guardar (ver
+// accionGuardarCalculoPrecio). Secreto: ANTHROPIC_API_KEY.
+async function accionProcesarFactura(env, payload) {
+  requiereSecreto(env, "ANTHROPIC_API_KEY", "wrangler secret put ANTHROPIC_API_KEY");
+  const imagenB64 = payload && payload.imagen_base64;
+  const mediaType = (payload && payload.media_type) || "image/jpeg";
+  if (!imagenB64) throw new Error("Falta la imagen de la factura");
+
+  const prompt = "Esta imagen es una factura o boleta de un proveedor de un minimarket chileno. " +
+    "Las facturas de este tipo suelen tener columnas en este orden: CANTIDAD, CÓDIGO, " +
+    "DESCRIPCIÓN PRODUCTO, P. UNITARIO, DESCUENTO %, DESCUENTO $, $ TOTALES. " +
+    "Extrae cada producto/línea de la factura y responde SOLO con un array JSON, sin texto antes ni " +
+    "después, sin marcadores de código (nada de ```), con esta forma exacta:\n" +
+    '[{"producto":"nombre tal como aparece","cantidad":numero,"costo_unitario":numero,"incluye_iva":true|false,"categoria_sugerida":"bebidas|snacks|confites|abarrotes|premium|otro"}]\n' +
+    "Reglas de mapeo — son las más importantes, léelas con cuidado porque son la causa más común " +
+    "de error: \"cantidad\" va SIEMPRE de la columna CANTIDAD (la primera columna numérica, a la " +
+    "izquierda, normalmente un número chico como 1, 2, 5, 10, 24). \"costo_unitario\" va SIEMPRE de " +
+    "la columna P. UNITARIO (el precio de ESA línea/presentación tal como está impreso, antes de " +
+    "descuentos) — NUNCA tomes el valor de la columna $ TOTALES (que ya viene multiplicado por la " +
+    "cantidad) ni el de DESCUENTO $ para \"costo_unitario\". Si tienes dudas entre dos columnas " +
+    "numéricas parecidas, la que está más a la izquierda (después de la descripción) suele ser P. " +
+    "UNITARIO, y la de más a la derecha suele ser $ TOTALES. \"incluye_iva\" es true si el documento " +
+    "indica que los precios incluyen IVA (19% en Chile), false si son netos (por ejemplo si hay un " +
+    "recuadro aparte de \"NETO\" + \"19% IVA\" + \"TOTAL\" al pie, los precios de la tabla son netos), " +
+    "y tu mejor estimación si no está explícito. \"categoria_sugerida\" es tu mejor clasificación del " +
+    "producto entre esas 6 opciones exactas, según el nombre. Si un dato no se lee con claridad, usa " +
+    "tu mejor lectura igual — el usuario revisa cada fila antes de guardar nada. Si no hay ningún " +
+    "producto legible, responde con [].";
+
+  let res;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-5",
+        max_tokens: 2000,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: imagenB64 } },
+            { type: "text", text: prompt }
+          ]
+        }]
+      })
+    });
+  } catch (e) {
+    throw new Error("No se pudo conectar con Claude: " + e.message);
+  }
+  if (!res.ok) {
+    const errTxt = await res.text().catch(() => "");
+    throw new Error("Claude no pudo procesar la imagen (" + res.status + "): " + errTxt.slice(0, 200));
+  }
+  const data = await res.json();
+  const textBlock = (data.content || []).find(b => b.type === "text");
+  if (!textBlock) throw new Error("Claude no devolvió texto con los productos");
+  const raw = textBlock.text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
+  let items;
+  try { items = JSON.parse(raw); } catch (e) { throw new Error("No se pudo interpretar la respuesta de Claude como lista de productos"); }
+  if (!Array.isArray(items)) throw new Error("Formato inesperado en la respuesta de Claude");
+
+  items = items.map(it => ({
+    producto: String(it.producto || it.nombre || "").trim(),
+    cantidad: Number(it.cantidad) || 0,
+    costo_unitario: Number(it.costo_unitario) || 0,
+    incluye_iva: !!it.incluye_iva,
+    categoria_sugerida: String(it.categoria_sugerida || "otro").toLowerCase().trim()
+  })).filter(it => it.producto);
+
+  return { items };
+}
+
+// Busca fotos de empaque/producto candidatas para un nombre, vía Searlo (motor de
+// búsqueda tipo Google, sin IA). Secreto: SEARLO_API_KEY.
+async function accionBuscarImagenProducto(env, payload) {
+  requiereSecreto(env, "SEARLO_API_KEY", "cuenta gratis en searlo.tech, wrangler secret put SEARLO_API_KEY");
+  const nombre = payload && payload.nombre;
+  if (!nombre) throw new Error("Falta el nombre del producto");
+
+  const query = nombre + " producto empaque";
+  let res;
+  try {
+    res = await fetch("https://api.searlo.tech/api/v1/search/images?q=" + encodeURIComponent(query), {
+      headers: { "x-api-key": env.SEARLO_API_KEY }
+    });
+  } catch (e) {
+    throw new Error("No se pudo conectar con Searlo: " + e.message);
+  }
+  if (!res.ok) {
+    const errTxt = await res.text().catch(() => "");
+    throw new Error("Searlo no pudo buscar la imagen (" + res.status + "): " + errTxt.slice(0, 200));
+  }
+  const data = await res.json();
+  // La documentación de Searlo muestra dos formas de respuesta según la página — a veces
+  // "images"/"results" (lista plana), a veces "items" anidado como {image:{src,...}}. Se
+  // prueban las dos.
+  const planos = data.results || data.images || [];
+  const anidados = (data.items || []).map(it => ({
+    url: (it.image && (it.image.src || it.image.url)) || it.link || "",
+    fuente: it.source || it.domain || it.title || ""
+  }));
+  const items = planos.length ? planos : anidados;
+  const candidatos = items.map(it => ({
+    url: it.url || it.imageUrl || it.image_url || it.link || it.thumbnailUrl || "",
+    fuente: it.source || it.domain || it.title || ""
+  })).filter(c => c.url && /^https?:\/\//.test(c.url)).slice(0, 4);
+
+  return { candidatos };
+}
+
+// Quita el fondo de una foto (base64) con remove.bg, pidiendo el recorte con
+// transparencia real (canal alpha) — el fondo blanco/sombra se aplican después en el
+// celular (mismo criterio que Marín 376: el Worker solo recorta, no decora). Es un paso
+// SEPARADO de subir_imagen_producto: esto solo devuelve un preview; el usuario decide si
+// lo aplica. Secreto: REMOVEBG_API_KEY.
+async function accionQuitarFondoProducto(env, payload) {
+  requiereSecreto(env, "REMOVEBG_API_KEY", "wrangler secret put REMOVEBG_API_KEY");
+  const imageBase64 = payload && payload.image_base64;
+  if (!imageBase64) throw new Error("Falta la foto a procesar");
+
+  let rbgRes;
+  try {
+    rbgRes = await fetch("https://api.remove.bg/v1.0/removebg", {
+      method: "POST",
+      headers: { "X-Api-Key": env.REMOVEBG_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image_file_b64: imageBase64, size: "auto", format: "png",
+        type: "product", semitransparency: true
+      })
+    });
+  } catch (e) {
+    throw new Error("No se pudo conectar con remove.bg: " + e.message);
+  }
+  if (!rbgRes.ok) {
+    let detalle = "";
+    try {
+      const errJson = await rbgRes.json();
+      detalle = (errJson && errJson.errors && errJson.errors[0] && errJson.errors[0].title) || "";
+    } catch (e) { /* respuesta no era JSON */ }
+    if (rbgRes.status === 402) throw new Error("Se acabaron los créditos gratis de remove.bg este mes");
+    if (rbgRes.status === 403) throw new Error("La API key de remove.bg no es válida");
+    throw new Error("remove.bg rechazó la imagen (" + rbgRes.status + "): " + (detalle || "error desconocido"));
+  }
+
+  const resultBuffer = await rbgRes.arrayBuffer();
+  if (resultBuffer.byteLength > 5 * 1024 * 1024) throw new Error("La imagen procesada quedó demasiado pesada");
+  const bytes = new Uint8Array(resultBuffer);
+  let binaryStr = "";
+  const CHUNK = 8192;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binaryStr += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return { image_base64: btoa(binaryStr), content_type: "image/png" };
+}
+
+// Sube al producto en Loyverse la imagen que el usuario eligió (URL sugerida o bytes
+// directos de la galería / de quitar_fondo_producto). Solo necesita LOYVERSE_API_TOKEN,
+// que ya está configurado — no requiere un secreto nuevo.
+async function accionSubirImagenProducto(env, payload) {
+  const sku = payload && payload.sku;
+  const imageUrl = payload && payload.image_url;
+  const imageBase64Directo = payload && payload.image_base64;
+  if (!sku) throw new Error("Falta el sku del producto");
+  if (!imageUrl && !imageBase64Directo) throw new Error("Falta la imagen elegida");
+  const producto = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!producto || !producto.id_loyverse) throw new Error("Producto sin id de Loyverse — sincroniza el catálogo primero");
+
+  let imageBytes, contentType;
+  if (imageBase64Directo) {
+    const binaryStr = atob(imageBase64Directo);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+    imageBytes = bytes.buffer;
+    contentType = (payload && payload.content_type) || "image/jpeg";
+  } else {
+    let imgRes;
+    try { imgRes = await fetch(imageUrl); } catch (e) { throw new Error("No se pudo descargar la imagen: " + e.message); }
+    if (!imgRes.ok) throw new Error("No se pudo descargar la imagen (código " + imgRes.status + ") — prueba con otra");
+    imageBytes = await imgRes.arrayBuffer();
+    if (imageBytes.byteLength > 5 * 1024 * 1024) throw new Error("La imagen pesa más de 5MB — elige otra de las sugeridas");
+    contentType = imgRes.headers.get("content-type") || (/\.png(\?|$)/i.test(imageUrl) ? "image/png" : "image/jpeg");
+  }
+
+  let uploadRes;
+  try {
+    uploadRes = await fetch(LOYVERSE_API + "/items/" + producto.id_loyverse + "/image", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN, "Content-Type": contentType },
+      body: imageBytes
+    });
+  } catch (e) { throw new Error("No se pudo conectar con Loyverse: " + e.message); }
+  if (!uploadRes.ok) {
+    const errTxt = await uploadRes.text().catch(() => "");
+    throw new Error("Loyverse rechazó la imagen (" + uploadRes.status + "): " + errTxt.slice(0, 200));
+  }
+
+  await new Promise(r => setTimeout(r, 900));
+  const verificado = await loyverseGet(env, "/items/" + producto.id_loyverse, {});
+  const imagenNueva = verificado && verificado.image_url;
+  if (!imagenNueva) {
+    throw new Error("Loyverse aceptó la imagen pero todavía no se confirma — puede tardar unos segundos. Revisa el producto directo en Loyverse en un momento.");
+  }
+  await run(env, "UPDATE productos SET imagen_url=? WHERE sku=?", imagenNueva, sku);
+  return { imagen_url: imagenNueva };
+}
+
+// Sugiere proveedor+sector para UN producto (portado de Marín 376, contrato exacto:
+// payload {nombre,categoria}, nunca sku — no escribe nada solo, el frontend decide si
+// confirma con guardar_clasificacion). Dos niveles: primero busca en
+// producto_clasificacion_aprendida por patrón exacto (nombre o categoría, gratis, sin
+// IA); si no encuentra nada, cae a IA (Claude — requiere ANTHROPIC_API_KEY; el
+// dispatcher ya comprobó el secreto antes de llegar hasta acá cuando no hay patrón).
+async function accionClasificarProducto(env, payload) {
+  const nombreProducto = String((payload && payload.nombre) || "").trim();
+  const categoriaLoyverse = String((payload && payload.categoria) || "").trim();
+  if (!nombreProducto) throw new Error("Falta el nombre del producto");
+
+  const patronProducto = nombreProducto.toUpperCase();
+  const patronCategoria = categoriaLoyverse.toUpperCase();
+
+  let aprendido = await get(env, "SELECT proveedor_id, sector FROM producto_clasificacion_aprendida WHERE patron = ?", patronProducto);
+  if (!aprendido && patronCategoria) {
+    aprendido = await get(env, "SELECT proveedor_id, sector FROM producto_clasificacion_aprendida WHERE patron = ?", patronCategoria);
+  }
+  if (aprendido) {
+    const prov = aprendido.proveedor_id ? await get(env, "SELECT id, nombre FROM proveedores WHERE id = ?", aprendido.proveedor_id) : null;
+    return { proveedor: prov ? prov.nombre : null, proveedor_id: prov ? prov.id : null, sector: aprendido.sector, confianza: "alta", origen: "aprendido" };
+  }
+
+  // Sin patrón aprendido — recién acá hace falta IA (no antes, para no bloquear el
+  // camino gratis con un secreto que la mayoría de las clasificaciones ni necesita).
+  requiereSecreto(env, "ANTHROPIC_API_KEY", "wrangler secret put ANTHROPIC_API_KEY");
+
+  const { results: proveedoresRows } = await env.DB.prepare("SELECT id, nombre FROM proveedores ORDER BY nombre").all();
+  const listaProveedores = proveedoresRows.map(p => p.nombre).join(", ");
+  const { sectores: sectoresCombinados } = await catalogoProveedoresSectores(env);
+
+  const prompt = `Eres un clasificador de productos de un minimarket chileno.
+Producto: "${nombreProducto}"
+Categoría actual en Loyverse: "${categoriaLoyverse || "(sin categoría)"}"
+
+Proveedores conocidos: ${listaProveedores}
+Sectores válidos: ${sectoresCombinados.join(", ")}
+
+Responde SOLO JSON, sin texto adicional:
+{"proveedor":"nombre exacto de la lista, o null si no se puede determinar","sector":"uno de los sectores válidos","confianza":"alta"|"baja"}
+Si el producto no calza claramente con ningún proveedor conocido, usa null y confianza "baja".
+No inventes un proveedor que no esté en la lista.`;
+
+  let res;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 300, messages: [{ role: "user", content: prompt }] })
+    });
+  } catch (e) {
+    throw new Error("No se pudo conectar con Claude: " + e.message);
+  }
+  if (!res.ok) {
+    const errTxt = await res.text().catch(() => "");
+    throw new Error("Claude no pudo clasificar (" + res.status + "): " + errTxt.slice(0, 200));
+  }
+  const data = await res.json();
+  const textBlock = (data.content || []).find(b => b.type === "text");
+  if (!textBlock) throw new Error("Claude no devolvió una clasificación");
+  const raw = textBlock.text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
+  let out;
+  try { out = JSON.parse(raw); } catch (e) { throw new Error("No se pudo interpretar la respuesta de Claude"); }
+
+  const sectorSugerido = sectoresCombinados.includes(String(out.sector || "").toUpperCase()) ? String(out.sector).toUpperCase() : "OTROS";
+  let proveedorSugerido = null, proveedorId = null;
+  if (out.proveedor) {
+    const match = proveedoresRows.find(p => String(p.nombre).trim().toUpperCase() === String(out.proveedor).trim().toUpperCase());
+    if (match) { proveedorSugerido = match.nombre; proveedorId = match.id; }
+  }
+  const confianza = (out.confianza === "alta" && proveedorSugerido) ? "alta" : "baja";
+  return { proveedor: proveedorSugerido, proveedor_id: proveedorId, sector: sectorSugerido, confianza, origen: "ia" };
 }
 
 // ============================================================
@@ -4041,6 +4351,60 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'clasificar_producto', payload:{nombre,categoria} } → sugiere
+      // proveedor+sector (patrón aprendido, o IA si no hay ninguno — requiere
+      // ANTHROPIC_API_KEY). No escribe nada: el frontend confirma con
+      // guardar_clasificacion o editar_producto.
+      if (action === "clasificar_producto") {
+        const resultado = await accionClasificarProducto(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'procesar_factura', payload:{imagen_base64,media_type} } → OCR de
+      // factura con Claude (requiere ANTHROPIC_API_KEY). Nunca escribe nada solo.
+      if (action === "procesar_factura") {
+        const resultado = await accionProcesarFactura(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'buscar_imagen_producto', payload:{nombre} } → candidatos de foto
+      // vía Searlo (requiere SEARLO_API_KEY).
+      if (action === "buscar_imagen_producto") {
+        const resultado = await accionBuscarImagenProducto(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'quitar_fondo_producto', payload:{image_base64} } → recorte con
+      // remove.bg (requiere REMOVEBG_API_KEY). Devuelve un preview, no sube nada solo.
+      if (action === "quitar_fondo_producto") {
+        const resultado = await accionQuitarFondoProducto(env, payload);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'subir_imagen_producto', payload:{sku,image_url|image_base64,content_type} }
+      // → sube la imagen elegida a Loyverse. Solo necesita LOYVERSE_API_TOKEN (ya configurado).
+      if (action === "subir_imagen_producto") {
+        const resultado = await accionSubirImagenProducto(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=capacidades → qué secretos externos están cargados (nunca los
+      // valores) — el frontend usa esto para deshabilitar preventivamente los botones
+      // de OCR de facturas / búsqueda de fotos / quitar fondo, con un aviso claro, en
+      // vez de dejar que el usuario los intente para nada.
+      if (action === "capacidades") {
+        return json({
+          ok: true,
+          capacidades: {
+            ocr_factura: !!env.ANTHROPIC_API_KEY,
+            buscar_imagen: !!env.SEARLO_API_KEY,
+            quitar_fondo: !!env.REMOVEBG_API_KEY,
+            clasificar_ia: !!env.ANTHROPIC_API_KEY
+          }
+        });
+      }
+
       // GET /?action=abc  →  última clasificación ABC calculada (sku, clase, % de
       // participación, venta total). Vacío hasta el primer "abc_calcular".
       if (action === "abc") {
@@ -4376,6 +4740,13 @@ export default {
         mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos, favoritos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir, guardar_multiplo_producto, favorito, marcar_pedido_realizado. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
+      // Falta un secreto externo (ANTHROPIC_API_KEY/SEARLO_API_KEY/REMOVEBG_API_KEY) —
+      // se responde HTTP 200 con un código reconocible en vez de un 500 genérico, para
+      // que el frontend pueda mostrar "falta configurar X" en vez de un error confuso
+      // (ver requiereSecreto() y §7 del plan).
+      if (e && e.codigo === "FALTA_SECRETO") {
+        return json({ ok: false, error: e.message, codigo: "FALTA_SECRETO", secreto: e.secreto });
+      }
       return json({ ok: false, error: e.message }, 500);
     }
   },
