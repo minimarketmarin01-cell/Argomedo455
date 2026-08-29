@@ -1771,16 +1771,28 @@ async function accionMarcarPedidoRealizado(env, payload) {
   if (!items.length) throw new Error("No hay productos en el pedido a marcar");
   const fecha = fechaHoraDDMMAAAA();
   let marcados = 0;
+  const omitidos = [];
+  // Fila por fila, con su propio try/catch (portado de Marín 376, Fase 2) — sin esto,
+  // una sola fila con un problema puntual (ej. un valor raro) tiraba toda la excepción
+  // hacia arriba y el usuario perdía el pedido ENTERO en el toast de error, aunque la
+  // mayoría de las filas ya se hubieran guardado bien en D1 antes de la que falló.
   for (const it of items) {
     const sku = String((it && it.sku) || "").trim();
     const cantidad = Number(it && it.cantidad) || 0;
     if (!sku || cantidad <= 0) continue;
-    await run(env,
-      "INSERT INTO pedidos_pendientes (fecha, sku, barcode, producto, proveedor, cantidad, estado) VALUES (?,?,?,?,?,?,'confirmado')",
-      fecha, sku, String((it && it.barcode) || ""), String((it && it.producto) || ""), String((it && it.proveedor) || ""), cantidad);
-    marcados++;
+    try {
+      await run(env,
+        "INSERT INTO pedidos_pendientes (fecha, sku, barcode, producto, proveedor, cantidad, estado) VALUES (?,?,?,?,?,?,'confirmado')",
+        fecha, sku, String((it && it.barcode) || ""), String((it && it.producto) || ""), String((it && it.proveedor) || ""), cantidad);
+      marcados++;
+    } catch (e) {
+      omitidos.push({ sku, error: e.message });
+      try { await logMsg(env, "⚠️ No se pudo guardar " + (it.producto || sku) + " en el pedido: " + e.message); } catch (e2) { /* logMsg no crítico */ }
+    }
   }
-  return { marcados };
+  const out = { marcados };
+  if (omitidos.length) out.omitidos = omitidos;
+  return out;
 }
 
 // Mapa sku → {proveedor,cantidad,fecha} con lo último confirmado (sin recibir
@@ -2336,7 +2348,16 @@ async function accionLoteNuevo(env, payload) {
     categoria: it.categoria, unidad, cantidad, fechaVencimiento: fechaTxt, nuevoStock: null
   };
 
-  if (cantidad > 0) {
+  // Los pasos de stock y de costo/precio son independientes entre sí (tablas y
+  // llamadas a Loyverse distintas) — se lanzan en paralelo (portado de Marín 376,
+  // Fase 2) en vez de uno tras otro, para no hacer esperar al que está recibiendo
+  // mercadería el doble de lo necesario. Cada tarea escribe su propio aviso en una
+  // variable LOCAL (no directo en out.avisoStock) para no pisarse si ambas fallan
+  // a la vez; se combinan al final en el mismo orden que antes (stock primero).
+  let avisoStockMsg = null, avisoPrecioMsg = null;
+
+  const tareaStock = (async () => {
+    if (cantidad <= 0) return;
     // 1) Registrar el lote de vencimiento (si trae fecha) — se guarda igual aunque no
     //    tenga fecha, para dejar rastro de la recepción, con estado "Sin fecha". Se
     //    omite por completo si no hubo recepción de stock (cantidad 0, solo edición
@@ -2373,10 +2394,10 @@ async function accionLoteNuevo(env, payload) {
           "Recepción de mercadería: +" + cantidad + " " + unidad + " (" + res.antes + " → " + res.despues + ")" +
           (tieneFecha ? " · vence " + fechaTxt : ""), payload.responsable || "", cantidad);
       } else {
-        out.avisoStock = "⚠️ No se pudo sumar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+        avisoStockMsg = "⚠️ No se pudo sumar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
       }
     } catch (e) {
-      out.avisoStock = "⚠️ No se pudo sumar el stock en Loyverse: " + e.message;
+      avisoStockMsg = "⚠️ No se pudo sumar el stock en Loyverse: " + e.message;
     }
 
     // 2b) Si este producto tenía un pedido confirmado sin recibir ("Ya pedido a
@@ -2386,47 +2407,51 @@ async function accionLoteNuevo(env, payload) {
     } catch (e) {
       // no crítico: si falla, el chip "Ya pedido" simplemente sigue mostrándose.
     }
-  }
+  })();
 
-  // 3) Costo y/o precio (opcional): mismo patrón seguro (leer completo → modificar →
-  //    reenviar) para no crear un producto nuevo ni perder otros campos de la variante.
-  if (precioNuevo != null || costoNuevo != null) {
+  const tareaPrecio = (async () => {
+    // 3) Costo y/o precio (opcional): mismo patrón seguro (leer completo → modificar →
+    //    reenviar) para no crear un producto nuevo ni perder otros campos de la variante.
+    if (precioNuevo == null && costoNuevo == null) return;
     if (!it.id_loyverse || !it.variant_id) {
-      out.avisoStock = (out.avisoStock ? out.avisoStock + " " : "") + "⚠️ No se pudo actualizar costo/precio: falta id de Loyverse.";
-    } else {
-      try {
-        // Deja registro en historial_precios ANTES de escribir en Loyverse (igual que
-        // en accionEditarProducto).
-        await run(env,
-          `INSERT INTO historial_precios (sku, fecha, precio_antes, precio_despues, costo_antes, costo_despues, responsable)
-           VALUES (?,?,?,?,?,?,?)`,
-          sku, fechaHoraDDMMAAAA(), it.precio, precioNuevo != null ? precioNuevo : it.precio,
-          it.costo, costoNuevo != null ? costoNuevo : it.costo, payload.responsable || "");
-        await actualizarPrecioCostoLoyverse(env, it.id_loyverse, it.variant_id, precioNuevo, costoNuevo);
-        const sets = [], vals = [];
-        if (precioNuevo != null) { sets.push("precio = ?"); vals.push(precioNuevo); }
-        if (costoNuevo != null) { sets.push("costo = ?"); vals.push(costoNuevo); }
-        vals.push(sku);
-        await run(env, "UPDATE productos SET " + sets.join(", ") + " WHERE sku = ?", ...vals);
-        out.precioAplicado = precioNuevo != null ? precioNuevo : it.precio;
-        out.costoAplicado = costoNuevo != null ? costoNuevo : it.costo;
-        // Deja rastro en auditoría solo cuando es una edición SIN recepción de stock —
-        // el caso con stock ya queda registrado en el "recepcion_stock" del paso 2.
-        if (cantidad <= 0) {
-          const detalle = [];
-          if (precioNuevo != null) detalle.push("precio → $" + precioNuevo);
-          if (costoNuevo != null) detalle.push("costo → $" + costoNuevo);
-          await run(env,
-            `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
-             VALUES (?,?,?,?,?,?,?,?,?)`,
-            fechaHoraDDMMAAAA(), "editar_precio_costo", sku, it.nombre, it.categoria, it.id_loyverse, null,
-            "Edición de " + detalle.join(" y "), payload.responsable || "");
-        }
-      } catch (e) {
-        out.avisoStock = (out.avisoStock ? out.avisoStock + " " : "") + "⚠️ Costo/precio no se pudo actualizar en Loyverse (" + e.message + ").";
-      }
+      avisoPrecioMsg = "⚠️ No se pudo actualizar costo/precio: falta id de Loyverse.";
+      return;
     }
-  }
+    try {
+      // Deja registro en historial_precios ANTES de escribir en Loyverse (igual que
+      // en accionEditarProducto).
+      await run(env,
+        `INSERT INTO historial_precios (sku, fecha, precio_antes, precio_despues, costo_antes, costo_despues, responsable)
+         VALUES (?,?,?,?,?,?,?)`,
+        sku, fechaHoraDDMMAAAA(), it.precio, precioNuevo != null ? precioNuevo : it.precio,
+        it.costo, costoNuevo != null ? costoNuevo : it.costo, payload.responsable || "");
+      await actualizarPrecioCostoLoyverse(env, it.id_loyverse, it.variant_id, precioNuevo, costoNuevo);
+      const sets = [], vals = [];
+      if (precioNuevo != null) { sets.push("precio = ?"); vals.push(precioNuevo); }
+      if (costoNuevo != null) { sets.push("costo = ?"); vals.push(costoNuevo); }
+      vals.push(sku);
+      await run(env, "UPDATE productos SET " + sets.join(", ") + " WHERE sku = ?", ...vals);
+      out.precioAplicado = precioNuevo != null ? precioNuevo : it.precio;
+      out.costoAplicado = costoNuevo != null ? costoNuevo : it.costo;
+      // Deja rastro en auditoría solo cuando es una edición SIN recepción de stock —
+      // el caso con stock ya queda registrado en el "recepcion_stock" de la otra tarea.
+      if (cantidad <= 0) {
+        const detalle = [];
+        if (precioNuevo != null) detalle.push("precio → $" + precioNuevo);
+        if (costoNuevo != null) detalle.push("costo → $" + costoNuevo);
+        await run(env,
+          `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
+          fechaHoraDDMMAAAA(), "editar_precio_costo", sku, it.nombre, it.categoria, it.id_loyverse, null,
+          "Edición de " + detalle.join(" y "), payload.responsable || "");
+      }
+    } catch (e) {
+      avisoPrecioMsg = "⚠️ Costo/precio no se pudo actualizar en Loyverse (" + e.message + ").";
+    }
+  })();
+
+  await Promise.allSettled([tareaStock, tareaPrecio]);
+  if (avisoStockMsg || avisoPrecioMsg) out.avisoStock = [avisoStockMsg, avisoPrecioMsg].filter(Boolean).join(" ");
 
   // 4) Proveedor y/o sector (opcional): son campos solo locales (no existen en Loyverse),
   //    así que se actualizan directo en D1 sin tocar nada más del producto. Si el valor
@@ -2844,6 +2869,162 @@ async function accionEditarFechaVencimiento(env, payload) {
     "UPDATE vencimientos SET fecha_vencimiento = ?, estado = ?, prioridad = ?, accion = ?, precio_recomendado = ? WHERE id = ?",
     fechaTxt, calc.estado, calc.prioridad, calc.accion, calc.precioRecomendado || null, id);
   return { id, fechaVencimiento: fechaTxt, estado: calc.estado, prioridad: calc.prioridad, accion: calc.accion };
+}
+
+// POST { action:'revisar_lote', payload:{filaIndex,revisadoPor,resultado,cantidad?} } —
+// portado de Marín 376 (Fase 2), adaptado a los nombres de columna de Los Cumpas.
+// `resultado`:
+//  - 'retirado' → se sacó físicamente de la góndola, pendiente de que el proveedor lo
+//    cambie o quede como merma (estado='Retirado', fecha_retiro). Admite retiro
+//    PARCIAL (`cantidad` menor al total del lote): la fila original se cierra
+//    reflejando solo lo retirado, y el remanente vuelve a Lista con su estado
+//    original (Vencido/Por vencer) en una fila nueva — no se retiró de verdad, así
+//    que no debe desaparecer de la lista. Descuenta stock real en Loyverse (fresco,
+//    no cacheado) porque es una salida real, no solo un cambio de estado.
+//  - 'vendido' / 'merma' / 'revisado' → cierre directo sin pasar por "Retirado" (se
+//    liquidó tal cual, se comprobó que está bien, etc.) — no toca stock (ya se
+//    vendió normal por caja, o directamente no salió nada).
+async function accionRevisarLote(env, payload) {
+  payload = payload || {};
+  const fi = Number(payload.filaIndex || payload.id);
+  if (!fi) throw new Error("Falta el id del lote");
+  const row = await get(env, "SELECT * FROM vencimientos WHERE id = ?", fi);
+  if (!row) throw new Error("Lote no encontrado");
+  const ahora = fechaHoraDDMMAAAA();
+  const responsable = payload.revisadoPor || payload.responsable || "";
+
+  if (payload.resultado === "retirado") {
+    const cantidadTotal = Number(row.cantidad) || 0;
+    const cantidadRetirada = payload.cantidad != null && payload.cantidad !== ""
+      ? Number(payload.cantidad) : cantidadTotal;
+    if (isNaN(cantidadRetirada) || cantidadRetirada <= 0) throw new Error("La cantidad a retirar debe ser mayor a 0");
+    if (cantidadRetirada > cantidadTotal) throw new Error("No puedes retirar más unidades de las que había en el lote (" + cantidadTotal + ")");
+    const esParcial = cantidadRetirada < cantidadTotal;
+    const cantidadRestante = cantidadTotal - cantidadRetirada;
+
+    if (esParcial) {
+      await run(env, "UPDATE vencimientos SET cantidad=?, estado='Retirado', fecha_retiro=?, revisado_por=? WHERE id=?",
+        cantidadRetirada, ahora, responsable, fi);
+      await run(env,
+        `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, prioridad, accion, precio_recomendado, costo_usado, costo_origen)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        row.fecha_ingreso, row.sku, row.producto, row.categoria, row.unidad, row.lote, cantidadRestante, row.fecha_vencimiento,
+        row.estado, row.prioridad, row.accion, row.precio_recomendado, row.costo_usado, row.costo_origen);
+    } else {
+      await run(env, "UPDATE vencimientos SET estado='Retirado', fecha_retiro=?, revisado_por=? WHERE id=?",
+        ahora, responsable, fi);
+    }
+    const out = { sku: row.sku, nombre: row.producto, categoria: row.categoria, unidad: row.unidad, lote: row.lote, cantidad: cantidadRetirada, estado: "Retirado" };
+    if (esParcial) out.cantidadRestante = cantidadRestante;
+
+    if (cantidadRetirada > 0) {
+      try {
+        const it = await get(env, "SELECT * FROM productos WHERE sku = ?", row.sku);
+        if (it) {
+          const res = await sumarStockLoyverse(env, it, -cantidadRetirada);
+          if (res.ok) {
+            out.nuevoStock = res.despues;
+            await run(env,
+              `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable, cantidad)
+               VALUES (?,?,?,?,?,?,?,?,?,?)`,
+              fechaHoraDDMMAAAA(), "retiro_vencimiento", row.sku, row.producto, row.categoria, it.id_loyverse, res.despues,
+              "Retiro por vencimiento (pendiente de cambio): -" + cantidadRetirada + " " + row.unidad + " (" + res.antes + " → " + res.despues + ")",
+              responsable, cantidadRetirada);
+          } else {
+            out.avisoStock = "⚠️ No se pudo descontar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+          }
+        } else {
+          out.avisoStock = "⚠️ No se encontró el producto en el catálogo para descontar el stock en Loyverse. Revísalo a mano.";
+        }
+      } catch (e) {
+        out.avisoStock = "⚠️ No se pudo descontar el stock en Loyverse. Revísalo a mano.";
+      }
+    }
+    return out;
+  }
+
+  // Cierre directo (sin pasar por "Retirado"): 'vendido', 'merma' o 'revisado' — motivo_cierre
+  // distingue el tipo de cierre para no contar como venta algo que no lo fue.
+  let motivoCierre = "vendido";
+  if (payload.resultado === "merma") motivoCierre = "merma";
+  else if (payload.resultado === "revisado") motivoCierre = "revisado";
+  await run(env, "UPDATE vencimientos SET estado='Revisado', motivo_cierre=?, fecha_revision=?, revisado_por=? WHERE id=?",
+    motivoCierre, ahora, responsable, fi);
+  return { sku: row.sku, nombre: row.producto, categoria: row.categoria, unidad: row.unidad, lote: row.lote, cantidad: row.cantidad, estado: "Revisado" };
+}
+
+// POST { action:'marcar_cambiado', payload:{filaIndex,cantidadCambiada?,nuevaFechaVencimiento?,revisadoPor} }
+// — portado de Marín 376 (Fase 2). Cierra un lote que estaba "Retirado" porque el
+// proveedor ya lo repuso: suma stock real en Loyverse (entrada real — se había
+// descontado al retirar) y opcionalmente aplica una fecha de vencimiento nueva (la del
+// producto fresco que trajo el proveedor). Protección contra doble clic: si el lote ya
+// no está en 'Retirado' (ya se cerró antes), corta ANTES de tocar stock. Admite cambio
+// PARCIAL (`cantidadCambiada` menor al total): cierra solo esa cantidad y deja el resto
+// en una fila nueva, todavía 'Retirado', para seguir apareciendo en Pendientes.
+async function accionMarcarCambiado(env, payload) {
+  payload = payload || {};
+  const fi = Number(payload.filaIndex || payload.id);
+  if (!fi) throw new Error("Falta el id del lote");
+  const row = await get(env, "SELECT * FROM vencimientos WHERE id = ?", fi);
+  if (!row) throw new Error("Lote no encontrado");
+  if (row.estado !== "Retirado") throw new Error("Este lote no está en estado 'Retirado' — puede que ya se haya cerrado.");
+
+  const responsable = payload.revisadoPor || payload.responsable || "";
+  const cantidadTotal = Number(row.cantidad) || 0;
+  const cantidadCambiada = payload.cantidadCambiada != null && payload.cantidadCambiada !== ""
+    ? Number(payload.cantidadCambiada) : cantidadTotal;
+  if (isNaN(cantidadCambiada) || cantidadCambiada <= 0) throw new Error("La cantidad repuesta debe ser mayor a 0");
+  if (cantidadCambiada > cantidadTotal) throw new Error("No puedes marcar más unidades de las que había en el lote (" + cantidadTotal + ")");
+
+  const esParcial = cantidadCambiada < cantidadTotal;
+  const cantidadRestante = cantidadTotal - cantidadCambiada;
+
+  let nuevaFechaVencimiento = null;
+  if (payload.nuevaFechaVencimiento != null && payload.nuevaFechaVencimiento !== "") {
+    if (!parseFechaDDMMAAAA(payload.nuevaFechaVencimiento)) throw new Error("Fecha inválida (usa DD/MM/AAAA)");
+    nuevaFechaVencimiento = payload.nuevaFechaVencimiento;
+  }
+  const fechaCerrada = nuevaFechaVencimiento || row.fecha_vencimiento;
+
+  const stockOut = {};
+  if (cantidadCambiada > 0) {
+    try {
+      const it = await get(env, "SELECT * FROM productos WHERE sku = ?", row.sku);
+      if (it) {
+        const res = await sumarStockLoyverse(env, it, cantidadCambiada);
+        if (res.ok) {
+          stockOut.nuevoStock = res.despues;
+          await run(env,
+            `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable, cantidad)
+             VALUES (?,?,?,?,?,?,?,?,?,?)`,
+            fechaHoraDDMMAAAA(), "cambio_confirmado", row.sku, row.producto, row.categoria, it.id_loyverse, res.despues,
+            "Cambio confirmado con proveedor: +" + cantidadCambiada + " " + row.unidad + " (" + res.antes + " → " + res.despues + ")",
+            responsable, cantidadCambiada);
+        } else {
+          stockOut.avisoStock = "⚠️ No se pudo sumar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+        }
+      } else {
+        stockOut.avisoStock = "⚠️ No se encontró el producto en el catálogo para sumar el stock en Loyverse. Revísalo a mano.";
+      }
+    } catch (e) {
+      stockOut.avisoStock = "⚠️ No se pudo sumar el stock en Loyverse. Revísalo a mano.";
+    }
+  }
+
+  if (esParcial) {
+    await run(env, "UPDATE vencimientos SET cantidad=?, fecha_vencimiento=?, estado='Revisado', motivo_cierre='cambiado_proveedor', fecha_revision=?, revisado_por=? WHERE id=?",
+      cantidadCambiada, fechaCerrada, fechaHoraDDMMAAAA(), responsable, fi);
+    await run(env,
+      `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, prioridad, accion, fecha_retiro)
+       VALUES (?,?,?,?,?,?,?,?,'Retirado',?,?,?)`,
+      fechaHoraDDMMAAAA(), row.sku, row.producto, row.categoria, row.unidad, row.lote, cantidadRestante, row.fecha_vencimiento,
+      row.prioridad, row.accion, row.fecha_retiro || fechaHoraDDMMAAAA());
+    return Object.assign({ sku: row.sku, nombre: row.producto, categoria: row.categoria, unidad: row.unidad, lote: row.lote, cantidad: cantidadCambiada, parcial: true, cantidadRestante, fechaVencimiento: fechaCerrada }, stockOut);
+  }
+
+  await run(env, "UPDATE vencimientos SET fecha_vencimiento=?, estado='Revisado', motivo_cierre='cambiado_proveedor', fecha_revision=?, revisado_por=? WHERE id=?",
+    fechaCerrada, fechaHoraDDMMAAAA(), responsable, fi);
+  return Object.assign({ sku: row.sku, nombre: row.producto, categoria: row.categoria, unidad: row.unidad, lote: row.lote, cantidad: row.cantidad, fechaVencimiento: fechaCerrada }, stockOut);
 }
 
 // ============================================================
@@ -3456,17 +3637,60 @@ async function accionMarcarDescuentoFactura(env, payload) {
 //  asignados (evita dejar productos huérfanos apuntando a un
 //  proveedor que ya no existe en el catálogo).
 // ============================================================
+// POST { action:'eliminar_proveedor', payload:{id, modo:'reasignar'|'null', nuevo_proveedor_id?} }
+// (contrato de Marín Pedidos, Fase 2 — antes Los Cumpas identificaba al proveedor por
+// `nombre` y no aceptaba productos asignados; el frontend nuevo siempre manda `id` +
+// un modo para decidir qué hacer con los productos que lo tenían). Adaptado al modelo
+// dual de Los Cumpas: `productos.proveedor` (TEXT, la fuente "real" que usa el resto
+// de la app) y `producto_proveedor_extra` (FK, proveedores adicionales) se actualizan
+// los dos — no solo `proveedor_id`, que acá es un campo en paralelo.
 async function accionEliminarProveedor(env, payload) {
-  const nombre = String((payload || {}).nombre || "").trim();
-  if (!nombre) throw new Error("Falta el nombre del proveedor");
-  if (nombre === "SIN PROVEEDOR") throw new Error("SIN PROVEEDOR no es un proveedor real, no se puede eliminar");
+  payload = payload || {};
+  const id = Number(payload.id);
+  if (!id) throw new Error("Falta el id del proveedor");
+  const prov = await get(env, "SELECT id, nombre FROM proveedores WHERE id = ?", id);
+  if (!prov) throw new Error("Ese proveedor no existe");
+  if (prov.nombre === "SIN PROVEEDOR") throw new Error("SIN PROVEEDOR no es un proveedor real, no se puede eliminar");
 
-  const enUso = await get(env, "SELECT COUNT(*) as total FROM productos WHERE proveedor = ?", nombre);
-  if (enUso && enUso.total > 0) {
-    throw new Error("No se puede eliminar: tiene " + enUso.total + " producto(s) asignado(s)");
+  const conteo = await get(env,
+    `SELECT COUNT(DISTINCT sku) AS n FROM (
+       SELECT sku FROM productos WHERE proveedor = ? OR proveedor_id = ?
+       UNION ALL
+       SELECT sku FROM producto_proveedor_extra WHERE proveedor_id = ?
+     )`, prov.nombre, id, id);
+  const productosAfectados = (conteo && conteo.n) || 0;
+
+  // Si hay productos asignados y todavía no llegó un `modo` explícito, se corta acá
+  // y se le pregunta al usuario qué hacer con ellos (reasignar a otro proveedor, o
+  // dejarlos sin proveedor) — sin esto, el primer llamado del frontend (que manda
+  // solo `id`, sin `modo`, para mostrar el diálogo) borraría el proveedor de esos
+  // productos sin que el usuario llegara a elegir nada.
+  if (productosAfectados > 0 && payload.modo !== "reasignar" && payload.modo !== "null") {
+    return { requiereModo: true, productosAfectados };
   }
-  await run(env, "DELETE FROM proveedores WHERE nombre = ?", nombre);
-  return { nombre };
+
+  if (productosAfectados > 0) {
+    const modo = payload.modo === "reasignar" ? "reasignar" : "null";
+    if (modo === "reasignar") {
+      const nuevoId = Number(payload.nuevo_proveedor_id);
+      if (!nuevoId) throw new Error("Falta el proveedor de reemplazo");
+      const nuevo = await get(env, "SELECT id, nombre FROM proveedores WHERE id = ?", nuevoId);
+      if (!nuevo) throw new Error("El proveedor de reemplazo no existe");
+      await run(env, "UPDATE productos SET proveedor = ?, proveedor_id = ? WHERE proveedor = ? OR proveedor_id = ?",
+        nuevo.nombre, nuevo.id, prov.nombre, id);
+      // OR IGNORE: si un sku ya tenía al proveedor nuevo como extra, evita chocar con
+      // la PK (sku, proveedor_id) — esa fila sobrante se limpia con el DELETE de abajo.
+      await run(env, "UPDATE OR IGNORE producto_proveedor_extra SET proveedor_id = ? WHERE proveedor_id = ?", nuevo.id, id);
+    } else {
+      await run(env, "UPDATE productos SET proveedor = NULL, proveedor_id = NULL WHERE proveedor = ? OR proveedor_id = ?", prov.nombre, id);
+    }
+  }
+  // Limpia lo que haya quedado de `producto_proveedor_extra` apuntando al proveedor
+  // eliminado (rows movidas con éxito arriba, o directamente en modo "null") — sin
+  // esto, el DELETE de `proveedores` de abajo dejaría referencias huérfanas.
+  await run(env, "DELETE FROM producto_proveedor_extra WHERE proveedor_id = ?", id);
+  await run(env, "DELETE FROM proveedores WHERE id = ?", id);
+  return { id, nombre: prov.nombre, productosAfectados };
 }
 
 async function accionCrearSector(env, payload) {
@@ -4254,6 +4478,24 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'revisar_lote', payload:{filaIndex,revisadoPor,resultado,cantidad?} } →
+      // cierra o retira un lote (portado de Marín 376, Fase 2 — ver accionRevisarLote).
+      // Respuesta envuelta en `fila`, como la espera el frontend de Marín.
+      if (action === "revisar_lote") {
+        const resultado = await accionRevisarLote(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, fila: resultado });
+      }
+
+      // POST { action:'marcar_cambiado', payload:{filaIndex,cantidadCambiada?,nuevaFechaVencimiento?,revisadoPor} }
+      // → cierra un lote "Retirado" porque el proveedor ya lo repuso (portado de Marín
+      // 376, Fase 2 — ver accionMarcarCambiado).
+      if (action === "marcar_cambiado") {
+        const resultado = await accionMarcarCambiado(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, fila: resultado });
+      }
+
       // POST { action:'vencimiento_eliminar', payload:{id,responsable} } → borra un
       // lote de vencimientos (no toca stock ni Loyverse).
       if (action === "vencimiento_eliminar") {
@@ -4834,10 +5076,14 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
-      // POST { action:'eliminar_proveedor', payload:{nombre} }  →  borra un proveedor
-      // del catálogo, solo si no tiene productos asignados.
+      // POST { action:'eliminar_proveedor', payload:{id,modo?,nuevo_proveedor_id?} }  →
+      // borra un proveedor. Si tiene productos asignados y no llegó `modo` todavía,
+      // responde con `requiereModo` para que el frontend pregunte reasignar/dejar sin
+      // proveedor antes de reintentar con el modo elegido.
       if (action === "eliminar_proveedor") {
         const resultado = await accionEliminarProveedor(env, payload);
+        if (resultado.requiereModo) return json({ ok: false, requiereModo: true, productosAfectados: resultado.productosAfectados });
+        await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
 
