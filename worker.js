@@ -1135,10 +1135,15 @@ async function accionAsignarLlegada(env, payload) {
   const fechaTxt = String(payload.fechaVencimiento || "").trim();
   if (!fechaTxt || !parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha de vencimiento inválida (usa DD/MM/AAAA)");
 
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", row.sku);
+  const tablaVidaUtil = await getVidaUtilTabla(env);
+  const calc = await calcularLote(env, { categoria: row.categoria, fechaVencimiento: fechaTxt }, it, null, tablaVidaUtil);
+
   const insertRes = await run(env,
-    `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, fecha_revision, revisado_por)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    row.fecha_deteccion, row.sku, row.nombre, row.categoria, row.unidad, "", row.aumento, fechaTxt, "Pendiente", "", "");
+    `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, prioridad, accion, precio_recomendado, costo_usado, costo_origen, fecha_revision, revisado_por)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    row.fecha_deteccion, row.sku, row.nombre, row.categoria, row.unidad, "", row.aumento, fechaTxt,
+    calc.estado, calc.prioridad, calc.accion, calc.precioRecomendado || null, calc.costoUsado || null, calc.costoOrigen, "", "");
 
   await run(env, "UPDATE llegadas SET estado='asignado', fecha_vencimiento_asignada=?, fecha_resolucion=? WHERE id=?",
     fechaTxt, fechaDDMMAAAA(), fi);
@@ -1687,11 +1692,21 @@ async function accionLoteNuevo(env, payload) {
     //    tenga fecha, para dejar rastro de la recepción, con estado "Sin fecha". Se
     //    omite por completo si no hubo recepción de stock (cantidad 0, solo edición
     //    de precio/costo), para no dejar lotes fantasma en la tabla de vencimientos.
+    //    Con fecha, el estado/prioridad/acción/precio recomendado salen del motor de
+    //    Marín 376 (calcularLote) en vez del "Pendiente" fijo que se usaba antes.
+    let calc;
+    if (tieneFecha) {
+      const tablaVidaUtil = await getVidaUtilTabla(env);
+      calc = await calcularLote(env, { categoria: it.categoria, fechaVencimiento: fechaTxt }, it, null, tablaVidaUtil);
+    } else {
+      calc = { estado: "Sin fecha", prioridad: "—", accion: "Sin vencimiento", precioRecomendado: null, costoUsado: null, costoOrigen: "" };
+    }
     const insertRes = await run(env,
-      `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, fecha_revision, revisado_por)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, prioridad, accion, precio_recomendado, costo_usado, costo_origen, fecha_revision, revisado_por)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       fechaIngreso, sku, it.nombre, it.categoria, unidad, payload.lote || "", cantidad,
-      fechaTxt, tieneFecha ? "Pendiente" : "Sin fecha", "", "");
+      fechaTxt, calc.estado, calc.prioridad, calc.accion, calc.precioRecomendado || null,
+      calc.costoUsado || null, calc.costoOrigen, "", "");
     out.filaIndex = insertRes.meta.last_row_id;
 
     // 2) Sumar stock en Loyverse (el paso más importante — si falla, se avisa pero no
@@ -1850,6 +1865,148 @@ async function historialProducto(env, sku, limit) {
 }
 
 // ============================================================
+//  MOTOR DE PRIORIDAD DE VENCIMIENTOS (portado de Marín 376, Fase 1) —
+//  calcula estado/prioridad/acción/precio recomendado de UN lote según la
+//  vida útil configurada para su categoría (config_vida_util) y los días
+//  que faltan para vencer. Reemplaza, para lotes CON fecha, el "Pendiente"
+//  fijo que Argomedo usaba antes — un lote sin fecha sigue quedando "Sin
+//  fecha" igual que antes, sin pasar por este cálculo. Los estados
+//  manuales propios de Argomedo (Retirado/Cambiado/Descuento recibido/
+//  Desechado/Revisado, ver ESTADOS_VENCIMIENTO) no los toca este motor —
+//  solo calcula la parte "activa, todavía sin revisar" del lote.
+// ============================================================
+const VIDA_UTIL_DEFAULT = { dias: 15, tipo: "larga" };
+
+function redondeoPsicologico(p) {
+  const base = Math.floor(p / 100) * 100;
+  const candidatos = [base + 90, base + 50, base + 190, base + 150];
+  let best = candidatos[0], bd = Math.abs(candidatos[0] - p);
+  candidatos.forEach(c => { const d = Math.abs(c - p); if (d < bd) { bd = d; best = c; } });
+  return best;
+}
+
+async function getVidaUtilTabla(env) {
+  const { results } = await env.DB.prepare("SELECT * FROM config_vida_util").all();
+  const out = {};
+  results.forEach(r => { out[r.categoria] = { dias: r.dias_alerta, tipo: r.tipo, nota: r.nota }; });
+  return out;
+}
+function vidaUtilCat(cat, tabla) {
+  return tabla[cat] || VIDA_UTIL_DEFAULT;
+}
+
+// Margen promedio real de la categoría (mín. 3 productos comparables) — solo se usa
+// para ESTIMAR el costo de un lote cuyo producto no tiene costo cargado en Loyverse.
+async function margenPromedioCategoria(env, cat) {
+  const { results } = await env.DB.prepare(
+    "SELECT costo, precio FROM productos WHERE categoria = ? AND costo > 0 AND precio > 0 AND precio > costo"
+  ).bind(cat).all();
+  if (results.length < 3) return null;
+  const ms = results.map(r => (r.precio - r.costo) / r.precio);
+  return ms.reduce((a, b) => a + b, 0) / ms.length;
+}
+
+// `lote` necesita {categoria, fechaVencimiento} (DD/MM/AAAA); `productoRow` es una fila
+// de `productos` (o null); `ventaRow` trae {u30} (o null); `saltarMargen=true` evita la
+// consulta de margen promedio (se usa en el recálculo masivo, para no hacer N consultas).
+async function calcularLote(env, lote, productoRow, ventaRow, tablaVidaUtil, saltarMargen) {
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const venc = parseFechaDDMMAAAA(lote.fechaVencimiento);
+  if (!venc) return { estado: "Vigente", prioridad: "—", accion: "⚠️ Fecha inválida", precioRecomendado: null, costoUsado: 0, costoOrigen: "" };
+
+  const diasRestantes = Math.round((venc - hoy) / 86400000);
+  const cfgCat = vidaUtilCat(lote.categoria, tablaVidaUtil);
+
+  const it = productoRow || {};
+  const precioActual = it.precio || 0;
+  let costoUsado = it.costo || 0, costoOrigen = "real";
+  if (!costoUsado) {
+    const m = saltarMargen ? null : await margenPromedioCategoria(env, lote.categoria);
+    if (m != null) { costoUsado = Math.round(precioActual * (1 - m)); costoOrigen = "estimado"; }
+    else costoOrigen = "sin_datos";
+  }
+
+  const v = ventaRow || {};
+  const ventaDiaria = (v.u30 || 0) / 30;
+  const cobertura = ventaDiaria > 0 ? (it.stock || 0) / ventaDiaria : Infinity;
+  const acelerar = diasRestantes >= 0 && diasRestantes <= 7 && cobertura > diasRestantes * 1.3;
+
+  let estado, prioridad, accion, descuento = 0;
+  if (diasRestantes <= 0) {
+    if (cfgCat.tipo === "cambio") { estado = "Vencido"; prioridad = "⚫"; accion = "Vencido — gestionar cambio con proveedor"; descuento = 0; }
+    else { estado = "Vencido"; prioridad = "⚫"; accion = "Vencido — retirar y registrar merma"; descuento = 1; }
+  } else if (diasRestantes > cfgCat.dias) {
+    estado = "Vigente"; prioridad = "—"; accion = "—"; descuento = 0;
+  } else if (cfgCat.tipo === "cambio") {
+    estado = "Por vencer";
+    const diasEnVentana = cfgCat.dias - diasRestantes;
+    if (diasEnVentana <= 5) { prioridad = "🟢"; accion = "Gestionar cambio con proveedor"; }
+    else if (diasEnVentana <= 15) { prioridad = "🟡"; accion = "Gestionar cambio con proveedor (urgente)"; }
+    else { prioridad = "🔴"; accion = "Gestionar cambio con proveedor (muy atrasado)"; }
+    descuento = 0;
+  } else {
+    estado = "Por vencer";
+    if (cfgCat.tipo === "corta") {
+      if (diasRestantes >= 5) { prioridad = "🟡"; accion = "Reubicar, sin rebaja"; descuento = 0; }
+      else if (diasRestantes >= 3) { prioridad = "🟠"; accion = "Rebaja 25%"; descuento = 0.25; }
+      else if (diasRestantes >= 1) { prioridad = "🔴"; accion = "Rebaja 45%"; descuento = 0.45; }
+      else { prioridad = "⚫"; accion = "Liquidar al costo"; descuento = 1; }
+      if (acelerar && descuento < 0.45 && diasRestantes >= 1) {
+        prioridad = "🔴"; accion = "Rebaja 45% (acelerado: el stock no alcanza a rotar)"; descuento = 0.45;
+      }
+    } else {
+      const diasEnVentana = cfgCat.dias - diasRestantes;
+      if (diasEnVentana <= 1) { prioridad = "🟢"; accion = "Gestionar cambio con proveedor"; descuento = 0; }
+      else if (diasEnVentana <= 6) { prioridad = "🟡"; accion = "Rebaja 10%"; descuento = 0.10; }
+      else if (diasEnVentana <= 11) { prioridad = "🟠"; accion = "Rebaja 20%"; descuento = 0.20; }
+      else { prioridad = "🔴"; accion = "Liquidación 50%"; descuento = 0.50; }
+      if (acelerar && descuento < 0.50) {
+        prioridad = "🔴"; accion = "Liquidación 50% (acelerado: el stock no alcanza a rotar)"; descuento = 0.50;
+      }
+    }
+  }
+
+  let precioRecomendado = null;
+  if (precioActual > 0 && cfgCat.tipo !== "cambio") {
+    if (descuento === 0) precioRecomendado = (estado === "Vigente") ? null : precioActual;
+    else if (descuento === 1) precioRecomendado = costoUsado || null;
+    else precioRecomendado = redondeoPsicologico(Math.max(Math.round(precioActual * (1 - descuento)), costoUsado || 0));
+  }
+
+  return { estado, prioridad, accion, precioRecomendado, costoUsado, costoOrigen, diasRestantes };
+}
+
+// Recalcula estado/prioridad/acción/precio de TODOS los lotes activos (con fecha,
+// sin revisar todavía y sin un descuento ya activo) — se invoca a pedido
+// (?action=recalcular_vencimientos) y conviene sumarla al cron diario que ya existe.
+async function recalcularVencimientosD1(env) {
+  const { results: rows } = await env.DB.prepare(
+    "SELECT * FROM vencimientos WHERE estado NOT IN ('Revisado','Retirado','Cambiado','Descuento recibido','Desechado') " +
+    "AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento != '' AND sku IS NOT NULL " +
+    "AND (descuento_activo IS NULL OR descuento_activo = 0)"
+  ).all();
+  if (!rows.length) return 0;
+  const [{ results: prodRows }, ventaRows, tablaVidaUtil] = await Promise.all([
+    env.DB.prepare("SELECT * FROM productos").all(),
+    ventasResumenTodas(env),
+    getVidaUtilTabla(env)
+  ]);
+  const prodMap = {}; prodRows.forEach(p => { prodMap[p.sku] = p; });
+  const ventaMap = {}; ventaRows.forEach(v => { ventaMap[v.sku] = v; });
+
+  const stmts = [];
+  for (const row of rows) {
+    const calc = await calcularLote(env, { categoria: row.categoria, fechaVencimiento: row.fecha_vencimiento },
+      prodMap[row.sku], ventaMap[row.sku], tablaVidaUtil, true);
+    stmts.push(env.DB.prepare(
+      "UPDATE vencimientos SET estado=?, prioridad=?, accion=?, precio_recomendado=?, costo_usado=?, costo_origen=? WHERE id=?"
+    ).bind(calc.estado, calc.prioridad, calc.accion, calc.precioRecomendado || null, calc.costoUsado || null, calc.costoOrigen, row.id));
+  }
+  await batchRun(env, stmts, 100);
+  return stmts.length;
+}
+
+// ============================================================
 //  VENCIMIENTOS (Módulo 5) — lista de lotes con fecha de
 //  vencimiento y cambio de estado (Cambiado / Descuento recibido /
 //  Desechado), con retiro opcional de stock en Loyverse.
@@ -1998,11 +2155,19 @@ async function accionEditarFechaVencimiento(env, payload) {
   if (!id) throw new Error("Falta el id del lote");
   const fechaTxt = String(payload.fechaVencimiento || "").trim();
   if (!fechaTxt || !parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha inválida (usa DD/MM/AAAA)");
-  const lote = await get(env, "SELECT id, estado FROM vencimientos WHERE id = ?", id);
+  const lote = await get(env, "SELECT * FROM vencimientos WHERE id = ?", id);
   if (!lote) throw new Error("Lote no encontrado");
-  const nuevoEstado = lote.estado === "Sin fecha" ? "Pendiente" : lote.estado;
-  await run(env, "UPDATE vencimientos SET fecha_vencimiento = ?, estado = ? WHERE id = ?", fechaTxt, nuevoEstado, id);
-  return { id, fechaVencimiento: fechaTxt, estado: nuevoEstado };
+
+  // Recalcula estado/prioridad/acción/precio recomendado con la fecha nueva (motor de
+  // Marín 376, ver calcularLote) — antes esto solo pisaba "Sin fecha" por "Pendiente".
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", lote.sku);
+  const tablaVidaUtil = await getVidaUtilTabla(env);
+  const calc = await calcularLote(env, { categoria: lote.categoria, fechaVencimiento: fechaTxt }, it, null, tablaVidaUtil);
+
+  await run(env,
+    "UPDATE vencimientos SET fecha_vencimiento = ?, estado = ?, prioridad = ?, accion = ?, precio_recomendado = ? WHERE id = ?",
+    fechaTxt, calc.estado, calc.prioridad, calc.accion, calc.precioRecomendado || null, id);
+  return { id, fechaVencimiento: fechaTxt, estado: calc.estado, prioridad: calc.prioridad, accion: calc.accion };
 }
 
 // ============================================================
@@ -2567,6 +2732,89 @@ async function fichaProducto(env, sku) {
   return it;
 }
 
+// Resumen de ventas de UN sku (u7/u14/u30/u90/rev/prof) — misma ventana de fechas
+// que ventasResumenTodas(), pero acotado a un solo producto.
+async function ventaResumenUnSku(env, sku) {
+  const ahora = Date.now();
+  const d7 = fechaISO(new Date(ahora - 7 * 86400000));
+  const d14 = fechaISO(new Date(ahora - 14 * 86400000));
+  const d30 = fechaISO(new Date(ahora - 30 * 86400000));
+  const d90 = fechaISO(new Date(ahora - 90 * 86400000));
+  return get(env,
+    `SELECT sku,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u7,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u14,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u30,
+       SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u90,
+       SUM(venta) AS rev, SUM(utilidad) AS prof
+     FROM ventas WHERE sku = ? GROUP BY sku`,
+    d7, d14, d30, d90, sku);
+}
+
+// ============================================================
+//  FICHA COMPLETA DE PRODUCTO (portado de Marín 376, ver repFichaProducto) —
+//  producto + ventas + lotes activos + mermas recientes + movimientos de
+//  auditoría + historial de precios + proveedor (principal y extras). El
+//  ?action=ficha_producto de Argomedo devolvía solo el producto plano
+//  (ver fichaProducto arriba, que se conserva para no romper nada existente);
+//  esta versión es la que consume el frontend de Marín.
+// ============================================================
+async function repFichaProducto(env, sku) {
+  const producto = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!producto) throw new Error("SKU no encontrado en el catálogo: " + sku);
+  const venta = await ventaResumenUnSku(env, sku);
+
+  const { results: lotes } = await env.DB.prepare("SELECT * FROM vencimientos WHERE sku = ? ORDER BY fecha_vencimiento ASC").bind(sku).all();
+  const ordenPrio = { "⚫": 0, "🔴": 1, "🟠": 2, "🟡": 3, "🟢": 4, "—": 5 };
+  const lotesActivos = lotes.filter(l => l.estado !== "Revisado")
+    .sort((a, b) => (ordenPrio[a.prioridad] ?? 9) - (ordenPrio[b.prioridad] ?? 9));
+
+  const { results: mermas } = await env.DB.prepare("SELECT * FROM mermas WHERE sku = ? ORDER BY id DESC LIMIT 20").bind(sku).all();
+  const { results: auditoria } = await env.DB.prepare("SELECT * FROM auditoria WHERE sku = ? ORDER BY id DESC LIMIT 30").bind(sku).all();
+  const { results: historialPrecios } = await env.DB.prepare("SELECT * FROM historial_precios WHERE sku = ? ORDER BY id DESC LIMIT 20").bind(sku).all();
+
+  const fechasCandidatas = [];
+  if (auditoria[0]) fechasCandidatas.push(auditoria[0].fecha);
+  if (mermas[0]) fechasCandidatas.push(mermas[0].fecha);
+  if (lotes[0]) fechasCandidatas.push(lotes[0].fecha_ingreso);
+  const ultimaModificacion = fechasCandidatas.sort((a, b) => {
+    const da = parseFechaDDMMAAAA((a || "").slice(0, 10)), db = parseFechaDDMMAAAA((b || "").slice(0, 10));
+    return (db ? db.getTime() : 0) - (da ? da.getTime() : 0);
+  })[0] || null;
+
+  const proveedor = producto.proveedor_id ? await get(env, "SELECT id, nombre FROM proveedores WHERE id = ?", producto.proveedor_id) : null;
+  const { results: proveedoresExtraRows } = await env.DB.prepare(
+    "SELECT pv.id, pv.nombre FROM producto_proveedor_extra pe JOIN proveedores pv ON pv.id = pe.proveedor_id WHERE pe.sku = ? ORDER BY pv.nombre"
+  ).bind(sku).all();
+
+  return {
+    producto: {
+      sku: producto.sku, nombre: producto.nombre, categoria: producto.categoria,
+      barcode: producto.barcode, costo: producto.costo, precio: producto.precio,
+      margen: producto.precio > 0 ? Math.round((1 - producto.costo / producto.precio) * 100) : null,
+      stock: producto.stock, trackStock: !!producto.track_stock, soldByWeight: !!producto.sold_by_weight,
+      descripcion: producto.descripcion || "", idLoyverse: producto.id_loyverse || "",
+      imagen: producto.imagen_url || "",
+      proveedorId: producto.proveedor_id || null, proveedor: proveedor ? proveedor.nombre : (producto.proveedor || null),
+      sector: producto.sector || null,
+      proveedoresExtra: proveedoresExtraRows.map(r => r.nombre),
+      proveedoresIdsExtra: proveedoresExtraRows.map(r => ({ id: r.id, nombre: r.nombre })),
+      ultimaModificacion
+    },
+    ventas: venta ? { u7: venta.u7 || 0, u14: venta.u14 || 0, u30: venta.u30 || 0, u90: venta.u90 || 0, rev: Math.round(venta.rev || 0), prof: Math.round(venta.prof || 0) } : null,
+    lotes: lotesActivos.map(l => ({
+      filaIndex: l.id, lote: l.lote, cantidad: l.cantidad, fechaVencimiento: l.fecha_vencimiento,
+      estado: l.estado, prioridad: l.prioridad, accion: l.accion, precioRecomendado: l.precio_recomendado
+    })),
+    mermasRecientes: mermas.map(m => ({ fecha: m.fecha, cantidad: m.cantidad, motivo: m.motivo, costoTotal: m.costo_total, responsable: m.responsable })),
+    movimientos: auditoria.map(a => ({ fecha: a.fecha, accion: a.accion, stock: a.stock, motivo: a.motivo, responsable: a.responsable })),
+    historialPrecios: historialPrecios.map(h => ({
+      fecha: h.fecha, precioAntes: h.precio_antes, precioDespues: h.precio_despues,
+      costoAntes: h.costo_antes, costoDespues: h.costo_despues, responsable: h.responsable
+    }))
+  };
+}
+
 // ============================================================
 //  EDITAR PRODUCTO (ficha completa) — reenvía el ítem completo a
 //  Loyverse con los campos que vinieron en el payload, igual que
@@ -2980,10 +3228,18 @@ export default {
       }
 
       // GET /?action=sync  →  trae el catálogo completo de Loyverse y lo guarda en D1
-      if (action === "sync") {
-        const resultado = await sincronizarCatalogo(env);
-        await marcarCatalogoActualizado(env);
-        return json({ ok: true, ...resultado });
+      if (action === "sync" || action === "full") {
+        // Marín espera de vuelta el payload completo del dashboard (con synced/syncMsg),
+        // no solo el resultado del sync — así el mismo botón "Sincronizar" reemplaza los
+        // datos en pantalla sin necesitar un segundo request.
+        let synced = false, syncMsg = "";
+        try {
+          const resultado = await sincronizarCatalogo(env);
+          await marcarCatalogoActualizado(env);
+          synced = true;
+          syncMsg = "Catálogo sincronizado" + (resultado && resultado.total != null ? ": " + resultado.total + " productos" : "");
+        } catch (err) { syncMsg = err.message; }
+        return json(await payloadDashboard(env, synced, syncMsg));
       }
 
       // GET /?action=catalogo  →  devuelve TODO el catálogo compacto desde D1 (sin tocar
@@ -3086,7 +3342,23 @@ export default {
         const estado = url.searchParams.get("estado") || "";
         const sku = url.searchParams.get("sku") || "";
         const lista = await listaVencimientos(env, { estado, sku });
-        return json({ ok: true, lista });
+        // `lotes` (además de `lista`) — Marín Pedidos espera esta clave; se manda la
+        // misma lista con los nombres de campo que su frontend usa (filaIndex/etc).
+        const lotes = lista.map(r => ({
+          filaIndex: r.id, sku: r.sku, nombre: r.producto, categoria: r.categoria, unidad: r.unidad,
+          lote: r.lote, cantidad: r.cantidad, fechaVencimiento: r.fecha_vencimiento, estado: r.estado,
+          prioridad: r.prioridad, accion: r.accion, precioRecomendado: r.precio_recomendado || null,
+          costoUsado: r.costo_usado || null, costoOrigen: r.costo_origen
+        }));
+        return json({ ok: true, lista, lotes });
+      }
+
+      // GET /?action=recalcular_vencimientos → recalcula estado/prioridad/acción/precio
+      // recomendado de todos los lotes activos (motor de Marín 376, ver calcularLote).
+      if (action === "recalcular_vencimientos") {
+        const recalculados = await recalcularVencimientosD1(env);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, recalculados });
       }
 
       // POST { action:'vencimiento_estado', payload:{id,estado,responsable,retirarStock,cantidadRetiro} }
@@ -3108,7 +3380,7 @@ export default {
 
       // POST { action:'vencimiento_fecha', payload:{id,fechaVencimiento,responsable} }
       // → corrige la fecha de vencimiento de un lote ya creado.
-      if (action === "vencimiento_fecha") {
+      if (action === "vencimiento_fecha" || action === "editar_fecha_venc") {
         const resultado = await accionEditarFechaVencimiento(env, payload);
         await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
@@ -3118,7 +3390,7 @@ export default {
       // → registra una merma (pérdida): guarda el registro en `mermas` con el costo
       //   de Loyverse (o el digitado a mano si el producto no lo tiene cargado) y
       //   descuenta el stock en Loyverse, igual que un ajuste negativo.
-      if (action === "registrar_merma") {
+      if (action === "registrar_merma" || action === "merma") {
         const resultado = await accionMerma(env, payload);
         await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
@@ -3136,7 +3408,7 @@ export default {
 
       // POST { action:'merma_motivo', payload:{id,motivo,responsable} } → corrige el
       // motivo de una merma ya registrada (no vuelve a tocar el stock).
-      if (action === "merma_motivo") {
+      if (action === "merma_motivo" || action === "corregir_motivo_merma") {
         const resultado = await accionMermaMotivo(env, payload);
         return json({ ok: true, ...resultado });
       }
@@ -3228,8 +3500,13 @@ export default {
 
       // POST { action:'riesgo_excluir', payload:{sku,excluido} } → marca/
       // desmarca un producto como excluido de "Riesgo de quiebre".
-      if (action === "riesgo_excluir") {
-        const resultado = await accionRiesgoExcluir(env, payload);
+      if (action === "riesgo_excluir" || action === "excluir_riesgo" || action === "incluir_riesgo") {
+        // Marín usa dos acciones separadas (excluir_riesgo/incluir_riesgo) en vez de un
+        // flag `excluido` en el payload — se traduce acá para reusar accionRiesgoExcluir.
+        const p = action === "excluir_riesgo" ? { ...payload, excluido: true }
+          : action === "incluir_riesgo" ? { ...payload, excluido: false }
+          : payload;
+        const resultado = await accionRiesgoExcluir(env, p);
         return json({ ok: true, ...resultado });
       }
 
@@ -3251,7 +3528,10 @@ export default {
       // y todavía en gestión (sin cerrar).
       if (action === "descuentos_activos") {
         const lista = await repDescuentosActivos(env);
-        return json({ ok: true, lista });
+        // `lotes` (además de `lista`) — mismo criterio que ?action=vencimientos; acá
+        // los nombres de campo ya coinciden, solo cambia `id` por `filaIndex`.
+        const lotes = lista.map(r => ({ ...r, filaIndex: r.id }));
+        return json({ ok: true, lista, lotes });
       }
 
       // POST { action:'aplicar_descuento_vencimiento', payload:{id,precio,responsable} }
@@ -3301,20 +3581,34 @@ export default {
       if (action === "ficha_producto") {
         const sku = url.searchParams.get("sku") || "";
         const it = await fichaProducto(env, sku);
-        return json({ ok: true, item: it });
+        const ficha = await repFichaProducto(env, sku);
+        return json({ ok: true, item: it, ficha });
       }
 
       // POST { action:'agregar_proveedor_extra', payload:{sku,proveedor} } → asigna
       // un proveedor ADICIONAL a un producto (no reemplaza el principal).
-      if (action === "agregar_proveedor_extra") {
-        const resultado = await accionAgregarProveedorExtra(env, payload);
+      if (action === "agregar_proveedor_extra" || action === "agregar_proveedor_id_extra") {
+        // Marín usa proveedor_id (FK) para esta variante; Argomedo resuelve por nombre
+        // — se traduce acá para reusar accionAgregarProveedorExtra sin duplicar lógica.
+        let p = payload;
+        if (action === "agregar_proveedor_id_extra") {
+          const prov = await get(env, "SELECT nombre FROM proveedores WHERE id = ?", Number(payload && payload.proveedor_id));
+          if (!prov) return json({ ok: false, error: "Ese proveedor no existe" }, 400);
+          p = { sku: payload && payload.sku, proveedor: prov.nombre };
+        }
+        const resultado = await accionAgregarProveedorExtra(env, p);
         return json({ ok: true, ...resultado });
       }
 
       // POST { action:'quitar_proveedor_extra', payload:{sku,proveedor} } → quita
       // un proveedor adicional de un producto.
-      if (action === "quitar_proveedor_extra") {
-        const resultado = await accionQuitarProveedorExtra(env, payload);
+      if (action === "quitar_proveedor_extra" || action === "quitar_proveedor_id_extra") {
+        let p = payload;
+        if (action === "quitar_proveedor_id_extra") {
+          const prov = await get(env, "SELECT nombre FROM proveedores WHERE id = ?", Number(payload && payload.proveedor_id));
+          p = { sku: payload && payload.sku, proveedor: prov ? prov.nombre : "" };
+        }
+        const resultado = await accionQuitarProveedorExtra(env, p);
         return json({ ok: true, ...resultado });
       }
 
@@ -3334,6 +3628,22 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // POST { action:'eliminar_productos', payload:{items:[{sku,...}]} } → variante en
+      // lote de Marín (varios productos de una): reusa accionEliminarProducto por sku,
+      // sin duplicar la lógica de borrado en Loyverse.
+      if (action === "eliminar_productos") {
+        const items = Array.isArray(payload && payload.items) ? payload.items : [];
+        if (!items.length) return json({ ok: false, error: "No hay productos para eliminar" }, 400);
+        let eliminados = 0;
+        const errores = [];
+        for (const it of items) {
+          try { await accionEliminarProducto(env, { sku: it && it.sku }); eliminados++; }
+          catch (e) { errores.push({ sku: it && it.sku, error: e.message }); }
+        }
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, eliminados, errores });
+      }
+
       // GET /?action=proveedores_conteo  →  lista de proveedores con cantidad de productos.
       if (action === "proveedores_conteo") {
         const lista = await listaProveedoresConConteo(env);
@@ -3345,6 +3655,27 @@ export default {
         const proveedor = url.searchParams.get("proveedor") || "";
         const lista = await productosDeProveedor(env, proveedor);
         return json({ ok: true, lista });
+      }
+
+      // GET /?action=proveedores  →  acción combinada que espera Marín (Argomedo la
+      // tenía partida en proveedores_conteo + proveedores_sectores). Trae proveedores
+      // con id + cantidad de productos (principal o extra), y sectores combinados
+      // (catálogo + creados a mano).
+      if (action === "proveedores") {
+        const { results: proveedoresRows } = await env.DB.prepare(
+          `SELECT pr.id, pr.nombre, COUNT(DISTINCT t.sku) AS productos
+           FROM proveedores pr
+           LEFT JOIN (
+             SELECT proveedor AS nombre, sku FROM productos WHERE proveedor IS NOT NULL AND proveedor != ''
+             UNION ALL
+             SELECT pv.nombre AS nombre, pe.sku FROM producto_proveedor_extra pe JOIN proveedores pv ON pv.id = pe.proveedor_id
+           ) t ON t.nombre = pr.nombre
+           GROUP BY pr.id, pr.nombre ORDER BY pr.nombre`
+        ).all();
+        const { sectores } = await catalogoProveedoresSectores(env);
+        const { results: sectoresPersRows } = await env.DB.prepare("SELECT nombre FROM sectores_personalizados").all();
+        const sectoresCombinados = [...new Set([...sectores, ...sectoresPersRows.map(r => r.nombre)])].sort((a, b) => a.localeCompare(b, "es"));
+        return json({ ok: true, proveedores: proveedoresRows, sectores: sectoresCombinados });
       }
 
       // POST { action:'guardar_multiplo_producto', payload:{sku,multiplo,empaque,palabra} }
