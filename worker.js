@@ -1430,7 +1430,16 @@ async function repDiagProveedores(env, nombreFiltro) {
   const { results: duplicados } = await env.DB.prepare(
     "SELECT nombre, COUNT(*) as n, GROUP_CONCAT(id) as ids FROM proveedores GROUP BY nombre HAVING COUNT(*) > 1"
   ).all();
-  return { tablasConFkProveedores: tablas, candidatos, conteos, proveedoresDuplicados: duplicados };
+  // Texto EXACTO (case-sensitive) guardado en productos.proveedor que se parece al nombre
+  // buscado — LIKE de SQLite es case-insensitive para ASCII, así que esto agrupa variantes
+  // como "ANDINA"/"Andina"/"andina" por separado y expone si no coinciden letra por letra
+  // con proveedores.nombre, que es justo lo que el frontend compara con === (case-sensitive).
+  const textoProductos = nombreFiltro
+    ? (await env.DB.prepare(
+        "SELECT proveedor, COUNT(*) as n FROM productos WHERE proveedor LIKE ? GROUP BY proveedor"
+      ).bind("%" + nombreFiltro + "%").all()).results
+    : [];
+  return { tablasConFkProveedores: tablas, candidatos, conteos, proveedoresDuplicados: duplicados, productosProveedorTexto: textoProductos };
 }
 
 // Productos que recibieron mercadería (auditoria.accion='recepcion_stock') en las
