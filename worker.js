@@ -1410,6 +1410,67 @@ async function repMermasSeries(env, diasParam) {
 // `producto_proveedor_extra` (equivalente a `producto_proveedor_id` de Marín) — el
 // proveedor PRINCIPAL de un producto sigue viviendo en `productos.proveedor` (TEXT),
 // que este diagnóstico no puede rastrear por FK porque no lo es.
+// GET /?action=migrar_mayusculas — de una sola vez, idempotente: pasa a mayúscula todos los
+// nombres de proveedores/sectores ya existentes (y el texto copiado en productos.proveedor/
+// productos.sector), fusionando filas que queden con el mismo nombre al convertir (ej. si
+// "Bebidas" y "BEBIDAS" coexisten, gana la de id más chico y la otra se borra después de
+// mover sus productos). Sin esto, los proveedores/sectores creados antes de forzar mayúscula
+// en el frontend quedarían mezclados para siempre con los nuevos.
+async function migrarMayusculas(env) {
+  const resumen = { proveedoresFusionados: [], sectoresFusionados: [], sectoresPersonalizadosFusionados: [], productosProveedorActualizados: 0, productosSectorActualizados: 0 };
+
+  const { results: provs } = await env.DB.prepare("SELECT id, nombre FROM proveedores").all();
+  const porMayusProv = {};
+  provs.forEach(p => { const up = p.nombre.toUpperCase(); (porMayusProv[up] = porMayusProv[up] || []).push(p); });
+  for (const up of Object.keys(porMayusProv)) {
+    const grupo = porMayusProv[up].sort((a, b) => a.id - b.id);
+    const ganador = grupo[0];
+    for (const perdedor of grupo.slice(1)) {
+      await run(env, "UPDATE productos SET proveedor_id = ? WHERE proveedor_id = ?", ganador.id, perdedor.id);
+      await run(env, "UPDATE OR IGNORE producto_proveedor_extra SET proveedor_id = ? WHERE proveedor_id = ?", ganador.id, perdedor.id);
+      await run(env, "DELETE FROM producto_proveedor_extra WHERE proveedor_id = ?", perdedor.id);
+      await run(env, "DELETE FROM proveedores WHERE id = ?", perdedor.id);
+      resumen.proveedoresFusionados.push({ ganador: up, perdedorId: perdedor.id, perdedorNombre: perdedor.nombre });
+    }
+    if (ganador.nombre !== up) await run(env, "UPDATE proveedores SET nombre = ? WHERE id = ?", up, ganador.id);
+  }
+
+  const { meta: metaProdProv } = await run(env, "UPDATE productos SET proveedor = UPPER(proveedor) WHERE proveedor IS NOT NULL AND proveedor != UPPER(proveedor)");
+  resumen.productosProveedorActualizados = (metaProdProv && metaProdProv.changes) || 0;
+
+  const { results: secs } = await env.DB.prepare("SELECT id, nombre FROM sectores").all();
+  const porMayusSec = {};
+  secs.forEach(s => { const up = s.nombre.toUpperCase(); (porMayusSec[up] = porMayusSec[up] || []).push(s); });
+  for (const up of Object.keys(porMayusSec)) {
+    const grupo = porMayusSec[up].sort((a, b) => a.id - b.id);
+    const ganador = grupo[0];
+    for (const perdedor of grupo.slice(1)) {
+      await run(env, "DELETE FROM sectores WHERE id = ?", perdedor.id);
+      resumen.sectoresFusionados.push({ ganador: up, perdedorId: perdedor.id, perdedorNombre: perdedor.nombre });
+    }
+    if (ganador.nombre !== up) await run(env, "UPDATE sectores SET nombre = ? WHERE id = ?", up, ganador.id);
+  }
+
+  let secsPers = [];
+  try { ({ results: secsPers } = await env.DB.prepare("SELECT nombre FROM sectores_personalizados").all()); } catch (e) { /* sin filas todavía */ }
+  const vistos = new Set();
+  for (const s of secsPers) {
+    const up = s.nombre.toUpperCase();
+    if (vistos.has(up)) {
+      await run(env, "DELETE FROM sectores_personalizados WHERE nombre = ?", s.nombre);
+      resumen.sectoresPersonalizadosFusionados.push({ ganador: up, perdedorNombre: s.nombre });
+      continue;
+    }
+    vistos.add(up);
+    if (s.nombre !== up) await run(env, "UPDATE sectores_personalizados SET nombre = ? WHERE nombre = ?", up, s.nombre);
+  }
+
+  const { meta: metaProdSec } = await run(env, "UPDATE productos SET sector = UPPER(sector) WHERE sector IS NOT NULL AND sector != UPPER(sector)");
+  resumen.productosSectorActualizados = (metaProdSec && metaProdSec.changes) || 0;
+
+  return resumen;
+}
+
 async function repDiagProveedores(env, nombreFiltro) {
   const { results: tablas } = await env.DB.prepare(
     "SELECT name, sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL " +
@@ -3544,7 +3605,10 @@ async function catalogoProveedoresSectores(env) {
 }
 
 async function accionCrearProveedor(env, payload) {
-  const nombre = String((payload || {}).nombre || "").trim();
+  // Mayúscula forzada acá también (no solo en el frontend) — es el punto de entrada real,
+  // cualquier caller nuevo que se agregue después queda cubierto sin depender de que recuerde
+  // forzarMayusculaInput() del lado del cliente.
+  const nombre = String((payload || {}).nombre || "").trim().toUpperCase();
   if (!nombre) throw new Error("Falta el nombre del proveedor");
   await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", nombre);
   return { nombre };
@@ -3555,7 +3619,7 @@ async function accionCrearProveedor(env, payload) {
 // dos filas comparten nombre visible con espacios distintos).
 async function accionRenombrarProveedor(env, payload) {
   const id = Number((payload && payload.id) || 0);
-  const nombreNuevo = String((payload && payload.nombre) || "").trim();
+  const nombreNuevo = String((payload && payload.nombre) || "").trim().toUpperCase();
   if (!id) throw new Error("Falta el id del proveedor");
   if (!nombreNuevo) throw new Error("Falta el nombre nuevo");
   const actual = await get(env, "SELECT id, nombre FROM proveedores WHERE id = ?", id);
@@ -3574,7 +3638,7 @@ async function accionRenombrarProveedor(env, payload) {
 // sector viejo pasan al nuevo, y el nombre viejo se retira del catálogo).
 async function accionRenombrarSector(env, payload) {
   const actualNombre = String((payload && payload.actual) || "").trim();
-  const nuevoNombre = String((payload && payload.nuevo) || "").trim();
+  const nuevoNombre = String((payload && payload.nuevo) || "").trim().toUpperCase();
   if (!actualNombre) throw new Error("Falta el sector actual");
   if (!nuevoNombre) throw new Error("Falta el nombre nuevo");
   if (actualNombre === nuevoNombre) return { sinCambios: true, productosActualizados: 0 };
@@ -3710,7 +3774,7 @@ async function accionEliminarProveedor(env, payload) {
 }
 
 async function accionCrearSector(env, payload) {
-  const nombre = String((payload || {}).nombre || "").trim();
+  const nombre = String((payload || {}).nombre || "").trim().toUpperCase();
   if (!nombre) throw new Error("Falta el nombre del sector");
   await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", nombre);
   return { nombre };
@@ -4871,6 +4935,12 @@ export default {
       // "Gestionar proveedores" (portado de Marín 376, Fase 2).
       if (action === "diag_proveedores") {
         const r = await repDiagProveedores(env, url.searchParams.get("nombre"));
+        return json({ ok: true, ...r });
+      }
+
+      // GET /?action=migrar_mayusculas — de una sola vez, ver comentario de migrarMayusculas().
+      if (action === "migrar_mayusculas") {
+        const r = await migrarMayusculas(env);
         return json({ ok: true, ...r });
       }
 
