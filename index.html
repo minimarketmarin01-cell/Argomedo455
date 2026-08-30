@@ -4379,7 +4379,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-29.3';
+const APP_VERSION='2026-08-29.4';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -7099,6 +7099,21 @@ async function ejecutarRenombrar(){
       const idx=_psProveedores.findIndex(p=>p.id===_renombrarCtx.id);
       if(idx>-1)_psProveedores[idx].nombre=j.proveedor.nombre;
       _psProveedores.sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+      // FIX: el servidor renombra bien (proveedores.nombre + productos.proveedor TEXT que
+      // coincidía con el nombre viejo), pero DB.items es una copia local en memoria que
+      // nadie más actualizaba acá — itemsFor(nombreNuevo) buscaba el nombre nuevo contra
+      // datos todavía con el nombre viejo y no encontraba nada ("no tiene productos
+      // asociados") hasta el próximo sync completo. Se parchea DB.items al instante, igual
+      // que ya hace el resto de la app con precio/stock tras una acción exitosa.
+      const nombreViejo=j.nombreAnterior||_renombrarCtx.nombreActual;
+      (DB.items||[]).forEach(it=>{
+        if(it.prov===nombreViejo)it.prov=j.proveedor.nombre;
+        if(it.proveedorNombre===nombreViejo)it.proveedorNombre=j.proveedor.nombre;
+        if(it.proveedorNombresExtra&&it.proveedorNombresExtra.includes(nombreViejo)){
+          it.proveedorNombresExtra=it.proveedorNombresExtra.map(n=>n===nombreViejo?j.proveedor.nombre:n);
+        }
+      });
+      persist();
       showToast('Proveedor renombrado a "'+j.proveedor.nombre+'"');
       cerrarModal('rn-ov');
       if(_renombrarCtx.onRenombrado)_renombrarCtx.onRenombrado(j.proveedor.nombre);
