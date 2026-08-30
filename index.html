@@ -3781,7 +3781,19 @@ async function renderInicio2(){
     const n=(DB&&DB.meta&&DB.meta.nitems)?fmt.format(DB.meta.nitems):'—';
     const ts=lastSyncTime();
     const hora=ts?new Date(ts).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'}):'—';
-    hdrSub.textContent=`${n} productos · Última sincronización ${hora}`;
+    let debug='';
+    // DIAGNÓSTICO TEMPORAL — investigando por qué a veces aparece "— productos" con una
+    // hora de sincronización real (ver historial de commits). Distingue 3 causas posibles:
+    // (a) DB.items sí tiene datos pero DB.meta quedó desactualizado (bug de cálculo, no de
+    // almacenamiento), (b) no hay nada en localStorage (se perdió la copia local), (c) sí
+    // hay algo en localStorage pero quedó corrupto/vacío al parsearlo. Sacar después de
+    // confirmar la causa real.
+    if(n==='—'){
+      let cacheLen=null;
+      try{const c=localStorage.getItem('cumpas_db');cacheLen=c?c.length:0;}catch(e){cacheLen=-1;}
+      debug=` [diag: items en memoria=${items.length}, cache local=${cacheLen===-1?'error':cacheLen+'b'}]`;
+    }
+    hdrSub.textContent=`${n} productos · Última sincronización ${hora}${debug}`;
   }
 
   // --- Cálculos base: quiebre/pedir (analyze), sin movimiento (smCalcular), riesgo de quiebre
@@ -4388,7 +4400,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-30.2';
+const APP_VERSION='2026-08-30.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
