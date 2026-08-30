@@ -3467,7 +3467,13 @@ const SO={urgente:0,pedir:1,sinstock:2,ok:3,sobre:4};const SL={urgente:'Urgente'
 // el mismo criterio al filtrar el carrito visible (currentOrderVisible) — usar solo it.prov
 // ahí escondía del carrito los productos ya migrados a proveedor real con nombre distinto de
 // su categoría de Loyverse (el pedido se guardaba en state.edits pero no se veía).
-function esDelProveedor(it,p){return it.proveedorNombre?(it.proveedorNombre===p||(it.proveedorNombresExtra&&it.proveedorNombresExtra.includes(p))):(it.prov===p||(it.provsExtra&&it.provsExtra.includes(p)));}
+// FIX: antes esto era un if/else que, si el producto NO tenía proveedor PRINCIPAL por FK
+// (proveedorNombre vacío — el caso normal en Los Cumpas, donde el texto es la fuente real),
+// ignoraba por completo sus proveedores EXTRA por FK (proveedorNombresExtra) — un producto
+// asignado a un proveedor solo como "extra" (Ficha → Otros proveedores del mismo producto)
+// nunca aparecía en el panel de ese proveedor, aunque "Gestionar proveedores" sí lo contaba
+// (su conteo sí suma extras). Ahora se comprueban las 4 fuentes de forma independiente.
+function esDelProveedor(it,p){return it.prov===p||it.proveedorNombre===p||(it.proveedorNombresExtra&&it.proveedorNombresExtra.includes(p))||(it.provsExtra&&it.provsExtra.includes(p));}
 function itemsFor(p){return DB.items.filter(i=>esDelProveedor(i,p));}
 // Nombre de proveedor para MOSTRAR: el proveedor real de la WebApp en MAYÚSCULAS si el producto
 // ya fue migrado (distingue de un vistazo "ya asignado a un proveedor real" de "todavía usando la
@@ -4373,7 +4379,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-29.2';
+const APP_VERSION='2026-08-29.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
