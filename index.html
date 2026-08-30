@@ -4897,9 +4897,16 @@ async function pollFondo(){
 
     const firma=JSON.stringify(j.items)+'|'+JSON.stringify(j.ventas)+'|'+JSON.stringify(j.pendientes);
     if(firma===_ultimoPayloadFirma)return; // nada cambió, no hay nada que repintar
-    _ultimoPayloadFirma=firma;
 
-    DB=buildDBfromCloud(j.items,j.ventas,j.pendientes,j.provsExtra,j.provsIdsExtra,j.provsNombresExtra,j.multiplos,j.empaques,j.palabras);if(Array.isArray(j.riesgoExcluidos))RIESGO_EXCLUIDOS=new Set(j.riesgoExcluidos);if(Array.isArray(j.favoritos))FAVORITOS=new Set(j.favoritos);
+    // _ultimoPayloadFirma se fija DESPUÉS de construir la DB con éxito, no antes — si
+    // buildDBfromCloud tira una excepción con datos raros de ESTE payload puntual, el próximo
+    // poll (30s o SSE) debe reintentar con el mismo payload en vez de darlo por "ya visto" y
+    // quedarse pegado para siempre en la última DB buena (el síntoma real que reportó el
+    // usuario: la app se congela sin avisar y solo un sync manual la destraba).
+    const nuevaDB=buildDBfromCloud(j.items,j.ventas,j.pendientes,j.provsExtra,j.provsIdsExtra,j.provsNombresExtra,j.multiplos,j.empaques,j.palabras);
+    _ultimoPayloadFirma=firma;
+    DB=nuevaDB;
+    if(Array.isArray(j.riesgoExcluidos))RIESGO_EXCLUIDOS=new Set(j.riesgoExcluidos);if(Array.isArray(j.favoritos))FAVORITOS=new Set(j.favoritos);
     INVMAP=invMapFromItems(DB.items);
     SRC='nube · '+new Date().toLocaleString('es-CL');
     setLastSync(Date.now());

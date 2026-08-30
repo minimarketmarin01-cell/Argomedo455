@@ -4941,6 +4941,7 @@ export default {
       // GET /?action=migrar_mayusculas — de una sola vez, ver comentario de migrarMayusculas().
       if (action === "migrar_mayusculas") {
         const r = await migrarMayusculas(env);
+        await marcarCatalogoActualizado(env);
         return json({ ok: true, ...r });
       }
 
