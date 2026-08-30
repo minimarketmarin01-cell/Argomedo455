@@ -4444,6 +4444,16 @@ export default {
         // (ventana rodante de 24h, cubre sobrado el día completo en hora de Chile) — best
         // effort, no rompe el sync del catálogo si falla.
         try { await accionSyncVentas(env, 1); await marcarCatalogoActualizado(env); } catch (err) { /* el catálogo ya sincronizó igual */ }
+        // Clasificación ABC (Riesgo de quiebre, Sin costo, sugerido de precio): antes SOLO se
+        // recalculaba si alguien entraba a "Sin costo" y apretaba "Recalcular" a mano — si eso
+        // nunca pasó (catálogo recién migrado, o simplemente nadie lo tocó todavía),
+        // clasificacion_abc queda vacía para siempre y "Solo clase A" en Riesgo de quiebre
+        // muestra 0 aunque sí haya productos de alta rotación. Se recalcula sola en cada
+        // sync completo ("Catálogo"), no en el liviano ("Sincronizar"), para no recomputar
+        // sobre las ventas de 30 días cada pocos segundos.
+        if (action === "full") {
+          try { await calcularABC(env, 30); await marcarCatalogoActualizado(env); } catch (err) { /* el catálogo ya sincronizó igual */ }
+        }
         return json(await payloadDashboard(env, synced, syncMsg));
       }
 
