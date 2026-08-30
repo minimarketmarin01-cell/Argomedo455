@@ -4437,6 +4437,13 @@ export default {
           synced = true;
           syncMsg = "Catálogo sincronizado" + (resultado && resultado.total != null ? ": " + resultado.total + " productos" : "");
         } catch (err) { syncMsg = err.message; }
+        // "Vendidos hoy" se alimenta normalmente solo del webhook receipts.update en tiempo
+        // real (ver comentario de accionSyncVentas) — si el webhook nunca llegó a instalarse
+        // bien en Loyverse, o se perdió algún evento, apretar Sincronizar/Catálogo debía
+        // reflejar igual las ventas del día sin depender de eso. Se trae 1 día hacia atrás
+        // (ventana rodante de 24h, cubre sobrado el día completo en hora de Chile) — best
+        // effort, no rompe el sync del catálogo si falla.
+        try { await accionSyncVentas(env, 1); await marcarCatalogoActualizado(env); } catch (err) { /* el catálogo ya sincronizó igual */ }
         return json(await payloadDashboard(env, synced, syncMsg));
       }
 
