@@ -3373,11 +3373,20 @@ function persist(){
       // Reintento: a veces el motor necesita espacio libre ADEMÁS del que ya ocupa la
       // clave vieja para escribir la nueva (no la sobreescribe "in place") — borrarla
       // primero y reintentar una vez alcanza para la mayoría de los casos.
+      // Se guarda una copia del valor viejo ANTES de borrar: si el reintento también
+      // falla (celular con memoria realmente llena, no solo "necesita espacio extra"),
+      // hay que devolver esa copia en vez de dejar la clave vacía — sin esto, cada
+      // refresco de página en un celular sin espacio borraba el catálogo completo de la
+      // memoria local, mostrando "— productos" hasta la próxima sincronización exitosa
+      // (que a su vez volvía a fallar al guardar, repitiendo el ciclo para siempre).
+      const respaldo=localStorage.getItem('cumpas_db');
       try{
         localStorage.removeItem('cumpas_db');
         localStorage.setItem('cumpas_db',JSON.stringify({DB,SRC}));
         return;
-      }catch(e2){}
+      }catch(e2){
+        try{if(respaldo!=null)localStorage.setItem('cumpas_db',respaldo);}catch(e3){}
+      }
       if(!_avisoMemoriaLlenaMostrado){
         _avisoMemoriaLlenaMostrado=true;
         showToast('Los cambios ya se guardaron en el servidor — solo no se pudo guardar una copia local por falta de espacio en este celular.');
@@ -4379,7 +4388,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-30.1';
+const APP_VERSION='2026-08-30.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
