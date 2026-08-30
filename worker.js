@@ -3948,11 +3948,31 @@ async function accionEditarProducto(env, payload) {
   });
   await loyversePost(env, "/items", Object.assign({}, item, { item_name: nombre, sold_by_weight: soldByWeight, variants: variantes }));
 
-  const proveedor = payload.proveedor != null ? String(payload.proveedor).trim() : it.proveedor;
+  // Ficha (fp-pv-prov, pestaña "Proveedores") manda proveedor_id — el select real de
+  // proveedores de la WebApp, no texto libre. FIX: esto leía payload.proveedor (un
+  // string que ningún caller manda desde hace tiempo), así que cambiar el "Proveedor
+  // principal" desde la Ficha nunca se guardaba en el servidor — solo parecía andar
+  // porque el frontend actualizaba su copia local antes de avisar "Producto
+  // actualizado". Se acepta proveedor_id (resuelto a nombre) y, de respaldo,
+  // payload.proveedor como string por si algún otro caller lo sigue mandando así.
+  let proveedor = it.proveedor;
+  let proveedorId = it.proveedor_id || null;
+  if (payload.proveedor_id !== undefined) {
+    const proveedorIdStr = String(payload.proveedor_id || "").trim();
+    if (!proveedorIdStr) {
+      proveedor = null; proveedorId = null; // "Sin proveedor" — limpia los dos campos
+    } else {
+      const pid = Number(proveedorIdStr);
+      const provRow = pid ? await get(env, "SELECT nombre FROM proveedores WHERE id = ?", pid) : null;
+      if (provRow) { proveedor = provRow.nombre; proveedorId = pid; }
+    }
+  } else if (payload.proveedor != null) {
+    proveedor = String(payload.proveedor).trim();
+  }
   const sector = payload.sector != null ? String(payload.sector).trim() : it.sector;
   await run(env,
-    "UPDATE productos SET nombre=?, barcode=?, precio=?, costo=?, sold_by_weight=?, proveedor=?, sector=? WHERE sku=?",
-    nombre, nuevoBarcode, precio, costo, soldByWeight ? 1 : 0, proveedor || null, sector || null, sku);
+    "UPDATE productos SET nombre=?, barcode=?, precio=?, costo=?, sold_by_weight=?, proveedor=?, proveedor_id=?, sector=? WHERE sku=?",
+    nombre, nuevoBarcode, precio, costo, soldByWeight ? 1 : 0, proveedor || null, proveedorId, sector || null, sku);
   if (proveedor) await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedor);
   if (sector) await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sector);
 
