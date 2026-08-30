@@ -3365,41 +3365,76 @@ function invMapFromItems(items){const m={};items.forEach(it=>{m[it.ref]={nombre:
 // una copia local para que la app abra al instante la próxima vez, no es la fuente de
 // verdad de nada.
 let _avisoMemoriaLlenaMostrado=false;
-function persist(){
+// ===== Copia local del catálogo: IndexedDB, no localStorage =====
+// Con catálogos grandes (miles de productos + historial de ventas) el JSON serializado
+// supera fácil el tope de localStorage (5-10MB según el celular) — confirmado en un
+// celular real: 3.160 productos, "0 bytes" guardados, guardado fallando siempre. IndexedDB
+// no tiene ese tope tan chico (usa el espacio libre real del disco) y además guarda el
+// objeto directo (structured clone), sin pagar el costo de JSON.stringify/parse de varios MB.
+let _idbAbierto=null;
+function _idbAbrir(){
+  if(_idbAbierto)return _idbAbierto;
+  _idbAbierto=new Promise((resolve,reject)=>{
+    if(!('indexedDB' in window)){reject(new Error('IndexedDB no disponible'));return;}
+    const req=indexedDB.open('cumpas_store',1);
+    req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('kv'))req.result.createObjectStore('kv');};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error||new Error('No se pudo abrir la base local'));
+  });
+  return _idbAbierto;
+}
+async function _idbSet(key,val){
+  const db=await _idbAbrir();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('kv','readwrite');
+    tx.objectStore('kv').put(val,key);
+    tx.oncomplete=()=>resolve();
+    tx.onerror=()=>reject(tx.error);
+    tx.onabort=()=>reject(tx.error);
+  });
+}
+async function _idbGet(key){
+  const db=await _idbAbrir();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('kv','readonly');
+    const req=tx.objectStore('kv').get(key);
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function persist(){
   try{
-    localStorage.setItem('cumpas_db',JSON.stringify({DB,SRC}));
+    await _idbSet('cumpas_db',{DB,SRC});
   }catch(e){
-    if(e&&(e.name==='QuotaExceededError'||e.code===22)){
-      // Reintento: a veces el motor necesita espacio libre ADEMÁS del que ya ocupa la
-      // clave vieja para escribir la nueva (no la sobreescribe "in place") — borrarla
-      // primero y reintentar una vez alcanza para la mayoría de los casos.
-      // Se guarda una copia del valor viejo ANTES de borrar: si el reintento también
-      // falla (celular con memoria realmente llena, no solo "necesita espacio extra"),
-      // hay que devolver esa copia en vez de dejar la clave vacía — sin esto, cada
-      // refresco de página en un celular sin espacio borraba el catálogo completo de la
-      // memoria local, mostrando "— productos" hasta la próxima sincronización exitosa
-      // (que a su vez volvía a fallar al guardar, repitiendo el ciclo para siempre).
-      const respaldo=localStorage.getItem('cumpas_db');
-      try{
-        localStorage.removeItem('cumpas_db');
-        localStorage.setItem('cumpas_db',JSON.stringify({DB,SRC}));
-        return;
-      }catch(e2){
-        try{if(respaldo!=null)localStorage.setItem('cumpas_db',respaldo);}catch(e3){}
-      }
+    // IndexedDB no disponible o falló por algún motivo raro — se intenta localStorage
+    // como último recurso (puede fallar igual por espacio en catálogos grandes, pero es
+    // mejor que no intentar nada).
+    try{
+      localStorage.setItem('cumpas_db',JSON.stringify({DB,SRC}));
+    }catch(e2){
       if(!_avisoMemoriaLlenaMostrado){
         _avisoMemoriaLlenaMostrado=true;
-        showToast('Los cambios ya se guardaron en el servidor — solo no se pudo guardar una copia local por falta de espacio en este celular.');
+        showToast('Los cambios ya se guardaron en el servidor — solo no se pudo guardar una copia local en este celular.');
       }
-    }else{
-      showToast('No se pudieron guardar los datos en este dispositivo.');
     }
   }
 }
-function restore(){
+async function restore(){
   try{
+    const o=await _idbGet('cumpas_db').catch(()=>null);
+    if(o&&o.DB){DB=o.DB;INVMAP=invMapFromItems(DB.items);SRC=o.SRC||'datos guardados';return true;}
+    // Migración: si no hay nada en IndexedDB pero sí quedó una copia en localStorage de
+    // antes de este cambio, se usa esa una vez y se pasa a IndexedDB para no perderla.
     const v=localStorage.getItem('cumpas_db');
-    if(v){const o=JSON.parse(v);if(o&&o.DB){DB=o.DB;INVMAP=invMapFromItems(DB.items);SRC=o.SRC||'datos guardados';return true;}}
+    if(v){
+      const o2=JSON.parse(v);
+      if(o2&&o2.DB){
+        DB=o2.DB;INVMAP=invMapFromItems(DB.items);SRC=o2.SRC||'datos guardados';
+        localStorage.removeItem('cumpas_db');
+        persist();
+        return true;
+      }
+    }
   }catch(e){}
   return false;
 }
@@ -3781,19 +3816,7 @@ async function renderInicio2(){
     const n=(DB&&DB.meta&&DB.meta.nitems)?fmt.format(DB.meta.nitems):'—';
     const ts=lastSyncTime();
     const hora=ts?new Date(ts).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'}):'—';
-    let debug='';
-    // DIAGNÓSTICO TEMPORAL — investigando por qué a veces aparece "— productos" con una
-    // hora de sincronización real (ver historial de commits). Distingue 3 causas posibles:
-    // (a) DB.items sí tiene datos pero DB.meta quedó desactualizado (bug de cálculo, no de
-    // almacenamiento), (b) no hay nada en localStorage (se perdió la copia local), (c) sí
-    // hay algo en localStorage pero quedó corrupto/vacío al parsearlo. Sacar después de
-    // confirmar la causa real.
-    if(n==='—'){
-      let cacheLen=null;
-      try{const c=localStorage.getItem('cumpas_db');cacheLen=c?c.length:0;}catch(e){cacheLen=-1;}
-      debug=` [diag: items en memoria=${items.length}, cache local=${cacheLen===-1?'error':cacheLen+'b'}]`;
-    }
-    hdrSub.textContent=`${n} productos · Última sincronización ${hora}${debug}`;
+    hdrSub.textContent=`${n} productos · Última sincronización ${hora}`;
   }
 
   // --- Cálculos base: quiebre/pedir (analyze), sin movimiento (smCalcular), riesgo de quiebre
@@ -4400,7 +4423,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-30.3';
+const APP_VERSION='2026-08-30.4';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14527,7 +14550,13 @@ if(new URLSearchParams(location.search).get('debug')==='1'){
   obs.observe(document.documentElement,{attributes:true,attributeFilter:['class']});
 })();
 
-restore();retagAll();
+// restore() ahora es async (lee de IndexedDB, ver comentario arriba de _idbAbrir) — todo lo
+// que sigue en el arranque necesita el catálogo ya restaurado (reabrir Ficha de producto,
+// etc.), así que se envuelve en una función async que espera restore() antes de seguir, en
+// vez de dispararlo y seguir de largo. El orden interno de todo esto NO cambió, solo ahora
+// corre después de ese await en vez de puramente sincrónico.
+(async function(){
+await restore();retagAll();
 const _ui=restoreUI();
 render();renderProvDay();try{renderInicio2();}catch(e){}
 try{prCargarPendientes();}catch(e){} // badge de "Préstamos" en el menú Más — no debe interrumpir el arranque si falla
@@ -14599,6 +14628,7 @@ window.addEventListener('pagehide',persistUI);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')persistUI();});
 // Auto-sincroniza al abrir si los datos tienen más de 1 hora (o no hay datos)
 autoSyncIfStale();
+})();
 </script>
 </body>
 </html>
