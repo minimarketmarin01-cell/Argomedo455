@@ -3616,8 +3616,15 @@ async function accionCrearProveedor(env, payload) {
   // forzarMayusculaInput() del lado del cliente.
   const nombre = String((payload || {}).nombre || "").trim().toUpperCase();
   if (!nombre) throw new Error("Falta el nombre del proveedor");
-  await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", nombre);
-  return { nombre };
+  // Anidado bajo "proveedor" con id incluido (portado de Marín 376) — el frontend
+  // (psCrearProveedorInline) lee j.proveedor.id/.nombre; antes esto devolvía {nombre} plano,
+  // sin id, así que "Cannot read properties of undefined" reventaba apenas se creaba un
+  // proveedor nuevo desde Crear producto/Ficha (el combo "+ Nuevo proveedor").
+  const existente = await get(env, "SELECT id, nombre FROM proveedores WHERE nombre = ?", nombre);
+  if (existente) return { proveedor: existente, yaExistia: true };
+  await run(env, "INSERT INTO proveedores (nombre) VALUES (?)", nombre);
+  const creado = await get(env, "SELECT id, nombre FROM proveedores WHERE nombre = ?", nombre);
+  return { proveedor: creado };
 }
 
 // POST { action:'renombrar_proveedor', payload:{id,nombre} } (portado de Marín 376)
@@ -3783,7 +3790,10 @@ async function accionCrearSector(env, payload) {
   const nombre = String((payload || {}).nombre || "").trim().toUpperCase();
   if (!nombre) throw new Error("Falta el nombre del sector");
   await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", nombre);
-  return { nombre };
+  // El frontend (psCrearSectorInline) lee j.sector como el nombre del sector (string, no
+  // objeto) — antes esto devolvía {nombre} plano, sin la clave "sector", mismo bug que
+  // accionCrearProveedor.
+  return { sector: nombre };
 }
 
 // ============================================================
@@ -4342,7 +4352,19 @@ async function accionCrearProducto(env, payload) {
     }
   }
 
-  return { sku, nombre, idLoyverse: creado.id, variantId: v.variant_id, precio, costo, stock: stockFinal, barcode, track: trackStock, peso: soldByWeight, iva: ivaConfirmado, avisoImpuesto, avisoStockMinimo };
+  // Anidado bajo "producto" (no plano) — el frontend (portado de Marín) lee j.producto.ref/
+  // .nombre/.prov/.id/.vid/... (mismo patrón real de Marín: marin376-cloudflare/src/index.js
+  // accionCrearProducto, que devuelve {producto:{...}}). Antes esto era plano, así que incluso
+  // cuando el producto SÍ se creaba bien, j.producto quedaba undefined y la app mostraba
+  // "Error del servidor: no se pudo crear el producto" — un falso negativo: el producto ya
+  // estaba creado en Loyverse/D1, pero el aviso decía que había fallado.
+  return {
+    producto: {
+      ref: sku, nombre, prov: proveedor || "SIN PROVEEDOR", id: creado.id, vid: v.variant_id,
+      stock: stockFinal, precio, costo, track: trackStock, barcode, peso: soldByWeight
+    },
+    advertencia: avisoImpuesto || avisoStockMinimo || undefined
+  };
 }
 
 
