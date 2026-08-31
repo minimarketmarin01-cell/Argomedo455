@@ -2549,65 +2549,71 @@ async function accionLoteNuevo(env, payload) {
 }
 
 // ============================================================
-//  AJUSTE MANUAL DE STOCK — para corregir errores (conteo,
-//  ingreso duplicado, merma, etc.) sin pasar por "recepción".
-//  Queda registrado en `auditoria` con todos los datos exigidos:
-//  fecha, responsable, motivo, stock anterior, ajuste y stock final.
+//  RECUENTO RÁPIDO DE STOCK — el usuario escribe la cantidad que contó
+//  físicamente, sin pedir motivo ni responsable (portado de Marín 376,
+//  marin376-cloudflare/src/index.js:2442-2495). Usado por 5 pantallas
+//  distintas (Reconteo de stock, Ficha "Recontar", Recepción "Ajustar
+//  stock", Vencimientos "Editar fecha"/stock, Riesgo de quiebre) — todas
+//  mandan {sku, stockNuevo, responsable} y esperan {stockNuevo,
+//  trackHabilitado, avisoStock} de vuelta.
+//  ANTES había acá una función distinta (con el mismo nombre) que exigía
+//  motivo+responsable+modo — nadie en el frontend la llamaba así; quedó
+//  huérfana desde que se portó Fase 2 y nunca se reemplazó, así que las 5
+//  pantallas de arriba fallaban siempre con "Indica el motivo del ajuste".
 // ============================================================
 async function accionAjustarStock(env, payload) {
   payload = payload || {};
   const sku = String(payload.sku || "").trim();
   if (!sku) throw new Error("Falta el SKU del producto");
-
-  const motivo = String(payload.motivo || "").trim();
-  if (!motivo) throw new Error("Indica el motivo del ajuste");
-
-  const responsable = String(payload.responsable || "").trim();
-  if (!responsable) throw new Error("Indica el usuario responsable del ajuste");
+  const nuevo = Number(payload.stockNuevo);
+  if (payload.stockNuevo == null || payload.stockNuevo === "" || isNaN(nuevo) || nuevo < 0) {
+    throw new Error("Indica la cantidad contada (0 o mayor)");
+  }
 
   const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
   if (!it) throw new Error("Producto no encontrado en el catálogo local: " + sku);
 
-  let res, cantidadAjustada;
-  if (payload.modo === "exacto") {
-    // Conteo físico: el usuario escribe la cantidad REAL que contó (no un +/-). Se
-    // lee el stock fresco de Loyverse y se calcula el delta necesario para llegar
-    // exactamente a ese número — sin importar si el stock previo era negativo.
-    const cantidadExacta = Number(payload.cantidadExacta);
-    if (cantidadExacta == null || isNaN(cantidadExacta) || cantidadExacta < 0) {
-      throw new Error("Indica la cantidad exacta contada (0 o mayor)");
+  const stockAntes = it.stock;
+  let trackHabilitadoAhora = false;
+
+  if (!it.track_stock) {
+    if (!it.id_loyverse) throw new Error("Falta el id de Loyverse (vuelve a sincronizar el catálogo)");
+    try {
+      await accionHabilitarTrackStock(env, { sku });
+      it.track_stock = 1;
+      trackHabilitadoAhora = true;
+      await logMsg(env, "🔓 'Seguir inventario' habilitado en Loyverse: " + it.nombre + " (" + sku + ")");
+    } catch (e) {
+      // No se pudo habilitar en Loyverse (API lo rechazó o falló la conexión) — igual se
+      // guarda el conteo como referencia local, para no dejar al usuario sin poder
+      // registrar su trabajo solo porque Loyverse no respondió en ese momento.
+      await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", nuevo, sku);
+      await run(env,
+        `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        fechaHoraDDMMAAAA(), "recuento_stock", sku, it.nombre, it.categoria, it.id_loyverse, nuevo,
+        "Recuento físico (solo local — no se pudo habilitar seguimiento en Loyverse: " + e.message + "): " +
+        (stockAntes == null ? "s/d" : stockAntes) + " → " + nuevo, String(payload.responsable || "").trim());
+      return {
+        sku, nombre: it.nombre, sinControlStock: true, stockAntes, stockNuevo: nuevo,
+        avisoStock: "⚠️ No se pudo activar 'Seguir inventario' en Loyverse automáticamente (" + e.message + "). El conteo quedó guardado solo en el sistema local — actívalo a mano en Loyverse si quieres que quede sincronizado."
+      };
     }
-    if (!it.track_stock) throw new Error("Este producto no tiene seguimiento de inventario activado");
-    if (!it.variant_id) throw new Error("Falta variant_id (vuelve a sincronizar el catálogo)");
-    const { storeId } = await obtenerStoreId(env);
-    const stockActual = await stockFrescoDeVariante(env, storeId, it.variant_id);
-    if (stockActual == null) throw new Error("Loyverse no devolvió inventario para este producto");
-    const delta = Math.round((cantidadExacta - stockActual) * 1000) / 1000;
-    if (delta === 0) {
-      res = { ok: true, antes: stockActual, despues: stockActual };
-    } else {
-      res = await sumarStockLoyverse(env, it, delta);
-      if (!res.ok) throw new Error("No se pudo ajustar el stock en Loyverse (" + res.motivo + ")");
-    }
-    cantidadAjustada = delta;
-  } else {
-    const cantidad = Number(payload.cantidad);
-    if (!cantidad) throw new Error("Indica una cantidad de ajuste distinta de 0 (positiva para sumar, negativa para restar)");
-    res = await sumarStockLoyverse(env, it, cantidad);
-    if (!res.ok) throw new Error("No se pudo ajustar el stock en Loyverse (" + res.motivo + ")");
-    cantidadAjustada = cantidad;
   }
 
-  const fecha = fechaHoraDDMMAAAA();
-  const detalleModo = payload.modo === "exacto" ? "Conteo físico: " + payload.cantidadExacta + " · " : "";
+  if (!it.variant_id) throw new Error("Falta variant_id (vuelve a sincronizar el catálogo)");
+  const { storeId } = await obtenerStoreId(env);
+  await loyversePost(env, "/inventory", { inventory_levels: [{ variant_id: it.variant_id, store_id: storeId, stock_after: nuevo }] });
+  await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", nuevo, sku);
   await run(env,
     `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
      VALUES (?,?,?,?,?,?,?,?,?)`,
-    fecha, "ajuste_stock", sku, it.nombre, it.categoria, it.id_loyverse, res.despues,
-    detalleModo + motivo + " · Stock anterior: " + res.antes + " · Ajuste: " + (cantidadAjustada > 0 ? "+" : "") + cantidadAjustada + " · Stock final: " + res.despues,
-    responsable);
+    fechaHoraDDMMAAAA(), "recuento_stock", sku, it.nombre, it.categoria, it.id_loyverse, nuevo,
+    (trackHabilitadoAhora ? "Se habilitó 'Seguir inventario' y se registró el primer conteo: " : "Recuento físico: ") +
+    (stockAntes == null ? "s/d" : stockAntes) + " → " + nuevo, String(payload.responsable || "").trim());
+  await logMsg(env, "🔢 Recuento: " + it.nombre + " (" + sku + ") · " + stockAntes + " → " + nuevo);
 
-  return { sku, nombre: it.nombre, fecha, stockAnterior: res.antes, cantidadAjustada, stockFinal: res.despues, motivo, responsable };
+  return { sku, nombre: it.nombre, stockAntes, stockNuevo: nuevo, trackHabilitado: trackHabilitadoAhora };
 }
 
 // ============================================================
