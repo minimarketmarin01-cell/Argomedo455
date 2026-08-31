@@ -4423,7 +4423,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-30.5';
+const APP_VERSION='2026-08-31.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14562,6 +14562,14 @@ if(new URLSearchParams(location.search).get('debug')==='1'){
 // vez de dispararlo y seguir de largo. El orden interno de todo esto NO cambió, solo ahora
 // corre después de ese await en vez de puramente sincrónico.
 (async function(){
+// Todo el bloque de abajo (restaurar pantalla/producto/borrador tal como quedaron, reabrir
+// modal activo, etc.) se protege con un try/catch propio: si CUALQUIER paso de acá revienta
+// con datos puntuales de este celular (un borrador corrupto, una pantalla que ya no existe,
+// etc.), antes se cortaba TODO lo que seguía en este script — incluido autoSyncIfStale() al
+// final, que es lo que arranca el motor de sincronización en tiempo real. Eso explica el
+// patrón reportado más de una vez: "última sincronización" congelada por horas pese a usar
+// la app activamente. Ahora un fallo acá no puede impedir que el sync arranque igual.
+try{
 await restore();retagAll();
 const _ui=restoreUI();
 render();renderProvDay();try{renderInicio2();}catch(e){}
@@ -14626,6 +14634,7 @@ const REABRIR_MODULO={
   }
   if(REABRIR_MODULO[id])REABRIR_MODULO[id](); else abrirModal(id); // genérico para el resto
 })();
+}catch(e){} // ver comentario grande más arriba: un fallo acá no debe impedir lo que sigue
 // guarda la posición de scroll mientras navegas, y al salir/cambiar de app
 let _scrollT=null;
 window.addEventListener('scroll',()=>{clearTimeout(_scrollT);_scrollT=setTimeout(persistUI,200);},{passive:true});
