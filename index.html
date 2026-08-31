@@ -4423,7 +4423,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-31.4';
+const APP_VERSION='2026-08-31.5';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -8025,6 +8025,12 @@ async function mcSeleccionarCategoria(categoria){
     _mcProductos=j.productos||[];
     mcRenderLista(document.getElementById('mc-detalle-buscar').value);
   }catch(e){
+    // Si la recarga falla (corte de red, etc.) NO hay que dejar _mcProductos con lo que
+    // tenía de ANTES — si el usuario escribe algo en el buscador después de este error, el
+    // input dispara mcRenderLista() igual (línea de más abajo, sin chequear si la carga
+    // falló) y eso tapaba este mensaje de error mostrando la lista vieja como si fuera la
+    // actual — incluyendo productos ya eliminados. Vacía la lista en vez de dejar la vieja.
+    _mcProductos=[];
     cont.innerHTML='<div class="vc-empty">'+e.message+'</div>';
   }
   _mcCargando=false;
