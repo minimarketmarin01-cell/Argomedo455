@@ -5276,7 +5276,12 @@ export default {
       if (e && e.codigo === "FALTA_SECRETO") {
         return json({ ok: false, error: e.message, codigo: "FALTA_SECRETO", secreto: e.secreto });
       }
-      return json({ ok: false, error: e.message }, 500);
+      // Si lo que se tiró no es un Error de verdad (o su .message viene vacío), e.message
+      // termina en undefined — y JSON.stringify BORRA las claves con valor undefined, así
+      // que el frontend recibía {ok:false} sin ningún .error y mostraba siempre el mismo
+      // texto genérico ("no se pudo crear el producto", etc.), sin decir por qué. String(e)
+      // como respaldo garantiza que siempre viaje algo útil, sea cual sea el tipo real de e.
+      return json({ ok: false, error: (e && e.message) ? e.message : String(e) }, 500);
     }
   },
 
