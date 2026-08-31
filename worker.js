@@ -5178,14 +5178,23 @@ export default {
       if (action === "eliminar_productos") {
         const items = Array.isArray(payload && payload.items) ? payload.items : [];
         if (!items.length) return json({ ok: false, error: "No hay productos para eliminar" }, 400);
+        // El frontend (portado de Marín) lee j.resultados[N].ok/.error, uno por producto —
+        // antes esto devolvía {eliminados, errores} (sin la clave "resultados", y solo con
+        // los fallos, no con éxitos), así que j.resultados era undefined y el frontend
+        // SIEMPRE mostraba "No se pudo eliminar", incluso cuando el borrado sí funcionaba.
         let eliminados = 0;
-        const errores = [];
+        const resultados = [];
         for (const it of items) {
-          try { await accionEliminarProducto(env, { sku: it && it.sku }); eliminados++; }
-          catch (e) { errores.push({ sku: it && it.sku, error: e.message }); }
+          try {
+            await accionEliminarProducto(env, { sku: it && it.sku });
+            eliminados++;
+            resultados.push({ ok: true, sku: it && it.sku });
+          } catch (e) {
+            resultados.push({ ok: false, sku: it && it.sku, error: e.message });
+          }
         }
         await marcarCatalogoActualizado(env);
-        return json({ ok: true, eliminados, errores });
+        return json({ ok: true, eliminados, resultados });
       }
 
       // GET /?action=proveedores_conteo  →  lista de proveedores con cantidad de productos.
