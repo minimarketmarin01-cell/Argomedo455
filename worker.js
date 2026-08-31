@@ -4492,7 +4492,7 @@ export default {
       if (action === "lote_nuevo") {
         const resultado = await accionLoteNuevo(env, payload);
         await marcarCatalogoActualizado(env);
-        return json({ ok: true, ...resultado });
+        return json({ ok: true, fila: resultado });
       }
 
       // POST { action:'crear_producto', payload:{...} }  →  crea un producto nuevo en
@@ -4671,7 +4671,7 @@ export default {
       if (action === "marcar_descuento_factura") {
         const resultado = await accionMarcarDescuentoFactura(env, payload);
         await marcarCatalogoActualizado(env);
-        return json({ ok: true, ...resultado });
+        return json({ ok: true, fila: resultado });
       }
 
       // POST { action:'vencimiento_fecha', payload:{id,fechaVencimiento,responsable} }
@@ -4689,7 +4689,7 @@ export default {
       if (action === "registrar_merma" || action === "merma") {
         const resultado = await accionMerma(env, payload);
         await marcarCatalogoActualizado(env);
-        return json({ ok: true, ...resultado });
+        return json({ ok: true, fila: resultado });
       }
 
       // POST { action:'consumo_interno', payload:{items:[{sku,cantidad,costoManual}],responsable} }
