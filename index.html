@@ -4423,7 +4423,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-31.3';
+const APP_VERSION='2026-08-31.4';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -6726,6 +6726,11 @@ async function fpEliminarProducto(f){
     const r=(j&&j.resultados&&j.resultados[0])||null;
     if(j&&j.ok&&r&&r.ok){
       DB.items=(DB.items||[]).filter(it=>it.ref!==p.sku);
+      // "Editar productos" (Mapeo de categorías) guarda su propia lista de productos por
+      // categoría en _mcProductos, separada de DB.items — sin este parche, un producto
+      // eliminado desde acá (o desde Sin movimiento/Gestionar proveedores) seguía apareciendo
+      // ahí hasta que alguien volviera a tocar la categoría, aunque ya no existiera de verdad.
+      _mcProductos=(_mcProductos||[]).filter(x=>x.sku!==p.sku);
       persist();
       showToast(''+p.nombre+' eliminado de Loyverse');
       fpLimpiarBorrador();
@@ -6911,6 +6916,7 @@ async function rkEliminarProducto(ref,id,nombre,fila){
     if(!j||!j.ok||!r||!r.ok)throw new Error((r&&r.error)||(j&&j.error)||'No se pudo eliminar');
     showToast('"'+nombre+'" eliminado de Loyverse y de la webapp');
     DB.items=(DB.items||[]).filter(it=>it.ref!==ref);
+    _mcProductos=(_mcProductos||[]).filter(x=>x.sku!==ref); // ver comentario en fpEliminarProducto
     persist();
     rkRender();
   }catch(e){
@@ -7527,6 +7533,7 @@ async function gpEliminarProducto(ref,id,nombre,fila){
     if(!j||!j.ok||!r||!r.ok)throw new Error((r&&r.error)||(j&&j.error)||'No se pudo eliminar');
     showToast('"'+nombre+'" eliminado de Loyverse y de la webapp');
     DB.items=(DB.items||[]).filter(it=>it.ref!==ref);
+    _mcProductos=(_mcProductos||[]).filter(x=>x.sku!==ref); // ver comentario en fpEliminarProducto
     persist();
     _gpProdListaCompleta=(_gpProdListaCompleta||[]).filter(it=>it.ref!==ref);
     gpRenderProductos(_gpProdListaCompleta);
