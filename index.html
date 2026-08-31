@@ -4423,7 +4423,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-31.1';
+const APP_VERSION='2026-08-31.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5459,7 +5459,16 @@ async function fpAbrir(ref,restaurar){
   try{
     const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=ficha_producto&sku='+encodeURIComponent(ref));
     const j=await res.json();
-    if(!j||!j.ok){document.getElementById('fp-loading').textContent=''+((j&&j.error)||'No se pudo cargar la ficha');return;}
+    if(!j||!j.ok){
+      // Antes esto dejaba la pantalla pegada con el texto de error solo, sin ningún botón
+      // para salir (pasa sobre todo al reabrir automáticamente "la última pantalla" al
+      // arrancar la app, con una referencia vieja a un producto ya eliminado) — se cierra
+      // solo y se avisa con un toast en vez de dejar al usuario en un callejón sin salida.
+      cerrarModal('fp-ov');
+      fpLimpiarBorrador();
+      showToast(''+((j&&j.error)||'No se pudo cargar la ficha'));
+      return;
+    }
     _fpActual=j.ficha;
     fpPintar(j.ficha);
     document.getElementById('fp-loading').classList.add('hidden');

@@ -4197,6 +4197,15 @@ async function accionCrearProducto(env, payload) {
   const nombre = String(payload.nombre || "").trim();
   if (!nombre) throw new Error("Falta el nombre del producto");
 
+  // Nombre duplicado (sin importar mayúsculas/espacios extra) — sin esto, reintentar crear
+  // el mismo producto por un error de conexión aparente (ver el fix de accionCrearProducto
+  // devolviendo la respuesta sin envolver en "producto") generaba varios SKUs distintos del
+  // mismo producto, sin ningún aviso.
+  if (!payload.forzarDuplicado) {
+    const dupNombre = await get(env, "SELECT sku FROM productos WHERE UPPER(TRIM(nombre)) = UPPER(?)", nombre);
+    if (dupNombre) throw new Error("DUPLICADO: Ya existe un producto con ese nombre (SKU " + dupNombre.sku + ")");
+  }
+
   const barcode = String(payload.barcode || "").trim();
   if (barcode && !payload.forzarDuplicado) {
     const dup = await get(env, "SELECT sku, nombre FROM productos WHERE barcode = ?", barcode);
