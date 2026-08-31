@@ -4423,7 +4423,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-31.6';
+const APP_VERSION='2026-08-31.7';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -4808,11 +4808,20 @@ async function cloudSync(silent,live,full,origen){
       // Un fallo silencioso está bien si YA había datos en pantalla (reintento de fondo);
       // pero si todavía no se cargó nada ni una vez, quedarse callado deja al usuario con
       // la app vacía sin ninguna pista de qué pasó — ahí sí se avisa aunque silent=true.
-      if(!silent||_ultimoPayloadFirma===null)showToast('La nube no devolvió datos'+(j&&j.error?(': '+j.error):''));
+      // "Ya hay datos" NO es solo "esta sesión ya sincronizó por red" (_ultimoPayloadFirma) —
+      // restore() ya puede haber traído un catálogo entero desde IndexedDB al abrir la app,
+      // antes de que la primera sincronización por red siquiera termine. Sin este chequeo
+      // extra, cada reintento silencioso de fondo que fallara (algo normal en una conexión
+      // real de celular, aunque "esté bien") mostraba este aviso una y otra vez, aunque la
+      // app ya tuviera datos reales y usables en pantalla — parecía un error grave y
+      // constante cuando en realidad era ruido de fondo sin consecuencia.
+      const yaHayDatosUsables=!!(DB&&DB.items&&DB.items.length);
+      if(!silent||(_ultimoPayloadFirma===null&&!yaHayDatosUsables))showToast('La nube no devolvió datos'+(j&&j.error?(': '+j.error):''));
       return false;
     }
   }catch(e){
-    if(!silent||_ultimoPayloadFirma===null)showToast('Error al sincronizar: '+(e&&e.message?e.message:e));
+    const yaHayDatosUsables=!!(DB&&DB.items&&DB.items.length);
+    if(!silent||(_ultimoPayloadFirma===null&&!yaHayDatosUsables))showToast('Error al sincronizar: '+(e&&e.message?e.message:e));
     return false;
   }
   finally{setSyncSpinning(false);}
