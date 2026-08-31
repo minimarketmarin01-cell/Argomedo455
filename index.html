@@ -4423,7 +4423,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-31.2';
+const APP_VERSION='2026-08-31.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -6720,7 +6720,9 @@ async function fpEliminarProducto(f){
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'eliminar_productos',payload:{
       items:[{id:p.idLoyverse,sku:p.sku,nombre:p.nombre,categoria:p.categoria,stock:p.stock}]
     }}),signal:ctrl.signal});
-    const j=await res.json();
+    let j;
+    try{j=await res.json();}
+    catch(parseErr){throw new Error('El servidor respondió '+res.status+' (no es una respuesta válida) — puede que ya se haya eliminado, revisa antes de reintentar.');}
     const r=(j&&j.resultados&&j.resultados[0])||null;
     if(j&&j.ok&&r&&r.ok){
       DB.items=(DB.items||[]).filter(it=>it.ref!==p.sku);
@@ -6735,7 +6737,7 @@ async function fpEliminarProducto(f){
       btn.disabled=false;btn.innerHTML=FP_ELIMINAR_BTN_HTML;
     }
   }catch(e){
-    showToast(e.name==='AbortError'?'Tardó demasiado en responder — revisa si se eliminó antes de reintentar':'Error de conexión al eliminar');
+    showToast(e.name==='AbortError'?'Tardó demasiado en responder — revisa si se eliminó antes de reintentar':(e&&e.message?e.message:'Error de conexión al eliminar'));
     btn.disabled=false;btn.innerHTML=FP_ELIMINAR_BTN_HTML;
   }finally{clearTimeout(to);}
 }
@@ -6902,7 +6904,9 @@ async function rkEliminarProducto(ref,id,nombre,fila){
   const to=setTimeout(()=>ctrl.abort(),45000);
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'eliminar_productos',payload:{items:[{sku:ref,id,nombre}]}}),signal:ctrl.signal});
-    const j=await res.json();
+    let j;
+    try{j=await res.json();}
+    catch(parseErr){throw new Error('El servidor respondió '+res.status+' (no es una respuesta válida) — puede que ya se haya eliminado, revisa antes de reintentar.');}
     const r=j&&j.resultados&&j.resultados[0];
     if(!j||!j.ok||!r||!r.ok)throw new Error((r&&r.error)||(j&&j.error)||'No se pudo eliminar');
     showToast('"'+nombre+'" eliminado de Loyverse y de la webapp');
@@ -7516,7 +7520,9 @@ async function gpEliminarProducto(ref,id,nombre,fila){
   const to=setTimeout(()=>ctrl.abort(),45000);
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'eliminar_productos',payload:{items:[{sku:ref,id,nombre}]}}),signal:ctrl.signal});
-    const j=await res.json();
+    let j;
+    try{j=await res.json();}
+    catch(parseErr){throw new Error('El servidor respondió '+res.status+' (no es una respuesta válida) — puede que ya se haya eliminado, revisa antes de reintentar.');}
     const r=j&&j.resultados&&j.resultados[0];
     if(!j||!j.ok||!r||!r.ok)throw new Error((r&&r.error)||(j&&j.error)||'No se pudo eliminar');
     showToast('"'+nombre+'" eliminado de Loyverse y de la webapp');
@@ -8084,7 +8090,9 @@ async function mcEliminarProducto(sku,idLoyverse,nombre,fila){
   const to=setTimeout(()=>ctrl.abort(),45000);
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'eliminar_productos',payload:{items:[{sku,id:idLoyverse,nombre}]}}),signal:ctrl.signal});
-    const j=await res.json();
+    let j;
+    try{j=await res.json();}
+    catch(parseErr){throw new Error('El servidor respondió '+res.status+' (no es una respuesta válida) — puede que ya se haya eliminado, revisa antes de reintentar.');}
     const r=j&&j.resultados&&j.resultados[0];
     if(!j||!j.ok||!r||!r.ok)throw new Error((r&&r.error)||(j&&j.error)||'No se pudo eliminar');
     showToast('"'+nombre+'" eliminado de Loyverse y de la webapp');
