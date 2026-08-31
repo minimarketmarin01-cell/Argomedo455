@@ -4423,7 +4423,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-30.4';
+const APP_VERSION='2026-08-30.5';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -12687,7 +12687,9 @@ document.getElementById('rc-guardar').onclick=async()=>{
     if(costoCambio)payload.costo=nuevoCosto;
     if(precioCambio)payload.precio=nuevoPrecio;
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'lote_nuevo',payload:payload}),signal:ctrl.signal});
-    const j=await res.json();
+    let j;
+    try{j=await res.json();}
+    catch(parseErr){throw new Error('El servidor respondió '+res.status+' (no es una respuesta válida) — puede que el stock ya se haya guardado, revisa el producto antes de reintentar.');}
     if(j&&j.ok){
       // Actualiza la copia local del producto AL INSTANTE (sin esperar a sincronizar),
       // para que si vuelves a abrir el mismo producto ya se vea al día.
@@ -12716,7 +12718,11 @@ document.getElementById('rc-guardar').onclick=async()=>{
     }else{showToast('Error: '+((j&&j.error)||'no se pudo guardar'));}
   }catch(e){
     if(e.name==='AbortError')showToast('El guardado tardó demasiado. Revisa tu conexión y vuelve a intentar (el stock pudo haberse guardado — verifica antes de repetir).');
-    else showToast('Error de conexión al recibir la mercadería');
+    // Antes esto siempre mostraba el mismo texto genérico "Error de conexión", sin importar
+    // si de verdad no había red o si el servidor respondió pero con algo raro (ver el
+    // try/catch de arriba, que ahora arma un mensaje más específico en ese segundo caso) —
+    // se muestra el mensaje real cuando existe, en vez de siempre el mismo texto ciego.
+    else showToast(e&&e.message?e.message:'Error de conexión al recibir la mercadería');
   }finally{
     clearTimeout(to);
     rcGuardando=false;
