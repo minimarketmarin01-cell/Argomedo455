@@ -4992,6 +4992,18 @@ export default {
         return json({ ok: true, ...r });
       }
 
+      // GET /?action=diag_producto&nombre=XXX — diagnóstico de solo lectura: todas las filas
+      // de productos cuyo nombre contiene el texto buscado (case-insensitive), sin importar
+      // categoría. Sirve para encontrar SKUs duplicados del mismo producto (ej. creados por
+      // reintentos antes del fix de accionCrearProducto devolviendo la respuesta sin envolver).
+      if (action === "diag_producto") {
+        const nombreFiltro = url.searchParams.get("nombre") || "";
+        const { results: coincidencias } = await env.DB.prepare(
+          "SELECT sku, nombre, id_loyverse, variant_id, categoria, proveedor, sector, stock, precio, costo, barcode FROM productos WHERE UPPER(nombre) LIKE UPPER(?) ORDER BY sku"
+        ).bind("%" + nombreFiltro + "%").all();
+        return json({ ok: true, coincidencias });
+      }
+
       // GET /?action=migrar_mayusculas — de una sola vez, ver comentario de migrarMayusculas().
       if (action === "migrar_mayusculas") {
         const r = await migrarMayusculas(env);
