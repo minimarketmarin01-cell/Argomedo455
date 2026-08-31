@@ -4423,7 +4423,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-31.5';
+const APP_VERSION='2026-08-31.6';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -4971,6 +4971,15 @@ function aplicarRepintadoDiferido(){
   restaurarScrollTabla(prevTbl,prevWin);
   const ob2=document.getElementById('order-body');if(ob2)ob2.scrollTop=prevOrder;
   llCheckBadge();cargarVencidoParaCambio();cargarABC();flashUpdated();
+  // "Editar productos" (Mapeo de categorías) guarda su propia lista aparte (_mcProductos,
+  // ver mcSeleccionarCategoria) — sin esto, un producto creado/editado/eliminado en OTRA
+  // pantalla no se reflejaba ahí hasta cerrar y volver a entrar a mano. Si está abierta con
+  // una categoría elegida, se refresca sola cada vez que llega un cambio en tiempo real,
+  // igual que ya hace el resto de la app.
+  try{
+    const mcOv=document.getElementById('mc-ov');
+    if(mcOv&&!mcOv.classList.contains('hidden')&&_mcCategoriaActiva)mcSeleccionarCategoria(_mcCategoriaActiva);
+  }catch(e){}
 }
 // En cuanto el usuario se detiene, si había datos frescos esperando, recién ahí se muestran.
 setInterval(()=>{
