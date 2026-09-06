@@ -4222,7 +4222,11 @@ async function accionCrearProducto(env, payload) {
   let sku = String(candidato);
 
   const precio = payload.precio != null && payload.precio !== "" ? Number(payload.precio) : 0;
-  const costo = payload.costo != null && payload.costo !== "" ? Number(payload.costo) : 0;
+  // El frontend (cp-guardar) manda el costo como "coste" (mismo nombre que usa Marín) — antes
+  // acá se leía "costo" (sin la e), que el frontend nunca manda, así que el costo quedaba
+  // SIEMPRE en 0 al crear un producto nuevo sin importar lo que se escribiera en el campo.
+  const costoRaw = payload.coste != null && payload.coste !== "" ? payload.coste : payload.costo;
+  const costo = costoRaw != null && costoRaw !== "" ? Number(costoRaw) : 0;
   const trackStock = payload.trackStock !== false; // por defecto SÍ sigue inventario
   const soldByWeight = !!payload.soldByWeight;
   const activo = payload.activo !== false; // por defecto SÍ está a la venta (disponible en POS)
@@ -4240,6 +4244,12 @@ async function accionCrearProducto(env, payload) {
     if (provRow) proveedor = provRow.nombre;
   }
   const sector = String(payload.sector || "").trim();
+
+  // Categoría de Loyverse: opcional (antes el formulario la pedía obligatoria pero el
+  // backend igual la ignoraba por completo — ahora si se elige una, se manda de verdad a
+  // Loyverse y se guarda en D1; si no se elige ninguna, sigue quedando "SIN CATEGORÍA").
+  const categoryId = String(payload.categoryId || "").trim();
+  const categoriaNombre = String(payload.categoriaNombre || "").trim();
 
   const { storeId } = await obtenerStoreId(env);
 
@@ -4261,6 +4271,13 @@ async function accionCrearProducto(env, payload) {
     }
   }
 
+  // "Inventario bajo" vive a nivel de tienda dentro de la variante, y Loyverse lo acepta
+  // directo en la creación del ítem (portado de Marín 376) — mandarlo acá evita depender de
+  // un segundo llamado a /inventory después, que antes fallaba en silencio para este campo.
+  const storeVariant = { store_id: storeId, price: precio, pricing_type: "FIXED", available_for_sale: activo };
+  if (trackStock && stockMinimo != null && !isNaN(stockMinimo) && stockMinimo >= 0) {
+    storeVariant.low_stock = stockMinimo;
+  }
   const nuevoItem = {
     item_name: nombre,
     track_stock: trackStock,
@@ -4269,9 +4286,10 @@ async function accionCrearProducto(env, payload) {
     tax_ids: taxIds,
     variants: [{
       sku: sku, barcode: barcode, cost: costo, default_price: precio, default_pricing_type: "FIXED",
-      stores: [{ store_id: storeId, price: precio, pricing_type: "FIXED", available_for_sale: activo }]
+      stores: [storeVariant]
     }]
   };
+  if (categoryId) nuevoItem.category_id = categoryId;
 
   // Reintenta con el siguiente SKU si Loyverse dice que ya existe (choque poco probable,
   // pero posible si D1 quedó desactualizada respecto al catálogo real).
@@ -4310,53 +4328,40 @@ async function accionCrearProducto(env, payload) {
     }
   }
 
-  // Guarda en D1 (categoría queda vacía — Los Cumpas no usa la categoría de Loyverse
-  // para clasificar productos, solo el proveedor de la WebApp; proveedor y sector se
-  // guardan si vinieron del formulario de Crear producto).
+  // Guarda en D1 — Los Cumpas sigue clasificando principalmente por el proveedor de la
+  // WebApp (no por categoría de Loyverse), pero si se eligió una categoría sí queda
+  // registrada con su nombre real en vez del "SIN CATEGORÍA" fijo de antes.
   await run(env,
     `INSERT INTO productos (sku, id_loyverse, variant_id, nombre, categoria, proveedor, proveedor_id, sector, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    sku, creado.id, v.variant_id, nombre, "SIN CATEGORÍA", proveedor || null, proveedorId, sector || null, barcode, precio, costo, trackStock ? 0 : null, soldByWeight ? 1 : 0, trackStock ? 1 : 0, ivaConfirmado ? 1 : 0);
+    sku, creado.id, v.variant_id, nombre, categoriaNombre || "SIN CATEGORÍA", proveedor || null, proveedorId, sector || null, barcode, precio, costo, trackStock ? 0 : null, soldByWeight ? 1 : 0, trackStock ? 1 : 0, ivaConfirmado ? 1 : 0);
   if (proveedor) await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedor);
   if (sector) await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sector);
 
   await run(env,
     `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
      VALUES (?,?,?,?,?,?,?,?,?)`,
-    fechaHoraDDMMAAAA(), "crear_producto", sku, nombre, "", creado.id, trackStock ? 0 : null, "Producto creado desde la app", payload.responsable || "");
+    fechaHoraDDMMAAAA(), "crear_producto", sku, nombre, categoriaNombre || "", creado.id, trackStock ? 0 : null, "Producto creado desde la app", payload.responsable || "");
 
   // Stock inicial opcional: usa el mismo camino de "recibir mercadería" si trae fecha de
-  // vencimiento (para que el lote quede registrado desde el arranque), o lo fija directo.
-  // Stock mínimo (aviso de inventario bajo): campo aparte de Loyverse (`low_stock` a nivel
-  // de tienda/variante) — se manda best-effort, sin bloquear la creación si Loyverse lo
-  // rechaza por algún motivo (ej. cuenta sin ese plan/feature habilitado).
+  // vencimiento (para que el lote quede registrado desde el arranque), o lo fija directo por
+  // /inventory. El stock MÍNIMO (aviso de inventario bajo) ya quedó guardado arriba, como
+  // parte de la creación del ítem (storeVariant.low_stock) — no hace falta un segundo llamado
+  // acá para eso.
   let stockFinal = trackStock ? 0 : null;
   const stockInicial = Number(payload.stockInicial) || 0;
-  let avisoStockMinimo = null;
-  if (trackStock) {
-    if (stockInicial > 0 && payload.fechaVencimiento) {
+  let avisoStock = null;
+  if (trackStock && stockInicial > 0) {
+    if (payload.fechaVencimiento) {
       const r = await accionLoteNuevo(env, { sku, cantidad: stockInicial, fechaVencimiento: payload.fechaVencimiento });
       stockFinal = r.nuevoStock != null ? r.nuevoStock : stockInicial;
-      if (stockMinimo != null) {
-        try {
-          await loyversePost(env, "/inventory", { inventory_levels: [{ variant_id: v.variant_id, store_id: storeId, low_stock: stockMinimo }] });
-        } catch (e) {
-          avisoStockMinimo = "⚠️ No se pudo guardar el stock mínimo en Loyverse (" + e.message + ").";
-        }
-      }
-    } else if (stockInicial > 0 || stockMinimo != null) {
-      const nivel = { variant_id: v.variant_id, store_id: storeId, stock_after: stockInicial };
-      if (stockMinimo != null) nivel.low_stock = stockMinimo;
+    } else {
       try {
-        await loyversePost(env, "/inventory", { inventory_levels: [nivel] });
+        await loyversePost(env, "/inventory", { inventory_levels: [{ variant_id: v.variant_id, store_id: storeId, stock_after: stockInicial }] });
         await run(env, "UPDATE productos SET stock = ? WHERE sku = ?", stockInicial, sku);
         stockFinal = stockInicial;
       } catch (e) {
-        if (stockMinimo != null && stockInicial === 0) {
-          avisoStockMinimo = "⚠️ No se pudo guardar el stock mínimo en Loyverse (" + e.message + ").";
-        } else {
-          throw e;
-        }
+        avisoStock = "⚠️ El producto se creó pero no se pudo guardar el stock inicial en Loyverse (" + e.message + "). Cárgalo a mano desde Recepción.";
       }
     }
   }
@@ -4372,7 +4377,7 @@ async function accionCrearProducto(env, payload) {
       ref: sku, nombre, prov: proveedor || "SIN PROVEEDOR", id: creado.id, vid: v.variant_id,
       stock: stockFinal, precio, costo, track: trackStock, barcode, peso: soldByWeight
     },
-    advertencia: avisoImpuesto || avisoStockMinimo || undefined
+    advertencia: avisoImpuesto || avisoStock || undefined
   };
 }
 

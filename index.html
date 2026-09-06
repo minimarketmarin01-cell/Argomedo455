@@ -2822,12 +2822,11 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
             <label>Nombre *</label>
             <input id="cp-nombre" placeholder="Ej: 7 up 2.0L" autocomplete="off" class="mm-input">
           </div>
-          <div class="mm-field hidden">
-            <!-- Categoría de Loyverse oculta a pedido del dueño: Los Cumpas clasifica productos
-                 por proveedor de la WebApp (ver el campo Proveedor más abajo), no por categoría
-                 de Loyverse. El backend (accionCrearProducto) ya guarda "SIN CATEGORÍA" fijo sin
-                 mirar este campo, así que ocultarlo no rompe nada — solo deja de pedirlo. -->
-            <label>Categoría *</label>
+          <div class="mm-field">
+            <!-- Categoría de Loyverse: opcional (Los Cumpas clasifica principalmente por
+                 proveedor de la WebApp, ver el campo Proveedor más abajo) — pero sí se guarda
+                 de verdad en Loyverse y en D1 si se elige una, a diferencia de antes. -->
+            <label>Categoría de Loyverse (opcional)</label>
             <div style="display:flex;gap:8px">
               <div class="cat-combo" id="cat-combo">
                 <input id="cp-cat-input" class="cat-combo-input" placeholder="Elige una categoría…" autocomplete="off" role="combobox" aria-expanded="false" aria-haspopup="listbox" style="padding-right:60px">
@@ -4423,7 +4422,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-08-31.7';
+const APP_VERSION='2026-09-06.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -9099,6 +9098,8 @@ document.getElementById('cp-guardar').onclick=async()=>{
     if(document.getElementById('cp-iva').checked){const iva=_cpImpuestos.find(t=>/iva/i.test(t.name)||t.rate===19);if(iva)taxIds.push(iva.id);}
     const cpProveedorId=document.getElementById('cp-proveedor').value||null;
     const cpSector=document.getElementById('cp-sector').value||null;
+    const cpCategoriaId=document.getElementById('cp-cat').value||null;
+    const cpCategoriaNombre=(document.getElementById('cp-cat-input').value||'').trim()||null;
     const payload={
       nombre:nombre,
       soldByWeight:_cpVenta==='kg',
@@ -9112,7 +9113,9 @@ document.getElementById('cp-guardar').onclick=async()=>{
       taxIds:taxIds,
       activo:document.getElementById('cp-activo').checked,
       proveedor_id:cpProveedorId,
-      sector:cpSector
+      sector:cpSector,
+      categoryId:cpCategoriaId,
+      categoriaNombre:cpCategoriaId?cpCategoriaNombre:null
     };
     btn.disabled=true;btn.textContent='Creando…';
     showToast('Creando en Loyverse… (puede tardar unos segundos)');
