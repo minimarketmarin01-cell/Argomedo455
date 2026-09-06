@@ -4422,7 +4422,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-09-06.1';
+const APP_VERSION='2026-09-06.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -6293,7 +6293,7 @@ function fpPaneProveedores(f){
   psCargarListas().then(()=>{
     psLlenarSelects('fp-pv-prov','fp-pv-sector-dummy',p.proveedorId,null);
     psInitCombo('fp-pv-prov','fp-pv-prov-combo','fp-pv-prov-input','fp-pv-prov-menu','fp-pv-prov','proveedor',
-      texto=>{const box=document.getElementById('fp-pv-prov-nuevabox');box.classList.remove('hidden');const inp=document.getElementById('fp-pv-prov-nuevonom');inp.value=texto;inp.focus();});
+      texto=>psCrearProveedorInline(texto).then(p=>({id:p.id,name:p.nombre})));
     // Selector "También pedir a" — solo proveedores WebApp que no sean ya el principal ni
     // estén ya en la lista de adicionales, para no ofrecer duplicados.
     const sel=document.getElementById('fp-provid-select');
@@ -6383,7 +6383,8 @@ function fpPaneSector(f){
   // (fp-pv-prov-*) — este dummy es puramente técnico, no representa un campo editable acá.
   psCargarListas().then(()=>{
     psLlenarSelects('fp-s-proveedor-dummy','fp-s-sector',p.proveedorId,p.sector);
-    psInitCombo('fp-s-proveedor-dummy','fp-s-sector-combo','fp-s-sector-input','fp-s-sector-menu','fp-s-sector','sector');
+    psInitCombo('fp-s-proveedor-dummy','fp-s-sector-combo','fp-s-sector-input','fp-s-sector-menu','fp-s-sector','sector',
+      texto=>psCrearSectorInline(texto).then(s=>({id:s,name:s})));
   });
   psWireNuevoSector('fp-s-sector-nueva','fp-s-sector-nuevabox','fp-s-sector-nuevonom','fp-s-sector-crear','fp-s-proveedor-dummy','fp-s-sector');
   document.getElementById('fp-s-sugerir').onclick=()=>{
@@ -7109,7 +7110,17 @@ function crearComboBuscable(cfg){
   }
   function setValue(id,name){
     const sel=document.getElementById(cfg.selectId);
-    if(sel){sel.value=id!=null?String(id):'';sel.dispatchEvent(new Event('change'));}
+    if(sel){
+      // Si el id todavía no tiene <option> (recién creado en el mismo toque, antes de que
+      // el <select> se repueble desde el servidor), se agrega al vuelo — si no, sel.value
+      // queda vacío porque el navegador ignora valores sin una opción que los respalde.
+      if(id!=null&&!Array.from(sel.options).some(o=>o.value===String(id))){
+        const opt=document.createElement('option');
+        opt.value=String(id);opt.textContent=name||String(id);
+        sel.appendChild(opt);
+      }
+      sel.value=id!=null?String(id):'';sel.dispatchEvent(new Event('change'));
+    }
     const input=document.getElementById(cfg.inputId);
     if(input)input.value=name||'';
   }
@@ -7121,7 +7132,24 @@ function crearComboBuscable(cfg){
   menu.addEventListener('click',ev=>{
     const opt=ev.target.closest('.cat-opt');
     if(!opt||opt.classList.contains('cat-opt-empty'))return;
-    if(opt.dataset.new){close();if(cfg.onCreateNueva)cfg.onCreateNueva(input.value.trim());return;}
+    if(opt.dataset.new){
+      // Un solo toque: crea directo (sin caja de confirmación aparte) ya que el nombre
+      // ya está escrito y confirmado por el propio gesto de tocar esta opción.
+      if(opt.dataset.creando||!cfg.onCreateNueva)return;
+      const texto=input.value.trim();
+      if(!texto)return;
+      const original=opt.innerHTML;
+      opt.dataset.creando='1';
+      opt.innerHTML='Creando…';
+      Promise.resolve(cfg.onCreateNueva(texto)).then(res=>{
+        if(res&&res.id!=null){setValue(res.id,res.name);close();}
+        else{delete opt.dataset.creando;opt.innerHTML=original;}
+      }).catch(e=>{
+        delete opt.dataset.creando;opt.innerHTML=original;
+        if(typeof showToast==='function')showToast((e&&e.message)||'No se pudo crear');
+      });
+      return;
+    }
     setValue(opt.dataset.id,opt.dataset.name);
     close();
   });
@@ -7152,7 +7180,7 @@ function psInitCombo(key,wrapId,inputId,menuId,selectId,tipo,onCreateNueva){
     wrapId,inputId,menuId,selectId,
     getItems:()=>tipo==='proveedor'?_psProveedores.map(p=>({id:p.id,name:p.nombre})):_psSectores.map(s=>({id:s,name:s})),
     onCreateNueva,
-    placeholderNueva:tipo==='proveedor'?'Crear proveedor':null
+    placeholderNueva:tipo==='proveedor'?'Crear proveedor':(tipo==='sector'?'Crear sector':null)
   });
   if(inst)_psCombosVivos[key]=inst;
 }
@@ -7979,14 +8007,10 @@ function mcAbrir(){
   mcCargarCategorias();
   psCargarListas().then(()=>{
     psLlenarSelects('mcg-prov','mcg-sect',null,null);
-    psInitCombo('mcg-prov','mcg-prov-combo','mcg-prov-input','mcg-prov-menu','mcg-prov','proveedor',texto=>{
-      document.getElementById('mcg-prov-nuevabox').classList.remove('hidden');
-      const inp=document.getElementById('mcg-prov-nuevonom');inp.value=texto;inp.focus();
-    });
-    psInitCombo('mcg-sect','mcg-sect-combo','mcg-sect-input','mcg-sect-menu','mcg-sect','sector',texto=>{
-      document.getElementById('mcg-sect-nuevabox').classList.remove('hidden');
-      const inp=document.getElementById('mcg-sect-nuevonom');inp.value=texto;inp.focus();
-    });
+    psInitCombo('mcg-prov','mcg-prov-combo','mcg-prov-input','mcg-prov-menu','mcg-prov','proveedor',
+      texto=>psCrearProveedorInline(texto).then(p=>({id:p.id,name:p.nombre})));
+    psInitCombo('mcg-sect','mcg-sect-combo','mcg-sect-input','mcg-sect-menu','mcg-sect','sector',
+      texto=>psCrearSectorInline(texto).then(s=>({id:s,name:s})));
   });
   psWireNuevoProveedor('mcg-prov-nueva','mcg-prov-nuevabox','mcg-prov-nuevonom','mcg-prov-crear','mcg-prov','mcg-sect');
   psWireNuevoSector('mcg-sect-nueva','mcg-sect-nuevabox','mcg-sect-nuevonom','mcg-sect-crear','mcg-prov','mcg-sect');
@@ -8265,8 +8289,9 @@ function cpAbrir(){
     psCargarListas().then(()=>{
       psLlenarSelects('cp-proveedor','cp-sector',null,null);
       psInitCombo('cp-proveedor','cp-prov-combo','cp-proveedor-input','cp-prov-menu','cp-proveedor','proveedor',
-        texto=>{const box=document.getElementById('cp-prov-nuevabox');box.classList.remove('hidden');const inp=document.getElementById('cp-prov-nuevonom');inp.value=texto;inp.focus();});
-      psInitCombo('cp-sector','cp-sector-combo','cp-sector-input','cp-sector-menu','cp-sector','sector');
+        texto=>psCrearProveedorInline(texto).then(p=>({id:p.id,name:p.nombre})));
+      psInitCombo('cp-sector','cp-sector-combo','cp-sector-input','cp-sector-menu','cp-sector','sector',
+        texto=>psCrearSectorInline(texto).then(s=>({id:s,name:s})));
     }).catch(e=>{});
   }catch(e){}
   try{psWireNuevoProveedor('cp-prov-nueva','cp-prov-nuevabox','cp-prov-nuevonom','cp-prov-crear','cp-proveedor','cp-sector');}catch(e){}
