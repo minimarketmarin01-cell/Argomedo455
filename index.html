@@ -2999,6 +2999,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
       <div class="mm-body">
         <div class="fc-tabs">
           <button type="button" class="fc-tab-btn active" id="gp-tab-gestionar" data-gp-modo="gestionar">Proveedores</button>
+          <button type="button" class="fc-tab-btn" id="gp-tab-sectores" data-gp-modo="sectores">Sectores</button>
           <button type="button" class="fc-tab-btn" id="gp-tab-config" data-gp-modo="config">Configuración</button>
         </div>
         <div id="gp-tab-hint" class="cat hidden" style="margin:-4px 0 12px">Elige un proveedor para configurar el mínimo de pedido de sus productos.</div>
@@ -4422,7 +4423,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-09-06.2';
+const APP_VERSION='2026-09-07.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -4697,7 +4698,8 @@ function buildDBfromCloud(items, ventas, pendientes, provsExtra, provsIdsExtra, 
       hoyU:hoyU, abc:ABC_BY_SKU[ref]||null,
       proveedorId:inv.proveedorId||null, proveedorNombre:inv.proveedorNombre||null,
       proveedorIdsExtra:idsExtra, proveedorIdsTodos:proveedorIdsTodos,
-      proveedorNombresExtra:provsNombresExtraObj[ref]||[]
+      proveedorNombresExtra:provsNombresExtraObj[ref]||[],
+      sector:inv.sector||null
     });
   });
   items_arr.sort((a,b)=>b.u_all-a.u_all);
@@ -7362,15 +7364,22 @@ let _gpLista=[], _gpEliminarPendiente=null; // {id, nombre} — mientras se deci
 // (cerrarModal('fp-ov'), sea por Cancelar, Guardar o Eliminar) vuelva al Nivel 2 en vez de a
 // Pedidos — ver el bloque modificado dentro de cerrarModal() y el popstate más abajo.
 let _gpNivel='proveedores', _gpProvActual=null; // {id?, nombre} del proveedor cuyo Nivel 2 está abierto
-let _gpModo='gestionar'; // 'gestionar' (crear/renombrar/eliminar, tocar producto abre la Ficha) o 'config' (tocar proveedor lleva a configurar el mínimo de pedido de sus productos, sin pasar por la Ficha)
+let _gpModo='gestionar'; // 'gestionar' (crear/renombrar/eliminar, tocar producto abre la Ficha), 'sectores' (agrupa productos por sector en vez de por proveedor) o 'config' (tocar proveedor lleva a configurar el mínimo de pedido de sus productos, sin pasar por la Ficha)
 document.getElementById('gp-tab-gestionar').onclick=()=>_gpCambiarModo('gestionar');
+document.getElementById('gp-tab-sectores').onclick=()=>_gpCambiarModo('sectores');
 document.getElementById('gp-tab-config').onclick=()=>_gpCambiarModo('config');
 function _gpCambiarModo(modo){
   if(_gpModo===modo)return;
   _gpModo=modo;
   document.getElementById('gp-tab-gestionar').classList.toggle('active',modo==='gestionar');
+  document.getElementById('gp-tab-sectores').classList.toggle('active',modo==='sectores');
   document.getElementById('gp-tab-config').classList.toggle('active',modo==='config');
   document.getElementById('gp-tab-hint').classList.toggle('hidden',modo!=='config');
+  // El buscador/crear de Nivel 1 se reutiliza para los 3 modos, pero lo que había escrito
+  // (y el estado ×/+Crear) ya no aplica al cambiar de pestaña — se limpia como al abrir.
+  document.getElementById('gp-search').value='';
+  document.getElementById('gp-x').style.display='none';
+  document.getElementById('gp-crear').style.display='none';
   if(_gpCargado)_gpFiltrarProveedores();
 }
 let _gpVolverA='pedido'; // 'inicio' o 'pedido' — pantalla de fondo real al momento de abrir Proveedores (ver gpAbrir), usada por cerrarModal() en el tercer retroceso
@@ -7395,6 +7404,7 @@ function gpAbrir(){
   // Sincroniza la barra de pestañas con el modo de la última vez (no se resetea a "Proveedores"
   // en cada apertura) — solo refleja el estado visual, gpRender() ya lo hace correcto.
   document.getElementById('gp-tab-gestionar').classList.toggle('active',_gpModo==='gestionar');
+  document.getElementById('gp-tab-sectores').classList.toggle('active',_gpModo==='sectores');
   document.getElementById('gp-tab-config').classList.toggle('active',_gpModo==='config');
   document.getElementById('gp-tab-hint').classList.toggle('hidden',_gpModo!=='config');
   abrirModal('gp-ov');
@@ -7470,6 +7480,11 @@ function gpRender(lista){
     </div>`).join('');
 }
 document.getElementById('gp-lista').addEventListener('click',ev=>{
+  // Pestaña Sectores: filas propias (data-gp-sector), sin renombrar/eliminar desde acá (el
+  // backend no tiene una acción para eso; renombrar sector ya existe vía el botón ✎ del combo
+  // en otras pantallas — fuera de alcance acá).
+  const filaSector=ev.target.closest('[data-gp-sector]');
+  if(filaSector){gpAbrirProductosPorSector(filaSector.dataset.gpSector);return;}
   const btnDel=ev.target.closest('[data-gp-del]');
   if(btnDel){
     const prov=_gpLista.find(p=>p.id===Number(btnDel.dataset.gpDel));
@@ -7499,6 +7514,9 @@ function _gpFiltrarProveedores(){
   // reportó que escribir en el buscador mientras cargaba dejaba la pantalla atascada
   // mostrando "Todavía no hay proveedores creados" sin forma de reintentar.
   if(!_gpCargado)return;
+  // Pestaña "Sectores" reutiliza el mismo buscador/botón crear, pero agrupa por sector en vez
+  // de por proveedor — mismo cuadro, dato y render distintos (ver _gpFiltrarSectores).
+  if(_gpModo==='sectores'){_gpFiltrarSectores();return;}
   const raw=(document.getElementById('gp-search').value||'').trim();
   const q=normTxt(raw);
   const filtrada=q?_gpLista.filter(p=>normTxt(p.nombre).includes(q)):_gpLista;
@@ -7512,6 +7530,49 @@ function _gpFiltrarProveedores(){
   const mostrarCrear=_gpModo==='gestionar'&&sinCoincidencias;
   document.getElementById('gp-x').style.display=(raw&&!mostrarCrear)?'flex':'none';
   document.getElementById('gp-crear').style.display=mostrarCrear?'flex':'none';
+}
+// ==== Pestaña "Sectores" (Nivel 1) ====
+// Agrupa productos por productos.sector (pasillo/estantería) en vez de por proveedor. _psSectores
+// ya viene cargado por gpCargar()/psCargarListas (misma llamada action=proveedores que trae los
+// sectores) — no hace falta pedir nada nuevo. El conteo por sector se calcula en memoria sobre
+// DB.items (igual que itemsFor() ya hace para proveedores en Armar pedido).
+function _gpSectoresConConteo(){
+  return (_psSectores||[]).map(s=>({nombre:s,productos:(DB.items||[]).filter(i=>i.sector===s).length}));
+}
+function gpRenderSectores(lista){
+  const cont=document.getElementById('gp-lista');
+  const todos=_gpSectoresConConteo();
+  if(!todos.length){cont.innerHTML='<div class="vc-empty">Todavía no hay sectores creados.</div>';return;}
+  const listaAMostrar=lista||todos;
+  if(!listaAMostrar.length){cont.innerHTML='<div class="vc-empty">Sin coincidencias.</div>';return;}
+  cont.innerHTML=listaAMostrar.map(s=>`
+    <div class="fp-row" data-gp-sector="${String(s.nombre).replace(/"/g,'&quot;')}" style="cursor:pointer">
+      <span class="k">${s.nombre}</span>
+      <span class="v" style="color:var(--muted);font-size:11.5px">${s.productos} producto${s.productos===1?'':'s'}</span>
+    </div>`).join('');
+}
+function _gpFiltrarSectores(){
+  const raw=(document.getElementById('gp-search').value||'').trim();
+  const q=normTxt(raw);
+  const todos=_gpSectoresConConteo();
+  const filtrada=q?todos.filter(s=>normTxt(s.nombre).includes(q)):todos;
+  gpRenderSectores(filtrada);
+  const sinCoincidencias=!!q&&filtrada.length===0;
+  document.getElementById('gp-x').style.display=(raw&&!sinCoincidencias)?'flex':'none';
+  document.getElementById('gp-crear').style.display=sinCoincidencias?'flex':'none';
+}
+// Nivel 1 → Nivel 2 (tocar un sector) — gemela de gpAbrirProductos, pero filtrando DB.items por
+// sector en vez de itemsFor(proveedor). Reutiliza el mismo Nivel 2 (gp-nivel-productos) sin
+// ningún cambio ahí: no tiene controles propios de "proveedor", solo lista+buscador genéricos.
+function gpAbrirProductosPorSector(sectorNombre){
+  _gpProvActual=null; // este Nivel 2 no viene de un proveedor
+  document.getElementById('gp-prod-titulo').textContent=sectorNombre;
+  document.getElementById('gp-prod-search').value='';
+  document.getElementById('gp-prod-x').style.display='none';
+  _gpProdListaCompleta=(DB.items||[]).filter(i=>i.sector===sectorNombre).slice().sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
+  _gpMostrarNivel('productos');
+  history.pushState({marin:'gpNivel',nivel:2},'');
+  gpRenderProductos(_gpProdListaCompleta);
 }
 document.getElementById('gp-search').addEventListener('input',_gpFiltrarProveedores);
 document.getElementById('gp-search').addEventListener('keyup',_gpFiltrarProveedores);
@@ -7866,17 +7927,18 @@ async function gpConfirmarEliminacion(modo){
   }catch(e){showToast('Error de conexión al eliminar');}
 }
 document.getElementById('gp-crear').onclick=async()=>{
+  const esSector=_gpModo==='sectores';
   const inp=document.getElementById('gp-search');
   const nombre=(inp.value||'').trim();
-  if(!nombre){showToast('Escribe el nombre del proveedor');return;}
+  if(!nombre){showToast('Escribe el nombre del '+(esSector?'sector':'proveedor'));return;}
   const btn=document.getElementById('gp-crear');btn.disabled=true;
   try{
-    const prov=await psCrearProveedorInline(nombre);
+    const nombreCreado=esSector?await psCrearSectorInline(nombre):(await psCrearProveedorInline(nombre)).nombre;
     inp.value='';
     document.getElementById('gp-crear').style.display='none';
     document.getElementById('gp-x').style.display='none';
-    showToast('Proveedor creado: '+prov.nombre);
-    gpCargar();
+    showToast((esSector?'Sector creado: ':'Proveedor creado: ')+nombreCreado);
+    gpCargar(); // recarga proveedores Y sectores (misma acción action=proveedores) y repinta la pestaña activa
   }catch(e){showToast(''+e.message);}
   finally{btn.disabled=false;}
 };
