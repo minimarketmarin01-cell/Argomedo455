@@ -375,7 +375,7 @@ html.carrito-fijo #rc-ov .mm-sections{
    reservan 44px de padding-right, no los 104px que asume el .mm-x genérico de arriba. Con el
    offset genérico (right:84px) el botón "×" quedaba flotando sobre la zona de texto tipeable
    en vez de después de ella, interceptando toques ahí — mismo tipo de bug que #prov-x/.cam-btn. */
-#gp-prod-x,#gp-x{right:6px}
+#gp-prod-x,#gp-x,#pl-x{right:6px}
 /* Botón de cámara/escáner reutilizable en TODOS los buscadores de la app: mismo alto, color e
    ícono que ya tenían — solo más ancho para que sea fácil de presionar con el dedo (antes 24px
    o 19px según el buscador). El mic y el botón de limpiar se corrieron para dejarle espacio,
@@ -2499,6 +2499,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
           <div class="mas-quick">
             <button id="mas-q-crear"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg><br>Crear producto</button>
             <button id="mas-q-editar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><br>Editar productos</button>
+            <button id="mas-q-precios"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><br>Lista de precios</button>
             <button id="mas-q-categorias"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><br>Mapeo de categorías</button>
             <button id="mas-q-abc"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg><br>Clasificación ABC</button>
             <button id="mas-q-etiquetas"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><rect x="3" y="7" width="18" height="4" rx="1"/><line x1="6" y1="7" x2="6" y2="11"/><line x1="9" y1="7" x2="9" y2="11"/><line x1="12" y1="7" x2="12" y2="11"/><line x1="16" y1="7" x2="16" y2="11"/><line x1="19" y1="7" x2="19" y2="11"/><path d="M4 15h16v6H4z"/></svg><br>Imprimir etiquetas</button>
@@ -2755,6 +2756,24 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
         <button class="rk-hcol" data-s="stock">Sistema <span class="ar">▲▼</span></button>
       </div>
       <div id="rk-list"></div>
+    </div>
+  </div>
+</div>
+
+<div class="mm-ov hidden" id="pl-ov">
+  <div class="mm-card">
+    <div class="mm-head"><h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mm-head-ic"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Lista de precios</h3></div>
+    <div class="mm-topbar"><button class="loadbtn" id="pl-cerrar" style="width:100%">Cerrar</button></div>
+    <div class="mm-body">
+      <div class="hm-summary"><span class="lbl" id="pl-lbl">—</span><span class="val" id="pl-val"></span></div>
+      <select id="pl-cat" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:10px;font-size:13.5px;background:#fff;margin-bottom:8px">
+        <option value="">Todas las categorías</option>
+      </select>
+      <div class="mm-search" style="margin:0 0 10px">
+        <input id="pl-search" placeholder="Buscar por nombre, REF o código…" autocomplete="off" style="padding-right:44px">
+        <button class="mm-x" id="pl-x" type="button" aria-label="Limpiar" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div id="pl-list"></div>
     </div>
   </div>
 </div>
@@ -4442,7 +4461,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-09-08.1';
+const APP_VERSION='2026-09-10.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -7010,6 +7029,125 @@ async function rkGuardarFila(inp){
     }
   }catch(e){
     showToast('Error de conexión al guardar');
+  }finally{
+    inp.disabled=false;
+  }
+}
+
+// ===================== LISTA DE PRECIOS (estilo Loyverse) =====================
+// Mismo problema y misma solución que Reconteo de stock (rk-ov, arriba): un catálogo de miles
+// de productos no se puede pintar de una — exige categoría o búsqueda antes de listar, y corta a
+// los primeros PL_LIMITE con aviso. La diferencia es el campo editable: acá es el precio de
+// venta (no el stock), autoguardado con Enter/blur vía la acción 'editar_precio' (sincroniza D1
+// y Loyverse). El campo arranca CON el precio actual ya escrito (a diferencia del de Reconteo,
+// que arranca vacío con placeholder) — acá se pidió explícitamente "mostrar" el precio, no solo
+// dejar un hueco para reemplazarlo.
+const plState={cat:'',search:''};
+document.getElementById('mas-q-precios').onclick=()=>{document.getElementById('mas-ov').classList.add('hidden');plAbrir();};
+document.getElementById('pl-cerrar').onclick=()=>cerrarModal('pl-ov');
+function plAbrir(){
+  plState.cat='';plState.search='';
+  document.getElementById('pl-search').value='';
+  document.getElementById('pl-x').style.display='none';
+  plPoblarCategorias();
+  abrirModal('pl-ov');
+  plRender();
+}
+function plPoblarCategorias(){
+  const sel=document.getElementById('pl-cat');
+  const valorActual=sel.value;
+  const cats=Array.from(new Set((DB.provs||[]).map(p=>p.prov).filter(Boolean))).sort((a,b)=>String(a).localeCompare(String(b),'es'));
+  sel.innerHTML='<option value="">Todas las categorías</option>'+cats.map(c=>`<option value="${String(c).replace(/"/g,'&quot;')}">${c}</option>`).join('');
+  sel.value=cats.includes(valorActual)?valorActual:'';
+}
+document.getElementById('pl-cat').addEventListener('change',()=>{
+  plState.cat=document.getElementById('pl-cat').value;
+  plState.search='';document.getElementById('pl-search').value='';document.getElementById('pl-x').style.display='none';
+  plRender();
+});
+document.getElementById('pl-search').addEventListener('input',()=>{
+  const v=document.getElementById('pl-search').value;
+  plState.search=v;plState.cat='';document.getElementById('pl-cat').value='';
+  document.getElementById('pl-x').style.display=v?'block':'none';
+  clearTimeout(window._plSearchT);window._plSearchT=setTimeout(plRender,200);
+});
+document.getElementById('pl-x').onclick=()=>{
+  document.getElementById('pl-search').value='';plState.search='';
+  document.getElementById('pl-x').style.display='none';
+  plRender();
+};
+function plFiltrados(){
+  let lista=(DB.items||[]);
+  if(plState.cat)lista=lista.filter(it=>it.prov===plState.cat);
+  const q=normTxt(plState.search).trim();
+  if(q){
+    const words=q.split(/\s+/).filter(Boolean);
+    lista=lista.filter(it=>{const s=normTxt((it.nombre||'')+' '+(it.ref||'')+' '+(it.barcode||''));return words.every(w=>s.includes(w));});
+  }
+  return lista.slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+}
+const PL_LIMITE=150; // mismo umbral y motivo que RK_LIMITE — evita renderizar miles de filas de una
+function plRender(){
+  const box=document.getElementById('pl-list');
+  const cat=plState.cat,q=plState.search;
+  const lista=plFiltrados();
+  document.getElementById('pl-lbl').textContent=lista.length+' producto'+(lista.length===1?'':'s');
+  document.getElementById('pl-val').textContent=cat?cat:(q?'búsqueda':'elige categoría o busca');
+  if(!cat&&!q){
+    box.innerHTML='<div class="vc-empty">Elige una categoría o escribe/escanea para buscar — son '+lista.length+' productos en total, muy largo para listar todos a la vez.</div>';
+    return;
+  }
+  if(!lista.length){box.innerHTML='<div class="vc-empty">Sin coincidencias.</div>';return;}
+  const truncado=lista.length>PL_LIMITE;
+  const visibles=lista.slice(0,PL_LIMITE);
+  box.innerHTML=(truncado?'<div class="vc-empty" style="padding:8px 0">Mostrando los primeros '+PL_LIMITE+' de '+lista.length+' — afina la búsqueda para ver el resto.</div>':'')+
+    visibles.map(p=>`<div class="sm-row" data-pl-ref="${p.ref}">
+      <div class="sm-info">
+        <div class="nom">${p.nombre}</div>
+        <div class="meta">REF ${p.ref} · ${p.prov} · stock: ${p.stock==null?'s/c':fmt1(p.stock)}${p.barcode?' · '+p.barcode:''}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:3px">
+        <span style="font-size:13px;color:var(--muted)">$</span>
+        <input type="number" step="any" inputmode="decimal" value="${p.precio!=null?p.precio:''}"
+          data-pl-input="${p.ref}"
+          style="width:90px;padding:8px;border-radius:8px;border:1px solid var(--borde);text-align:center;font-size:15px">
+      </div>
+    </div>`).join('');
+  box.querySelectorAll('input[data-pl-input]').forEach(inp=>{
+    inp.dataset.plOriginal=inp.value;
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();inp.blur();}});
+    inp.addEventListener('blur',()=>plGuardarFila(inp));
+  });
+}
+async function plGuardarFila(inp){
+  const ref=inp.dataset.plInput;
+  const val=inp.value.trim();
+  const original=inp.dataset.plOriginal||'';
+  if(val===original)return; // no cambió nada — no manda petición de más
+  if(val===''){inp.value=original;return;} // no se permite dejar el precio vacío
+  const nuevo=Number(val);
+  if(isNaN(nuevo)||nuevo<0){showToast('Precio inválido');inp.value=original;return;}
+  const row=inp.closest('.sm-row');
+  inp.disabled=true;
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'editar_precio',payload:{sku:ref,precio:nuevo,responsable:''}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      const it=DB.items.find(x=>x.ref===ref);
+      const precioFinal=j.precio!=null?j.precio:nuevo;
+      if(it)it.precio=precioFinal;
+      persist();
+      inp.value=precioFinal;
+      inp.dataset.plOriginal=String(precioFinal);
+      if(row){row.classList.add('flash-update');setTimeout(()=>row.classList.remove('flash-update'),900);}
+      showToast(j.advertencia||((it?it.nombre:ref)+' → '+peso(precioFinal)));
+    }else{
+      showToast(''+(j&&j.error?j.error:'No se pudo guardar'));
+      inp.value=original;
+    }
+  }catch(e){
+    showToast('Error de conexión al guardar');
+    inp.value=original;
   }finally{
     inp.disabled=false;
   }
