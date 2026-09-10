@@ -4074,6 +4074,45 @@ async function accionEditarProducto(env, payload) {
 }
 
 // ============================================================
+//  EDITAR PRECIO — versión liviana de accionEditarProducto, usada por "Lista de precios"
+//  (edición rápida inline, una fila por producto). Solo toca precio — no nombre/barcode/costo/
+//  proveedor/sector. Deja historial_precios ANTES de escribir en Loyverse (mismo criterio ya
+//  usado en accionEditarProducto/accionLoteNuevo).
+// ============================================================
+async function accionEditarPrecio(env, payload) {
+  payload = payload || {};
+  const sku = String(payload.sku || "").trim();
+  if (!sku) throw new Error("Falta el SKU");
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+  if (!it) throw new Error("Producto no encontrado: " + sku);
+  if (!it.id_loyverse || !it.variant_id) throw new Error("Falta id de Loyverse (vuelve a sincronizar el catálogo)");
+
+  const precioNuevo = payload.precio != null && payload.precio !== "" ? Number(payload.precio) : null;
+  if (precioNuevo == null || isNaN(precioNuevo) || precioNuevo < 0) throw new Error("Precio inválido");
+  if (precioNuevo === it.precio) return { sku, nombre: it.nombre, ok: true, precio: it.precio, sinCambios: true };
+
+  await run(env,
+    `INSERT INTO historial_precios (sku, fecha, precio_antes, precio_despues, costo_antes, costo_despues, responsable)
+     VALUES (?,?,?,?,?,?,?)`,
+    sku, fechaHoraDDMMAAAA(), it.precio, precioNuevo, it.costo, it.costo, payload.responsable || "");
+
+  await actualizarPrecioCostoLoyverse(env, it.id_loyverse, it.variant_id, precioNuevo, null);
+  await run(env, "UPDATE productos SET precio = ? WHERE sku = ?", precioNuevo, sku);
+
+  const advertencia = (it.costo != null && Number(it.costo) > precioNuevo)
+    ? "⚠️ El costo queda por encima del precio de venta — revisa si es intencional (venta a pérdida)."
+    : "";
+
+  await run(env,
+    `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    fechaHoraDDMMAAAA(), "editar_precio", sku, it.nombre, it.categoria, it.id_loyverse, it.stock,
+    "Precio: $" + it.precio + " → $" + precioNuevo, payload.responsable || "");
+
+  return { sku, nombre: it.nombre, ok: true, precio: precioNuevo, advertencia };
+}
+
+// ============================================================
 //  ELIMINAR PRODUCTO — borrado real en Loyverse (irreversible).
 //  Se pide confirmación en el frontend antes de llamar esto.
 // ============================================================
@@ -5178,6 +5217,14 @@ export default {
       // precio, costo, proveedor, sector, peso — reenvía a Loyverse y actualiza D1.
       if (action === "editar_producto") {
         const resultado = await accionEditarProducto(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'editar_precio', payload:{sku,precio,responsable} } → edición rápida de
+      // "Lista de precios" (una fila por producto, autoguardado). Solo precio.
+      if (action === "editar_precio") {
+        const resultado = await accionEditarPrecio(env, payload);
         await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
