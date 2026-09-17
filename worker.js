@@ -5576,6 +5576,22 @@ export default {
         return json({ ok: true, coincidencias });
       }
 
+      // GET /?action=diag_fiados — diagnóstico de solo lectura para probar el flujo real de
+      // Fiados: últimas ventas registradas (confirma si el webhook receipts.update está
+      // llegando en absoluto), últimos fiados/líneas creados (confirma si el nombre del método
+      // de pago coincidió), y la configuración guardada tal cual quedó en `config`.
+      if (action === "diag_fiados") {
+        const { results: ultimasVentas } = await env.DB.prepare(
+          "SELECT receipt_id, sku, cantidad, fecha_venta, venta FROM ventas ORDER BY rowid DESC LIMIT 10").all();
+        const { results: ultimosFiados } = await env.DB.prepare(
+          "SELECT id, cliente_id, receipt_id_loyverse, monto_total, estado, fecha_hora FROM fiados ORDER BY id DESC LIMIT 10").all();
+        const { results: ultimasLineas } = await env.DB.prepare(
+          "SELECT id, fiado_id, sku, producto_nombre, cantidad, precio_unitario FROM fiados_lineas ORDER BY id DESC LIMIT 10").all();
+        const { results: configFiados } = await env.DB.prepare(
+          "SELECT clave, valor FROM config WHERE clave LIKE 'fiados_%'").all();
+        return json({ ok: true, ultimasVentas, ultimosFiados, ultimasLineas, configFiados });
+      }
+
       // GET /?action=migrar_mayusculas — de una sola vez, ver comentario de migrarMayusculas().
       if (action === "migrar_mayusculas") {
         const r = await migrarMayusculas(env);
