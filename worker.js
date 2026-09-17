@@ -1815,6 +1815,12 @@ async function registrarFiadoDesdeReceipt(env, r, numero) {
   const nombrePago = await configFiadosGet(env, "payment_type_nombre");
   if (!nombrePago) return; // Fiados no configurado todavía (ver ?action=fiados_configurar)
   const pago = (r.payments || []).find(p => String((p && p.name) || "").trim().toLowerCase() === nombrePago.toLowerCase());
+  // Diagnóstico temporal: deja rastro de CADA receipt evaluado (coincida o no), con los nombres
+  // de pago tal cual los manda Loyverse — sin esto, un "no coincide" queda invisible (return
+  // silencioso) y no hay forma de saber por qué una venta fiada no se detectó.
+  await logMsg(env, "🔍 Fiados: receipt " + numero + " · pagos=[" +
+    (r.payments || []).map(p => JSON.stringify((p && p.name) || null)).join(", ") +
+    "] · configurado=" + JSON.stringify(nombrePago) + " · coincide=" + (!!pago));
   if (!pago) return;
   const yaExiste = await get(env, "SELECT id FROM fiados WHERE receipt_id_loyverse = ?", numero);
   if (yaExiste) return;
