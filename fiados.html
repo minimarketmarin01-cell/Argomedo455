@@ -421,7 +421,11 @@ document.getElementById('fd-buscar').addEventListener('input',ev=>{
     try{
       const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=clientes_buscar&q='+encodeURIComponent(q));
       const j=await res.json();
-      fdRenderClientesResultado((j&&j.ok)?(j.clientes||[]):[]);
+      // Antes, si el servidor respondía ok:false (ej. el token de Loyverse no tiene permiso
+      // para leer Clientes), esto se mostraba igual que "0 resultados" — indistinguible de una
+      // búsqueda real sin coincidencias. Ahora se muestra el error real.
+      if(!j||!j.ok){document.getElementById('fd-buscar-results').innerHTML='<div class="vc-empty">Error: '+((j&&j.error)||'no se pudo buscar')+'</div>';return;}
+      fdRenderClientesResultado(j.clientes||[]);
     }catch(e){document.getElementById('fd-buscar-results').innerHTML='<div class="vc-empty">Error de conexión</div>';}
   },200);
 });
@@ -933,7 +937,8 @@ document.getElementById('fd-recon-buscar').addEventListener('input',ev=>{
     try{
       const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=clientes_buscar&q='+encodeURIComponent(q));
       const j=await res.json();
-      const clientes=(j&&j.ok)?(j.clientes||[]):[];
+      if(!j||!j.ok){document.getElementById('fd-recon-results').innerHTML='<div class="vc-empty">Error: '+((j&&j.error)||'no se pudo buscar')+'</div>';return;}
+      const clientes=j.clientes||[];
       document.getElementById('fd-recon-results').innerHTML=clientes.map(c=>`<div class="mm-motivo" data-id="${c.id}">${c.nombre}</div>`).join('')||'<div class="vc-empty" style="padding:10px">Sin resultados</div>';
       document.querySelectorAll('#fd-recon-results [data-id]').forEach(el=>el.onclick=()=>fdAsignarCliente(document.getElementById('fd-recon-ov').dataset.fiadoId,el.dataset.id));
     }catch(e){document.getElementById('fd-recon-results').innerHTML='<div class="vc-empty">Error de conexión</div>';}
