@@ -525,6 +525,54 @@ async function asegurarTablas(env) {
 
   // pedidos_pendientes.estado ya admite 'confirmado'/'recibido' (Fase 1) — 'incompleto'
   // es un tercer valor posible, no necesita columna nueva ni migración de datos.
+
+  // ---- Fiados (cuentas por cobrar) — mismo esquema que Marín 376, ver comentario largo
+  // junto a procesarFiadosDeReceipts más abajo para el mecanismo completo. ----
+  await run(env, `CREATE TABLE IF NOT EXISTS fiados (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente_id TEXT,
+    receipt_id_loyverse TEXT NOT NULL UNIQUE,
+    monto_total REAL NOT NULL,
+    estado TEXT NOT NULL DEFAULT 'abierto',
+    fecha_hora TEXT NOT NULL
+  )`);
+  await run(env, "CREATE INDEX IF NOT EXISTS idx_fiados_cliente ON fiados(cliente_id)");
+  await run(env, "CREATE INDEX IF NOT EXISTS idx_fiados_estado ON fiados(estado)");
+  await run(env, `CREATE TABLE IF NOT EXISTS fiados_lineas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fiado_id INTEGER NOT NULL REFERENCES fiados(id),
+    sku TEXT NOT NULL,
+    producto_nombre TEXT,
+    cantidad REAL NOT NULL,
+    precio_unitario REAL NOT NULL,
+    receipt_line_item_id TEXT
+  )`);
+  await run(env, "CREATE INDEX IF NOT EXISTS idx_fiados_lineas_fiado ON fiados_lineas(fiado_id)");
+  await run(env, `CREATE TABLE IF NOT EXISTS pagos_fiado (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente_id TEXT,
+    fiado_id INTEGER NOT NULL REFERENCES fiados(id),
+    monto REAL NOT NULL,
+    fecha_hora TEXT NOT NULL,
+    metodo_pago TEXT NOT NULL,
+    receipt_id_loyverse_abono TEXT NOT NULL
+  )`);
+  await run(env, "CREATE INDEX IF NOT EXISTS idx_pagos_fiado_cliente ON pagos_fiado(cliente_id)");
+  await run(env, "CREATE INDEX IF NOT EXISTS idx_pagos_fiado_fiado ON pagos_fiado(fiado_id)");
+  // Marca los reembolsos que accionFiadosEliminarLinea ya generó y aplicó a mano — así, cuando
+  // el webhook de ESE MISMO reembolso llegue después, revertirFiadoPorRefund lo reconoce y no
+  // lo vuelve a aplicar (evita descontar el saldo del fiado dos veces por el mismo reembolso).
+  await run(env, `CREATE TABLE IF NOT EXISTS fiados_refunds_linea_manual (
+    receipt_refund_numero TEXT PRIMARY KEY,
+    fiado_id INTEGER NOT NULL,
+    creado TEXT NOT NULL
+  )`);
+  // Configuración de Fiados (nombre del método de pago dedicado a fiar, SKU del ítem "Abono
+  // Fiado", payment_type_id real de cada método) — a diferencia de Marín, que los hardcodea
+  // como constantes de código, acá se guardan en la tabla `config` genérica que ya existe
+  // (mismo patrón que store_id/iva_tax_id, claves con prefijo fiados_ para no chocar) vía
+  // ?action=fiados_configurar, para no depender de un redeploy si el dueño cambia algo en su
+  // cuenta de Loyverse.
 }
 
 // ============================================================
@@ -1725,6 +1773,482 @@ async function aplicarVentas(env, receipts) {
   return procesados;
 }
 
+// ============================================================
+//  FIADOS (cuentas por cobrar) — mismo método que Marín 376.
+//
+//  Loyverse no soporta fiados nativamente. Se detecta un receipt fiado por su método de pago
+//  (guardado en `config` bajo la clave fiados_payment_type_nombre, comparado sin distinguir
+//  mayúsculas) al llegar por el webhook receipts.update, en el mismo punto donde Los Cumpas ya
+//  procesa las ventas (procesarFiadosDeReceipts, enganchado en manejarWebhookLoyverse junto a
+//  aplicarVentas, sin tocarla). Cobrar un abono genera un receipt real en Loyverse (ítem no
+//  inventariable "Abono Fiado", SKU guardado en fiados_sku_abono, precio abierto) para que el
+//  cierre de caja oficial cuadre, y aplica el monto FIFO contra los fiados más antiguos del
+//  cliente. cliente_id = customer_id de Loyverse (el cajero debe asignar/crear el Cliente en
+//  Loyverse al fiar; si lo olvida, fiados_sin_cliente/fiados_asignar_cliente lo reconcilian).
+// ============================================================
+const METODOS_PAGO_FIADO_VALIDOS = ["efectivo", "tarjeta", "transferencia"];
+
+async function configFiadosGet(env, clave) {
+  const fila = await get(env, "SELECT valor FROM config WHERE clave = ?", "fiados_" + clave);
+  return fila ? fila.valor : null;
+}
+async function configFiadosSet(env, clave, valor) {
+  await run(env, "INSERT INTO config (clave, valor) VALUES (?,?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
+    "fiados_" + clave, String(valor));
+}
+
+// Saldo pendiente de UN fiado puntual (monto_total menos lo ya abonado a ESE fiado).
+async function saldoDeFiado(env, fiado) {
+  const fila = await get(env, "SELECT COALESCE(SUM(monto),0) AS total FROM pagos_fiado WHERE fiado_id = ?", fiado.id);
+  return Math.round((fiado.monto_total - (fila ? fila.total : 0)) * 100) / 100;
+}
+
+// Detecta si un receipt se cerró con el método de pago de fiados y, si es así, crea el fiado +
+// sus líneas + un registro de auditoría (el stock físico YA bajó solo, vía el webhook de
+// inventario que Los Cumpas ya maneja — esto es solo un registro, no toca productos.stock).
+// Idempotente por receipt_id_loyverse: si Loyverse reenvía el mismo webhook, no duplica nada.
+async function registrarFiadoDesdeReceipt(env, r, numero) {
+  if (r.receipt_type === "REFUND") return; // los reembolsos se procesan aparte, ver revertirFiadoPorRefund
+  const nombrePago = await configFiadosGet(env, "payment_type_nombre");
+  if (!nombrePago) return; // Fiados no configurado todavía (ver ?action=fiados_configurar)
+  const pago = (r.payments || []).find(p => String((p && p.name) || "").trim().toLowerCase() === nombrePago.toLowerCase());
+  if (!pago) return;
+  const yaExiste = await get(env, "SELECT id FROM fiados WHERE receipt_id_loyverse = ?", numero);
+  if (yaExiste) return;
+
+  const fechaHora = r.receipt_date || r.created_at || new Date().toISOString();
+  const ins = await run(env,
+    "INSERT INTO fiados (cliente_id, receipt_id_loyverse, monto_total, estado, fecha_hora) VALUES (?,?,?,?,?)",
+    r.customer_id || null, numero, r.total_money || 0, "abierto", fechaHora);
+  const fiadoId = ins.meta.last_row_id;
+
+  for (const li of (r.line_items || [])) {
+    const sku = li.sku ? String(li.sku) : "__SIN_SKU__";
+    await run(env,
+      "INSERT INTO fiados_lineas (fiado_id, sku, producto_nombre, cantidad, precio_unitario, receipt_line_item_id) VALUES (?,?,?,?,?,?)",
+      fiadoId, sku, li.item_name || null, li.quantity || 0, li.price || 0, li.id || null);
+  }
+  await run(env,
+    `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    fechaHoraDDMMAAAA(), "fiado", null, null, null, null, null,
+    "Fiado registrado: receipt " + numero + " · $" + (r.total_money || 0) + (r.customer_id ? "" : " · SIN CLIENTE ASIGNADO en Loyverse"), "");
+  await logMsg(env, "🧾 Fiado registrado: receipt " + numero + " · $" + (r.total_money || 0) +
+    (r.customer_id ? "" : " · SIN CLIENTE ASIGNADO en Loyverse"));
+}
+
+// Reembolso en Loyverse (receipt_type="REFUND", refund_for=<receipt original>) de una venta que
+// había sido fiada. IMPORTANTE sobre stock: Loyverse ya devuelve el stock físico solo al
+// reembolsar — llega vía el webhook de inventario existente, sin ningún código nuestro de por
+// medio. Acá NUNCA se llama a sumarStockLoyverse/loyversePost de inventario — duplicaría el
+// stock que Loyverse ya devolvió. Solo se ajusta el saldo del fiado: se inserta un pagos_fiado
+// con metodo_pago='reembolso' por el monto reembolsado. No se toca fiados.monto_total — se
+// preserva el monto original de la venta para que el historial siga siendo fiel.
+async function revertirFiadoPorRefund(env, r) {
+  const receiptOriginal = String(r.refund_for || "");
+  if (!receiptOriginal) return;
+  const fiado = await get(env, "SELECT * FROM fiados WHERE receipt_id_loyverse = ?", receiptOriginal);
+  if (!fiado) return; // esa venta no era un fiado, nada que hacer
+
+  const receiptRefund = String(r.receipt_number || r.id || "");
+  // Si accionFiadosEliminarLinea ya generó este mismo reembolso a mano (borrado de línea desde
+  // la webapp), el saldo del fiado ya se ajustó ahí mismo, sin esperar el webhook.
+  const yaManual = await get(env, "SELECT 1 AS x FROM fiados_refunds_linea_manual WHERE receipt_refund_numero = ?", receiptRefund);
+  if (yaManual) return;
+  const yaProcesado = await get(env,
+    "SELECT id FROM pagos_fiado WHERE fiado_id = ? AND receipt_id_loyverse_abono = ?", fiado.id, receiptRefund);
+  if (yaProcesado) return;
+
+  const saldoActual = await saldoDeFiado(env, fiado);
+  if (saldoActual <= 0) {
+    await logMsg(env, "ℹ️ Reembolso recibido (receipt " + receiptRefund + ") para un fiado que ya estaba saldado (fiado " + fiado.id + ") — no hay nada que revertir.");
+    return;
+  }
+  const montoAplicar = Math.min(saldoActual, Number(r.total_money) || saldoActual);
+  const cierraFiado = montoAplicar >= saldoActual;
+  await run(env, "INSERT INTO pagos_fiado (cliente_id, fiado_id, monto, fecha_hora, metodo_pago, receipt_id_loyverse_abono) VALUES (?,?,?,?,?,?)",
+    fiado.cliente_id, fiado.id, montoAplicar, new Date().toISOString(), "reembolso", receiptRefund);
+  if (cierraFiado) await run(env, "UPDATE fiados SET estado = 'pagado' WHERE id = ?", fiado.id);
+  await logMsg(env, "↩️ Fiado reembolsado en Loyverse: fiado " + fiado.id + " (venta " + receiptOriginal + ") · $" + montoAplicar +
+    " revertido vía receipt " + receiptRefund + (cierraFiado ? " · fiado cerrado" : " · queda saldo $" + Math.round((saldoActual - montoAplicar) * 100) / 100));
+}
+
+// Venta anulada en Loyverse (cancelled_at) — si era un fiado, se cierra entero (se trata igual
+// que si se hubiera reembolsado el saldo completo, sin importar si hubo abonos parciales).
+async function revertirFiadoPorCancelacion(env, r, numero) {
+  const fiado = await get(env, "SELECT * FROM fiados WHERE receipt_id_loyverse = ?", numero);
+  if (!fiado) return; // esa venta no era un fiado, nada que hacer
+  const yaProcesado = await get(env,
+    "SELECT id FROM pagos_fiado WHERE fiado_id = ? AND receipt_id_loyverse_abono = ? AND metodo_pago = 'anulado'", fiado.id, numero);
+  if (yaProcesado) return;
+
+  const saldoActual = await saldoDeFiado(env, fiado);
+  if (saldoActual <= 0) {
+    await logMsg(env, "ℹ️ Venta anulada en Loyverse (receipt " + numero + ") de un fiado que ya estaba saldado (fiado " + fiado.id + ") — no hay nada que revertir.");
+    return;
+  }
+  await run(env, "INSERT INTO pagos_fiado (cliente_id, fiado_id, monto, fecha_hora, metodo_pago, receipt_id_loyverse_abono) VALUES (?,?,?,?,?,?)",
+    fiado.cliente_id, fiado.id, saldoActual, new Date().toISOString(), "anulado", numero);
+  await run(env, "UPDATE fiados SET estado = 'pagado' WHERE id = ?", fiado.id);
+  await logMsg(env, "🗑️ Venta fiada anulada en Loyverse: fiado " + fiado.id + " (receipt " + numero + ") · $" + saldoActual + " · fiado cerrado");
+}
+
+// Punto de entrada de Fiados dentro del webhook receipts.update — llamado junto a aplicarVentas
+// (sin reemplazarla), mismo criterio de 3 casos mutuamente excluyentes que usa Marín: venta
+// anulada, reembolso, o venta normal (que puede o no ser un fiado).
+async function procesarFiadosDeReceipts(env, receipts) {
+  if (!receipts || !receipts.length) return;
+  for (const r of receipts) {
+    const numero = r.receipt_number || r.id;
+    if (!numero) continue;
+    try {
+      if (r.cancelled_at) {
+        await revertirFiadoPorCancelacion(env, r, numero);
+      } else if (r.receipt_type === "REFUND" && r.refund_for) {
+        await revertirFiadoPorRefund(env, r);
+      } else {
+        await registrarFiadoDesdeReceipt(env, r, numero);
+      }
+    } catch (e) {
+      await logMsg(env, "❌ Error procesando fiado (receipt " + numero + "): " + e.message);
+    }
+  }
+}
+
+// Cobro de un abono: aplica el monto FIFO contra los fiados más antiguos del cliente y genera
+// un receipt real en Loyverse (ítem "Abono Fiado") para que el cierre de caja oficial cuadre.
+async function accionFiadosCobrar(env, payload) {
+  const clienteId = String((payload && payload.cliente_id) || "");
+  const monto = Number(payload && payload.monto);
+  const metodoPago = String((payload && payload.metodo_pago) || "").toLowerCase();
+  if (!clienteId) throw new Error("Falta cliente_id");
+  if (!monto || monto <= 0) throw new Error("El monto debe ser mayor a 0");
+  if (!METODOS_PAGO_FIADO_VALIDOS.includes(metodoPago)) throw new Error("metodo_pago inválido: " + metodoPago);
+
+  const { results: fiadosAbiertos } = await env.DB.prepare(
+    "SELECT * FROM fiados WHERE cliente_id = ? AND estado = 'abierto' ORDER BY fecha_hora ASC").bind(clienteId).all();
+  if (!fiadosAbiertos.length) throw new Error("Este cliente no tiene fiados abiertos");
+
+  // Primera pasada: calcular hasta dónde alcanza el monto SIN escribir nada todavía — así se
+  // puede rechazar de entrada un monto que supera la deuda total sin dejar cambios a medias.
+  let restante = monto, deudaTotal = 0;
+  const aplicaciones = [];
+  for (const f of fiadosAbiertos) {
+    const saldo = await saldoDeFiado(env, f);
+    if (saldo <= 0) continue;
+    deudaTotal += saldo;
+    if (restante <= 0) continue;
+    const aplicado = Math.min(restante, saldo);
+    aplicaciones.push({ fiado: f, saldo, aplicado, cierraFiado: aplicado >= saldo });
+    restante -= aplicado;
+  }
+  deudaTotal = Math.round(deudaTotal * 100) / 100;
+  if (monto > deudaTotal) {
+    throw new Error("El monto ($" + monto + ") supera la deuda total del cliente ($" + deudaTotal + ")");
+  }
+
+  // Resolver el variant_id del ítem "Abono Fiado" (ya sincronizado como cualquier producto vía
+  // items.update) y el payment_type_id del método elegido (guardado una vez con
+  // fiados_configurar — nunca se adivina el nombre exacto configurado en la cuenta).
+  const skuAbono = await configFiadosGet(env, "sku_abono");
+  if (!skuAbono) throw new Error("Fiados no configurado: falta fiados_sku_abono (correr ?action=fiados_configurar)");
+  const itemAbono = await get(env, "SELECT variant_id FROM productos WHERE sku = ?", skuAbono);
+  if (!itemAbono || !itemAbono.variant_id) {
+    throw new Error("No se encontró el ítem 'Abono Fiado' (SKU " + skuAbono + ") en el catálogo — créalo en Loyverse con ese SKU exacto y sincroniza");
+  }
+  const paymentTypeId = await configFiadosGet(env, "payment_type_id_" + metodoPago);
+  if (!paymentTypeId) {
+    throw new Error("Falta configurar payment_type_id_" + metodoPago + " (correr ?action=fiados_diagnostico_payment_types y luego ?action=fiados_configurar)");
+  }
+
+  const { storeId } = await obtenerStoreId(env);
+  const creado = await loyversePost(env, "/receipts", {
+    store_id: storeId,
+    customer_id: clienteId,
+    line_items: [{ variant_id: itemAbono.variant_id, quantity: 1, price: monto }],
+    payments: [{ payment_type_id: paymentTypeId, money_amount: monto }]
+  });
+  const receiptAbono = creado.receipt_number || creado.id;
+
+  const fechaHoraAbono = new Date().toISOString();
+  const fiadosCubiertos = [];
+  for (const ap of aplicaciones) {
+    await run(env,
+      "INSERT INTO pagos_fiado (cliente_id, fiado_id, monto, fecha_hora, metodo_pago, receipt_id_loyverse_abono) VALUES (?,?,?,?,?,?)",
+      clienteId, ap.fiado.id, ap.aplicado, fechaHoraAbono, metodoPago, receiptAbono);
+    if (ap.cierraFiado) await run(env, "UPDATE fiados SET estado = 'pagado' WHERE id = ?", ap.fiado.id);
+    const { results: lineas } = await env.DB.prepare(
+      "SELECT sku, producto_nombre, cantidad, precio_unitario FROM fiados_lineas WHERE fiado_id = ?").bind(ap.fiado.id).all();
+    fiadosCubiertos.push({
+      fiadoId: ap.fiado.id, fechaHora: ap.fiado.fecha_hora, montoAplicado: ap.aplicado,
+      quedaAbierto: !ap.cierraFiado, saldoRestanteFiado: Math.round((ap.saldo - ap.aplicado) * 100) / 100,
+      lineas
+    });
+  }
+  await logMsg(env, "💰 Abono fiado cobrado: cliente " + clienteId + " · $" + monto + " (" + metodoPago + ") · receipt " + receiptAbono);
+
+  return { ok: true, saldoRestante: Math.round((deudaTotal - monto) * 100) / 100, fiadosCubiertos, receiptAbono };
+}
+
+// Guarda una sola vez la configuración de Fiados — nunca se adivina el nombre/SKU/IDs reales de
+// la cuenta. Expuesta como GET (a diferencia de Marín) para que el dueño la dispare abriendo una
+// URL desde el celular, sin necesitar otra herramienta.
+async function accionFiadosConfigurar(env, params) {
+  const guardadas = {};
+  for (const metodo of METODOS_PAGO_FIADO_VALIDOS) {
+    const valor = params.get("payment_type_id_" + metodo);
+    if (valor) { await configFiadosSet(env, "payment_type_id_" + metodo, valor); guardadas["payment_type_id_" + metodo] = valor; }
+  }
+  const nombrePago = params.get("payment_type_nombre_fiado");
+  if (nombrePago) { await configFiadosSet(env, "payment_type_nombre", nombrePago); guardadas.payment_type_nombre_fiado = nombrePago; }
+  const skuAbono = params.get("sku_abono_fiado");
+  if (skuAbono) { await configFiadosSet(env, "sku_abono", skuAbono); guardadas.sku_abono_fiado = skuAbono; }
+  if (!Object.keys(guardadas).length) throw new Error("No se recibió ningún parámetro para guardar");
+  return { guardadas };
+}
+
+// Saneamiento: reasigna a mano el cliente de un fiado que quedó sin customer_id (el cajero
+// olvidó asignar/crear el Cliente en Loyverse al fiar).
+async function accionFiadosAsignarCliente(env, payload) {
+  const fiadoId = Number(payload && payload.fiado_id);
+  const clienteId = String((payload && payload.cliente_id) || "");
+  if (!fiadoId) throw new Error("Falta fiado_id");
+  if (!clienteId) throw new Error("Falta cliente_id");
+  const fiado = await get(env, "SELECT id FROM fiados WHERE id = ?", fiadoId);
+  if (!fiado) throw new Error("Fiado no encontrado: " + fiadoId);
+  await run(env, "UPDATE fiados SET cliente_id = ? WHERE id = ?", clienteId, fiadoId);
+  return { ok: true, fiadoId, clienteId };
+}
+
+// Fusiona dos clientes en Fiados (misma persona con 2 registros distintos en Loyverse) —
+// reasigna TODOS los fiados (abiertos y ya pagados) y todos los pagos_fiado del cliente origen
+// al cliente destino. El origen simplemente deja de tener fiados propios (no se borra nada).
+async function accionFiadosFusionarClientes(env, payload) {
+  const origenId = String((payload && payload.cliente_origen_id) || "");
+  const destinoId = String((payload && payload.cliente_destino_id) || "");
+  if (!origenId) throw new Error("Falta cliente_origen_id");
+  if (!destinoId) throw new Error("Falta cliente_destino_id");
+  if (origenId === destinoId) throw new Error("No se puede fusionar un cliente consigo mismo");
+  await env.DB.batch([
+    env.DB.prepare("UPDATE fiados SET cliente_id = ? WHERE cliente_id = ?").bind(destinoId, origenId),
+    env.DB.prepare("UPDATE pagos_fiado SET cliente_id = ? WHERE cliente_id = ?").bind(destinoId, origenId)
+  ]);
+  await logMsg(env, "🔀 Clientes fusionados en Fiados: " + origenId + " → " + destinoId);
+  return { ok: true, origenId, destinoId };
+}
+
+// Borra UNA línea de un fiado abierto (el cajero cargó de más por error). Camino correcto:
+// genera un REEMBOLSO real en Loyverse para esa línea puntual, referenciando
+// fiados_lineas.receipt_line_item_id — así Loyverse restockea solo (mirror pasivo vía el
+// webhook de inventario existente, nunca se llama a sumarStockLoyverse acá) y el recibo
+// original en Loyverse queda reflejando la realidad. El reembolso se marca en
+// fiados_refunds_linea_manual para que, cuando el webhook de ESE MISMO reembolso llegue
+// después, revertirFiadoPorRefund lo ignore. Fiados sin ese id (creados antes, o líneas sin SKU
+// reconocido) usan un camino de respaldo: ajuste directo de stock, sin recibo en Loyverse.
+// Nunca borra la fila `fiados` (se marca 'pagado' si queda en 0, igual que un cobro normal).
+async function accionFiadosEliminarLinea(env, payload) {
+  const lineaId = Number(payload && payload.linea_id);
+  if (!lineaId) throw new Error("Falta linea_id");
+
+  const linea = await get(env, "SELECT * FROM fiados_lineas WHERE id = ?", lineaId);
+  if (!linea) throw new Error("Línea no encontrada (puede que ya se haya eliminado)");
+
+  const fiado = await get(env, "SELECT * FROM fiados WHERE id = ?", linea.fiado_id);
+  if (!fiado) throw new Error("El fiado de esta línea no existe");
+  if (fiado.estado !== "abierto") throw new Error("Este fiado ya no está abierto — no se puede editar");
+
+  const montoLinea = Math.round(linea.cantidad * linea.precio_unitario * 100) / 100;
+  const filaPagado = await get(env, "SELECT COALESCE(SUM(monto),0) AS total FROM pagos_fiado WHERE fiado_id = ?", fiado.id);
+  const pagado = filaPagado ? filaPagado.total : 0;
+  const nuevoMontoTotal = Math.round((fiado.monto_total - montoLinea) * 100) / 100;
+
+  if (nuevoMontoTotal < pagado) {
+    throw new Error("No se puede eliminar: este fiado ya tiene un abono de $" + pagado +
+      ", y el nuevo total quedaría en $" + nuevoMontoTotal + ", menor a lo pagado");
+  }
+
+  let avisoStock;
+  if (linea.receipt_line_item_id && linea.cantidad > 0) {
+    let refundCreado, yaEstabaReembolsada = false;
+    try {
+      refundCreado = await loyversePost(env, "/receipts/" + fiado.receipt_id_loyverse + "/refund", {
+        line_items: [{ id: linea.receipt_line_item_id, quantity: linea.cantidad }]
+      });
+    } catch (e) {
+      const msg = String((e && e.message) || "");
+      // Un intento anterior ya reembolsó esta línea en Loyverse pero la respuesta nunca llegó a
+      // completarse acá (timeout/corte de red) — se detecta el mensaje puntual y se completa el
+      // borrado local igual, confiando en Loyverse como fuente de verdad.
+      yaEstabaReembolsada = /Not enough item quantity to refund \(0(\.0+)?\s*\//i.test(msg);
+      if (!yaEstabaReembolsada) {
+        throw new Error("No se pudo generar el reembolso en Loyverse para esta línea (" + msg + ") — no se eliminó nada, reintenta.");
+      }
+    }
+    if (yaEstabaReembolsada) {
+      await logMsg(env, "ℹ️ La línea ya estaba reembolsada en Loyverse (un intento anterior no llegó a completarse acá) — fiado " +
+        fiado.id + " · " + (linea.producto_nombre || linea.sku) + " · se completa el borrado local.");
+    } else {
+      const receiptRefund = String((refundCreado && (refundCreado.receipt_number || refundCreado.id)) || "");
+      if (receiptRefund) {
+        await run(env, "INSERT OR IGNORE INTO fiados_refunds_linea_manual (receipt_refund_numero, fiado_id, creado) VALUES (?,?,?)",
+          receiptRefund, fiado.id, new Date().toISOString());
+      }
+      await logMsg(env, "↩️ Línea de fiado reembolsada en Loyverse: " + (linea.producto_nombre || linea.sku) +
+        " · fiado " + fiado.id + " · receipt reembolso " + receiptRefund);
+    }
+  } else if (linea.sku && linea.sku !== "__SIN_SKU__" && linea.cantidad > 0) {
+    // Camino de respaldo: fiado creado antes de guardar receipt_line_item_id — sin ese id no se
+    // le puede pedir a Loyverse un reembolso puntual de esta línea.
+    const productoRow = await get(env, "SELECT * FROM productos WHERE sku = ?", linea.sku);
+    if (!productoRow) {
+      avisoStock = "⚠️ SKU " + linea.sku + " ya no existe en el catálogo — no se pudo devolver el stock. Revísalo a mano.";
+    } else {
+      try {
+        const res = await sumarStockLoyverse(env, productoRow, linea.cantidad);
+        if (res.ok) {
+          await logMsg(env, "↩️ Línea de fiado eliminada (fiado antiguo, sin reembolso en Loyverse), stock devuelto: " +
+            (linea.producto_nombre || linea.sku) + " · " + res.antes + " → " + res.despues);
+        } else {
+          avisoStock = "⚠️ No se pudo devolver el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+        }
+      } catch (e) {
+        avisoStock = "⚠️ No se pudo devolver el stock en Loyverse. Revísalo a mano.";
+      }
+    }
+  }
+
+  await run(env, "DELETE FROM fiados_lineas WHERE id = ?", lineaId);
+
+  const EPS = 0.5;
+  let fiadoPagado = false;
+  if (nuevoMontoTotal <= EPS) {
+    await run(env, "UPDATE fiados SET estado = 'pagado', monto_total = 0 WHERE id = ?", fiado.id);
+    fiadoPagado = true;
+  } else {
+    await run(env, "UPDATE fiados SET monto_total = ? WHERE id = ?", nuevoMontoTotal, fiado.id);
+  }
+
+  await logMsg(env, "🗑️ Línea de fiado eliminada: fiado " + fiado.id + " · " + linea.cantidad +
+    " × " + (linea.producto_nombre || linea.sku) + (fiadoPagado ? " · fiado quedó saldado" : ""));
+
+  const out = { ok: true, fiadoId: fiado.id, fiadoPagado, nuevoMontoTotal: fiadoPagado ? 0 : nuevoMontoTotal };
+  if (avisoStock) out.avisoStock = avisoStock;
+  return out;
+}
+
+// Saldo total + detalle de fiados abiertos de UN cliente — usado por la pantalla de cobro.
+async function repFiadosCliente(env, clienteId) {
+  if (!clienteId) throw new Error("Falta cliente_id");
+  const { results: fiadosAbiertos } = await env.DB.prepare(`
+    SELECT f.id, f.fecha_hora, f.monto_total, (f.monto_total - COALESCE(pf.pagado,0)) AS saldo
+    FROM fiados f
+    LEFT JOIN (SELECT fiado_id, SUM(monto) AS pagado FROM pagos_fiado GROUP BY fiado_id) pf ON pf.fiado_id = f.id
+    WHERE f.cliente_id = ? AND f.estado = 'abierto'
+    ORDER BY f.fecha_hora ASC`).bind(clienteId).all();
+  if (!fiadosAbiertos.length) return { saldoTotal: 0, fiadosAbiertos: [] };
+
+  const ids = fiadosAbiertos.map(f => f.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const { results: todasLasLineas } = await env.DB.prepare(
+    `SELECT id, fiado_id, sku, producto_nombre, cantidad, precio_unitario FROM fiados_lineas WHERE fiado_id IN (${placeholders})`
+  ).bind(...ids).all();
+  const lineasPorFiado = {};
+  todasLasLineas.forEach(l => {
+    (lineasPorFiado[l.fiado_id] = lineasPorFiado[l.fiado_id] || []).push(
+      { id: l.id, sku: l.sku, producto_nombre: l.producto_nombre, cantidad: l.cantidad, precio_unitario: l.precio_unitario });
+  });
+
+  let saldoTotal = 0;
+  const detalle = fiadosAbiertos.map(f => {
+    const saldo = Math.round(f.saldo * 100) / 100;
+    saldoTotal += saldo;
+    return { fiadoId: f.id, fechaHora: f.fecha_hora, montoTotal: f.monto_total, saldo, lineas: lineasPorFiado[f.id] || [] };
+  });
+  return { saldoTotal: Math.round(saldoTotal * 100) / 100, fiadosAbiertos: detalle };
+}
+
+// Caché del catálogo completo de clientes de Loyverse (TTL 60s) — el buscador de clientes lo
+// pedía completo en cada tecleo sin caché, siendo un catálogo que cambia poco.
+let _fiadosCustomersCache = null;
+let _fiadosCustomersCacheAt = 0;
+const FIADOS_CUSTOMERS_CACHE_MS = 60000;
+async function loyverseCustomersCacheados(env) {
+  const ahora = Date.now();
+  if (_fiadosCustomersCache && (ahora - _fiadosCustomersCacheAt) < FIADOS_CUSTOMERS_CACHE_MS) return _fiadosCustomersCache;
+  _fiadosCustomersCache = await loyverseGetAll(env, "/customers", "customers");
+  _fiadosCustomersCacheAt = ahora;
+  return _fiadosCustomersCache;
+}
+
+// Búsqueda de clientes por nombre contra Loyverse — NUNCA devuelve el catálogo completo salvo
+// que se pida explícito con `todos` (privacidad).
+async function repClientesBuscar(env, queryTexto, todos) {
+  const texto = String(queryTexto || "").trim();
+  if (!texto && !todos) return { clientes: [] };
+  const normalizado = texto.toLowerCase();
+  const todosClientes = await loyverseCustomersCacheados(env);
+  const filtrados = todos ? todosClientes : todosClientes.filter(c => String(c.name || "").toLowerCase().includes(normalizado));
+  return { clientes: filtrados.map(c => ({ id: c.id, nombre: c.name, telefono: c.phone_number || "" })) };
+}
+
+// Lista de clientes que SÍ tienen fiado abierto (para la Vista A de fiados.html) — nunca la
+// lista completa de clientes de Loyverse, solo el subconjunto que efectivamente debe algo.
+async function repFiadosResumen(env) {
+  const { results: porCliente } = await env.DB.prepare(`
+    SELECT f.cliente_id AS cliente_id, COUNT(*) AS fiados_abiertos, MIN(f.fecha_hora) AS fiado_mas_antiguo,
+           SUM(f.monto_total - COALESCE(pf.pagado,0)) AS saldo
+    FROM fiados f
+    LEFT JOIN (SELECT fiado_id, SUM(monto) AS pagado FROM pagos_fiado GROUP BY fiado_id) pf ON pf.fiado_id = f.id
+    WHERE f.estado = 'abierto' AND f.cliente_id IS NOT NULL
+    GROUP BY f.cliente_id`).all();
+  if (!porCliente.length) return { clientes: [] };
+  const clientes = porCliente.map(f => ({
+    clienteId: f.cliente_id, fiadosAbiertos: f.fiados_abiertos,
+    saldo: Math.round((f.saldo || 0) * 100) / 100, fiadoMasAntiguo: f.fiado_mas_antiguo
+  }));
+  try {
+    const datos = await loyverseGet(env, "/customers", { customer_ids: clientes.map(c => c.clienteId).join(",") });
+    const nombrePorId = {};
+    (datos.customers || []).forEach(c => { nombrePorId[c.id] = c.name; });
+    clientes.forEach(c => { c.nombre = nombrePorId[c.clienteId] || null; });
+  } catch (e) {
+    await logMsg(env, "⚠️ No se pudieron resolver nombres de clientes en fiados_resumen: " + e.message);
+  }
+  clientes.sort((a, b) => String(a.fiadoMasAntiguo || "").localeCompare(String(b.fiadoMasAntiguo || "")));
+  return { clientes };
+}
+
+// Historial completo de movimientos (fiados nuevos + abonos) de UN cliente, con saldo corriente
+// — se arma a partir de las mismas tablas fiados/pagos_fiado, se pide solo bajo demanda.
+async function repFiadosHistorialCliente(env, clienteId) {
+  if (!clienteId) throw new Error("Falta cliente_id");
+  const { results: fiados } = await env.DB.prepare(
+    "SELECT id, monto_total, fecha_hora, receipt_id_loyverse FROM fiados WHERE cliente_id = ? ORDER BY fecha_hora ASC").bind(clienteId).all();
+  const { results: pagos } = await env.DB.prepare(
+    "SELECT fiado_id, monto, fecha_hora, metodo_pago, receipt_id_loyverse_abono FROM pagos_fiado WHERE cliente_id = ? ORDER BY fecha_hora ASC").bind(clienteId).all();
+  const movimientos = [];
+  fiados.forEach(f => movimientos.push({ fechaHora: f.fecha_hora, tipo: "fiado", monto: f.monto_total, ticket: f.receipt_id_loyverse, fiadoId: f.id }));
+  pagos.forEach(p => movimientos.push({ fechaHora: p.fecha_hora, tipo: "abono_" + p.metodo_pago, monto: -p.monto, ticket: p.receipt_id_loyverse_abono, fiadoId: p.fiado_id }));
+  movimientos.sort((a, b) => String(a.fechaHora).localeCompare(String(b.fechaHora)));
+  let saldo = 0;
+  movimientos.forEach(m => { saldo = Math.round((saldo + m.monto) * 100) / 100; m.saldo = saldo; });
+  return { saldoActual: saldo, movimientos };
+}
+
+// Fiados que quedaron sin cliente asignado (el cajero olvidó asignar/crear el Cliente en
+// Loyverse al fiar) — para reconciliar a mano con fiados_asignar_cliente.
+async function repFiadosSinCliente(env) {
+  const { results: filas } = await env.DB.prepare(
+    "SELECT id, receipt_id_loyverse, monto_total, fecha_hora FROM fiados WHERE cliente_id IS NULL AND estado = 'abierto' ORDER BY fecha_hora ASC").all();
+  return { fiados: filas };
+}
+
+// Diagnóstico de solo lectura (uso interno, una sola vez durante la configuración): muestra los
+// payment_type_id reales de la cuenta para poder guardarlos con fiados_configurar sin adivinar.
+async function repFiadosDiagnosticoPaymentTypes(env) {
+  const datos = await loyverseGet(env, "/payment_types", {});
+  return { paymentTypes: datos.payment_types || datos };
+}
 
 // costo, categoría, código de barras, IVA. Nunca toca `stock` (eso lo maneja el
 // webhook de inventario) ni `proveedor`/`sector` (campos propios de la app).
@@ -1787,6 +2311,7 @@ async function manejarWebhookLoyverse(request, env, url) {
       resultado.procesados = await aplicarCambiosItems(env, evento.items);
     } else if (tipo === "receipts.update" && evento.receipts) {
       resultado.procesados = await aplicarVentas(env, evento.receipts);
+      await procesarFiadosDeReceipts(env, evento.receipts);
     } else {
       resultado.noManejado = true; // tipo recibido pero sin handler todavía (se registra igual)
     }
@@ -5359,6 +5884,67 @@ export default {
         return json({ ok: true, ...resultado });
       }
 
+      // ---- Fiados (cuentas por cobrar) — ver comentario largo junto a
+      // procesarFiadosDeReceipts para el mecanismo completo. Página propia fiados.html. ----
+      if (action === "fiados_cliente") {
+        const resultado = await repFiadosCliente(env, url.searchParams.get("cliente_id"));
+        return json({ ok: true, ...resultado });
+      }
+      if (action === "fiados_historial_cliente") {
+        const resultado = await repFiadosHistorialCliente(env, url.searchParams.get("cliente_id"));
+        return json({ ok: true, ...resultado });
+      }
+      if (action === "clientes_buscar") {
+        const resultado = await repClientesBuscar(env, url.searchParams.get("q"), url.searchParams.get("todos") === "1");
+        return json({ ok: true, ...resultado });
+      }
+      if (action === "fiados_resumen") {
+        const resultado = await repFiadosResumen(env);
+        return json({ ok: true, ...resultado });
+      }
+      if (action === "fiados_sin_cliente") {
+        const resultado = await repFiadosSinCliente(env);
+        return json({ ok: true, ...resultado });
+      }
+      // GET /?action=fiados_diagnostico_payment_types → uso interno, una sola vez, para ver
+      // los payment_type_id reales de la cuenta antes de correr fiados_configurar.
+      if (action === "fiados_diagnostico_payment_types") {
+        const resultado = await repFiadosDiagnosticoPaymentTypes(env);
+        return json({ ok: true, ...resultado });
+      }
+      // GET /?action=fiados_configurar&payment_type_id_efectivo=X&payment_type_id_tarjeta=Y&
+      // payment_type_id_transferencia=Z&payment_type_nombre_fiado=Otros&sku_abono_fiado=10231
+      // → configuración de Fiados, se corre una sola vez (GET a propósito, para que el dueño lo
+      // dispare abriendo la URL desde el celular — ver accionFiadosConfigurar).
+      if (action === "fiados_configurar") {
+        const resultado = await accionFiadosConfigurar(env, url.searchParams);
+        return json({ ok: true, ...resultado });
+      }
+      // POST { action:'fiados_cobrar', payload:{cliente_id,monto,metodo_pago} } → cobra un
+      // abono, genera el recibo real en Loyverse y aplica el monto FIFO a los fiados abiertos.
+      if (action === "fiados_cobrar") {
+        const resultado = await accionFiadosCobrar(env, payload);
+        return json(resultado);
+      }
+      // POST { action:'fiados_asignar_cliente', payload:{fiado_id,cliente_id} } → reconcilia
+      // un fiado que quedó sin cliente asignado en Loyverse.
+      if (action === "fiados_asignar_cliente") {
+        const resultado = await accionFiadosAsignarCliente(env, payload);
+        return json(resultado);
+      }
+      // POST { action:'fiados_fusionar_clientes', payload:{cliente_origen_id,cliente_destino_id} }
+      // → fusiona 2 clientes duplicados en Loyverse bajo un solo historial de Fiados.
+      if (action === "fiados_fusionar_clientes") {
+        const resultado = await accionFiadosFusionarClientes(env, payload);
+        return json(resultado);
+      }
+      // POST { action:'fiados_eliminar_linea', payload:{linea_id} } → borra una línea cargada
+      // de más en un fiado abierto (reembolso real en Loyverse cuando es posible).
+      if (action === "fiados_eliminar_linea") {
+        const resultado = await accionFiadosEliminarLinea(env, payload);
+        return json(resultado);
+      }
+
       // GET sin `action` → payload completo del dashboard (bootstrap de Marín Pedidos,
       // ver plan "FASE 1"). Antes de esto no había equivalente: un GET sin action solo
       // devolvía el mensaje de bienvenida de más abajo.
@@ -5370,7 +5956,7 @@ export default {
       // Sin acción reconocida (POST sin action, u otra no listada): mensaje de bienvenida.
       return json({
         ok: true,
-        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos, favoritos. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir, guardar_multiplo_producto, favorito, marcar_pedido_realizado. Webhook Loyverse: POST /webhook/loyverse",
+        mensaje: "Worker Argomedo455 activo. GET: ?action=setup, test_loyverse, store_id, reset_store_id, sync, catalogo, ultima_actualizacion, historial_producto, proveedores_sectores, vencimientos, sync_ventas, buscar_barcode, ficha_producto, proveedores_conteo, productos_proveedor, vapid_public_key, probar_push, descuentos_activos, historial_mermas, llegadas, abc, abc_calcular, sincosto, config_categorias, consumo_categoria, riesgo_excluidos, favoritos, fiados_cliente, fiados_historial_cliente, clientes_buscar, fiados_resumen, fiados_sin_cliente, fiados_diagnostico_payment_types, fiados_configurar. POST: lote_nuevo, crear_producto, habilitar_track_stock, activar_iva, ajustar_stock, crear_proveedor, crear_sector, vencimiento_estado, vencimiento_eliminar, vencimiento_fecha, editar_producto, eliminar_producto, eliminar_proveedor, guardar_suscripcion_push, quitar_suscripcion_push, aplicar_descuento_vencimiento, registrar_gestion_descuento, cerrar_gestion_descuento, agregar_proveedor_extra, quitar_proveedor_extra, registrar_merma, merma_motivo, asignar_llegada, ignorar_llegada, aplicar_precio_abc, config_categoria_cambio, riesgo_excluir, guardar_multiplo_producto, favorito, marcar_pedido_realizado, fiados_cobrar, fiados_asignar_cliente, fiados_fusionar_clientes, fiados_eliminar_linea. Webhook Loyverse: POST /webhook/loyverse",
       });
     } catch (e) {
       // Falta un secreto externo (ANTHROPIC_API_KEY/SEARLO_API_KEY/REMOVEBG_API_KEY) —

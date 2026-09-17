@@ -1,0 +1,1052 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#F7F9FC">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fiados">
+<link rel="manifest" href="manifest-fiados.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<title>Fiados — Los Cumpas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#12233D;--ink2:#1E3454;--muted:#5C7593;--paper:#F7F9FC;--card:#FFFFFF;--line:#E3E8F0;
+  --rojo:#A84A4A;--rojo-bg:#FBEDED;
+  --ambar:#8A5810;--ambar-bg:#FBF1DF;
+  --azul:#1E4E8C;
+  --verde:#5F7A4C;
+  --salvia:#C3D4EA;--salvia-2:#2C5F9E;
+  --lavanda-tint:#EAF1FA;
+  --brand-1:#2C5F9E;--brand-2:#1E4E8C;
+  --brand-grad:linear-gradient(120deg,var(--brand-1),var(--brand-2));
+  --shadow-brand:0 2px 10px rgba(30,78,140,.28);
+  --sh-soft:0 1px 3px rgba(11,26,51,.06);
+  --radius-card:18px;--radius-btn:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%;width:100%;overflow-x:hidden}
+/* Base más grande que Los Cumpas (16px vs 14px) — pantalla simple tipo caja/POS, sin
+   depender de menús ni gestos finos. */
+/* Sin encabezado propio "Fiados" (se sacó de las 3 vistas, pantalla completa tipo POS/Loyverse
+   — ver body) — el padding-top de acá reemplaza el rol de espaciado bajo notch/status bar que
+   tendría esa barra. */
+body{font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--ink);font-size:16px;line-height:1.5;-webkit-tap-highlight-color:transparent;width:100%;max-width:560px;margin:0 auto;padding-top:max(10px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}
+h1,h2,h3{font-family:'Manrope',system-ui,sans-serif}
+.hidden{display:none!important}
+.body{padding:16px max(16px,env(safe-area-inset-left)) 16px max(16px,env(safe-area-inset-right))}
+.vc-empty{padding:24px;text-align:center;color:var(--muted);font-size:14px}
+.loadbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--lavanda-tint);border:1px solid #C9DCF0;color:var(--ink2);border-radius:var(--radius-btn);padding:12px 14px;font-size:15px;font-weight:600;font-family:'Manrope';cursor:pointer;min-height:48px}
+.loadbtn:active{background:#DCE9F8}
+.loadbtn.acc{background:var(--salvia);border-color:var(--salvia-2);color:#0B1A33}
+.loadbtn.acc:active{background:var(--salvia-2);color:#fff}
+.mm-save{width:100%;background:var(--brand-grad);color:#fff;border:none;border-radius:var(--radius-btn);padding:16px;font-size:17px;font-weight:700;font-family:'Manrope';cursor:pointer;margin-top:8px;box-shadow:var(--shadow-brand);min-height:52px}
+.mm-save:disabled{opacity:.5;cursor:default}
+.mm-field{margin-bottom:16px}
+.mm-field label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;margin-bottom:6px}
+.mm-field input{width:100%;height:48px;padding:0 14px;border:1.5px solid var(--line);border-radius:10px;font-size:16px;box-sizing:border-box;font-family:'Inter';background:#fff;color:var(--ink)}
+.mm-search{position:relative}
+.mm-search input{width:100%;padding-right:50px}
+.mm-x{position:absolute;top:50%;right:8px;transform:translateY(-50%);width:34px;height:34px;border:none;background:var(--paper);border-radius:50%;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.mm-motivo{border:1.5px solid var(--line);background:var(--card);border-radius:14px;padding:11px 14px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:8px}
+.mm-resp{display:flex;gap:8px;flex-wrap:wrap}
+.mm-resp button{flex:1;min-width:100px;border:1.5px solid var(--line);background:var(--card);border-radius:10px;padding:13px;font-size:15px;font-weight:600;cursor:pointer;min-height:48px}
+.mm-resp button.sel{background:var(--azul);color:#fff;border-color:var(--azul)}
+.fd-cliente-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+/* Selector más específico que ".mm-field input" (que le pondría width:100%;height:48px a
+   cualquier input dentro del buscador, incluido este checkbox, y le comería el ancho a toda
+   la fila) — .fd-buscar-results vive dentro de .mm-field. */
+.fd-cliente-row .fd-cliente-check{width:22px;height:22px;flex:none;cursor:pointer;accent-color:var(--azul)}
+.fd-cliente-abrir{min-width:0;cursor:pointer}
+.fd-total-row{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 12px}
+.fd-eye{border:none;background:var(--paper);color:var(--muted);width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;padding:0}
+.fd-eye:active{background:var(--line)}
+
+/* ---- Vista B estilo checkout de Loyverse ---- */
+.fd-checkout-header{display:flex;align-items:center;gap:10px;padding:2px 2px 10px}
+.fd-back-btn{border:none;background:var(--paper);color:var(--ink);width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none;cursor:pointer}
+.fd-back-btn:active{background:var(--line)}
+.fd-checkout-nombre{flex:1;font-size:21px;font-weight:800;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fd-dividir-btn{border:1.5px solid var(--line);background:var(--card);color:var(--muted);border-radius:var(--radius-btn);padding:8px 12px;font-size:12.5px;font-weight:700;letter-spacing:.03em;flex:none;cursor:pointer;min-height:36px}
+
+/* NIVEL 1 — el elemento más grande de toda la pantalla, legible a ~60cm (POS/tablet), en la
+   misma proporción que el total de Loyverse (no más grande que eso). El número va PRIMERO
+   (arriba) y la etiqueta "Importe total adeudado" INMEDIATAMENTE debajo, centrada — igual que
+   Loyverse, nunca al costado ni separada. */
+.fd-total-adeudado{text-align:center;margin:8px 0 16px}
+.fd-total-adeudado .val{font-size:42px;font-weight:800;color:var(--rojo);line-height:1.05;letter-spacing:-.01em}
+.fd-total-adeudado .lbl{font-size:13px;color:var(--muted);font-weight:700;margin-top:5px;text-transform:uppercase;letter-spacing:.03em}
+
+.fd-ticket-card{border:1.5px solid var(--line);border-radius:var(--radius-card);margin-bottom:12px;background:var(--card);overflow:hidden}
+.fd-ticket-card-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;font-size:16px;font-weight:700;color:var(--ink);border-bottom:1px solid var(--line)}
+.fd-lineas-list{display:flex;flex-direction:column}
+
+/* Gesto swipe-to-delete de cada línea (estilo Loyverse): .fd-linea-swipe es el wrapper que
+   recorta el fondo rojo con el tacho detrás; .fd-linea-swipe-fg es la fila visible que se
+   traslada con touchmove (ver fdWireSwipeRows). El botón "×" siempre visible es el fallback
+   sin gesto (accesibilidad + testing). */
+.fd-linea-swipe{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
+.fd-linea-swipe:last-child{border-bottom:none}
+.fd-linea-swipe-bg{position:absolute;inset:0;background:var(--rojo);display:flex;align-items:center;justify-content:flex-end;padding-right:16px}
+.fd-linea-del-btn{background:none;border:none;color:#fff;width:44px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.fd-linea-swipe-fg{position:relative;background:var(--card);display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;transition:transform .18s ease;touch-action:pan-y}
+.fd-linea-swipe-fg.fd-dragging{transition:none}
+.fd-linea-texto{font-size:17px;color:var(--ink);min-width:0}
+.fd-linea-precio{font-size:16px;color:var(--muted);white-space:nowrap;flex:none}
+.fd-linea-x{background:none;border:none;color:var(--muted);opacity:.5;font-size:20px;line-height:1;padding:4px 8px;cursor:pointer;flex:none;min-width:32px;min-height:32px}
+
+/* ---- Flujo de cobro de un toque (estilo Loyverse): "Monto a abonar" más discreto que el
+   total, campo de efectivo con ícono + botón COBRAR al lado, sugerencias, y los botones de
+   tarjeta/transferencia a todo el ancho que cobran directo al tocarlos. ---- */
+/* NIVEL 2 — grande: monto a abonar, vuelto, nuevo saldo. "Monto a abonar" es obligatorio
+   (fdValidarCobro bloquea los medios de pago mientras no sea válido) — ver fd-monto-error. */
+.fd-monto-abonar{margin-bottom:6px}
+.fd-monto-abonar label{font-size:12.5px}
+.fd-monto-abonar input{font-size:22px;height:48px;color:var(--ink);font-weight:800}
+#fd-monto-error{font-size:12.5px;color:var(--rojo);font-weight:700;margin:-2px 0 10px;min-height:14px}
+#fd-vuelto{font-size:18px;font-weight:800;margin-top:8px}
+#fd-nuevo-saldo{font-size:18px;font-weight:800;margin-top:6px;color:var(--ink)}
+.fd-pago-efectivo{margin-bottom:12px}
+.fd-efectivo-label{display:block;font-size:13px;font-weight:700;color:var(--verde);text-transform:uppercase;letter-spacing:.02em;margin-bottom:6px}
+.fd-efectivo-row{display:flex;gap:10px;align-items:stretch}
+.fd-efectivo-input-wrap{position:relative;flex:1;display:flex;align-items:center;color:var(--muted)}
+.fd-efectivo-input-wrap svg{position:absolute;left:14px;pointer-events:none}
+.fd-efectivo-input-wrap input{width:100%;height:50px;padding:0 14px 0 42px;border:1.5px solid var(--line);border-radius:10px;font-size:20px;font-weight:700;font-family:'Inter';background:#fff;color:var(--ink)}
+.fd-cobrar-efectivo-btn{flex:none;min-width:120px;background:var(--brand-grad);color:#fff;border:none;border-radius:var(--radius-btn);padding:0 18px;font-size:15px;font-weight:800;font-family:'Manrope';cursor:pointer;box-shadow:var(--shadow-brand)}
+.fd-cobrar-efectivo-btn:disabled{opacity:.5;cursor:default;box-shadow:none}
+.fd-sugerencias{display:flex;gap:8px;margin-top:10px}
+.fd-sugerencia-btn{flex:1;border:1.5px solid var(--line);background:var(--paper);border-radius:10px;padding:11px 4px;font-size:14.5px;font-weight:700;color:var(--ink);cursor:pointer;min-height:44px}
+.fd-sugerencia-btn:active{background:var(--line)}
+.fd-pago-directo-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:var(--radius-btn);padding:12px;font-size:15px;font-weight:700;letter-spacing:.02em;font-family:'Manrope';cursor:pointer;min-height:50px;margin-bottom:9px}
+.fd-pago-directo-btn:active{background:var(--paper)}
+.fd-pago-directo-btn:disabled{opacity:.4;cursor:default}
+
+/* ---- Responsive: desde 760px, 2 columnas como Loyverse (ticket a la izquierda, cobro a la
+   derecha) aprovechando todo el ancho — por debajo, apilado igual que en celular. También acá:
+   tamaños de NIVEL 1/2/3 más grandes en tablet/POS horizontal, para lectura cómoda a ~60cm
+   (más lejos que un celular en la mano). ---- */
+@media (min-width:760px){
+  #fd-view-detalle{max-width:none;width:100vw;margin-left:calc(50% - 50vw);padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right))}
+  .fd-checkout-grid{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:36px;align-items:start;max-width:1100px;margin:0 auto}
+  .fd-panel-ticket{max-height:calc(100dvh - 110px);overflow-y:auto;padding-right:4px}
+  .fd-panel-pago{max-width:520px}
+  .fd-checkout-nombre{font-size:24px}
+  /* Misma proporción que el total de Loyverse en el mismo dispositivo — antes quedaba más
+     grande que la referencia (78px). */
+  .fd-total-adeudado .val{font-size:60px}
+  .fd-total-adeudado .lbl{font-size:14.5px}
+  .fd-monto-abonar input{font-size:26px;height:54px}
+  #fd-vuelto,#fd-nuevo-saldo{font-size:22px}
+  .fd-efectivo-label{font-size:14px}
+  .fd-efectivo-input-wrap input{font-size:24px;height:56px}
+  .fd-cobrar-efectivo-btn{font-size:17px;min-width:140px}
+  .fd-sugerencia-btn{font-size:16px;min-height:48px}
+  .fd-pago-directo-btn{font-size:17px;min-height:54px}
+}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:14px 22px;border-radius:12px;font-weight:600;font-size:15px;box-shadow:0 8px 30px rgba(0,0,0,.25);transition:.3s;z-index:260;opacity:0;max-width:90vw;text-align:center;pointer-events:none}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+</style>
+</head>
+<body>
+
+  <!-- Banner de instalación — se muestra/oculta por JS según la plataforma (ver fdInstall*) -->
+  <div id="fd-install-box" class="hidden body" style="padding-bottom:0">
+    <div style="border:1.5px solid var(--salvia-2);background:var(--lavanda-tint);border-radius:14px;padding:14px 16px;margin-bottom:6px">
+      <div id="fd-install-texto" style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:10px">Instala esta página como app para abrirla directo desde tu celular, sin el navegador.</div>
+      <button class="loadbtn acc" id="fd-install-btn" style="width:100%">📲 Instalar app</button>
+    </div>
+  </div>
+
+  <!-- ============ VISTA A: lista de clientes con fiado abierto ============ -->
+  <section id="fd-view-lista" class="body">
+    <div class="mm-field">
+      <label>Buscar cliente</label>
+      <div class="mm-search">
+        <input id="fd-buscar" placeholder="Buscar por nombre…" autocomplete="off">
+        <button class="mm-x" id="fd-buscar-x" type="button" aria-label="Limpiar" style="display:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div id="fd-buscar-results" style="margin-top:8px"></div>
+      <!-- Fusionar 2 clientes (equivalente a "combinar tickets" de Loyverse) — aparece solo
+           cuando hay exactamente 2 tildados en la lista de "clientes con fiado abierto" (ver
+           fdActualizarBannerFusion). Útil cuando el mismo cliente real quedó duplicado con 2
+           registros distintos en Loyverse. -->
+      <div id="fd-fusionar-banner" class="hidden" style="border:1.5px solid var(--azul);background:var(--lavanda-tint);border-radius:12px;padding:12px 14px;margin-top:10px">
+        <div style="font-size:13px;font-weight:700;color:var(--azul);margin-bottom:8px">Fusionar en:</div>
+        <div style="display:flex;gap:8px" id="fd-fusionar-opciones"></div>
+      </div>
+    </div>
+
+    <div id="fd-sincliente-box" class="hidden" style="border:1.5px solid var(--ambar);background:var(--ambar-bg);border-radius:12px;padding:14px 16px;margin-bottom:16px;cursor:pointer">
+      <div style="font-size:14px;font-weight:700;color:var(--ambar)">⚠️ Fiados sin cliente asignado<span id="fd-sincliente-count"></span></div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:4px">El cajero olvidó asignar el Cliente en Loyverse — toca para reconciliar.</div>
+    </div>
+
+    <!-- Sin lista automática de quién debe: por privacidad, nada se muestra hasta que se
+         busque un nombre específico (o se toque el botón de abajo, acción explícita) — un
+         cliente parado frente a la pantalla no debe poder ver a quién más se le fía. La lista
+         que trae ese botón, además, arranca con los montos ocultos (ícono de ojo por fila y
+         uno general arriba) — otra capa de la misma idea: ni siquiera alguien mirando por
+         encima del hombro cuando el encargado SÍ abrió la lista debería ver montos sin querer. -->
+    <button type="button" class="loadbtn" id="fd-mostrar-todos" style="width:100%">Ver clientes con fiado abierto</button>
+  </section>
+
+  <!-- ============ VISTA B: detalle de cliente + formulario de cobro ============ -->
+  <!-- Estilo pantalla de checkout de Loyverse (pedido explícito del dueño, con capturas de
+       referencia): header con flecha atrás + nombre del cliente + botón "DIVIDIR". El botón
+       "DIVIDIR" es solo paridad visual con Loyverse — no hay función de dividir cuenta en
+       fiados, por eso queda inerte (ver wiring más abajo). -->
+  <section id="fd-view-detalle" class="body hidden">
+    <div class="fd-checkout-header">
+      <button class="fd-back-btn" id="fd-det-volver" aria-label="Volver"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <div class="fd-checkout-nombre" id="fd-det-nombre-header">Cliente</div>
+      <button type="button" class="fd-dividir-btn" id="fd-dividir-btn">DIVIDIR</button>
+    </div>
+    <div id="fd-det-body"><div class="vc-empty">Cargando…</div></div>
+  </section>
+
+  <!-- ============ VISTA C: comprobante ============ -->
+  <section id="fd-view-comprobante" class="body hidden">
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="loadbtn acc" id="fd-comp-imprimir" style="flex:1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M6 9V3h12v6"/><path d="M6 18H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-2"/><rect x="6" y="14" width="12" height="7"/></svg> Imprimir</button>
+      <button class="loadbtn" id="fd-comp-listo" style="flex:1">Listo</button>
+    </div>
+    <div id="fd-comp-body"></div>
+  </section>
+
+  <!-- Modal de reconciliación — único overlay de la página, sin necesidad de z-index especial -->
+  <div id="fd-recon-ov" class="hidden" style="position:fixed;inset:0;background:rgba(11,26,51,.55);z-index:250;display:flex;align-items:center;justify-content:center;padding:20px">
+    <div style="background:var(--card);width:100%;max-width:380px;border-radius:var(--radius-card);padding:20px;max-height:90vh;overflow-y:auto">
+      <h3 style="font-size:17px;margin-bottom:12px">Asignar cliente</h3>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:14px" id="fd-recon-info"></div>
+      <div class="mm-field">
+        <label>Buscar cliente</label>
+        <div class="mm-search">
+          <input id="fd-recon-buscar" placeholder="Buscar por nombre…" autocomplete="off">
+        </div>
+        <div id="fd-recon-results" style="margin-top:8px"></div>
+      </div>
+      <button class="loadbtn" id="fd-recon-cancelar" style="width:100%;margin-top:6px">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Modal de historial de fiados/abonos por cliente — se llena solo bajo demanda (botón
+       "Historial" en la Vista B), nunca al cargar la lista de tickets abiertos. -->
+  <div id="fd-historial-ov" class="hidden" style="position:fixed;inset:0;background:rgba(11,26,51,.55);z-index:250;display:flex;align-items:center;justify-content:center;padding:20px">
+    <div style="background:var(--card);width:100%;max-width:420px;border-radius:var(--radius-card);padding:20px;max-height:85vh;display:flex;flex-direction:column">
+      <h3 style="font-size:18px;margin-bottom:2px" id="fd-historial-nombre">Historial</h3>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:14px">Saldo actual: <strong id="fd-historial-saldo" style="color:var(--ink)"></strong></div>
+      <div id="fd-historial-lista" style="overflow-y:auto;flex:1"></div>
+      <button class="loadbtn" id="fd-historial-cerrar" style="width:100%;margin-top:14px">Cerrar</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+const SYNC_URL='https://argomedo455.minimarketmarin01.workers.dev';
+const fmt=new Intl.NumberFormat('es-CL');
+const peso=n=>'$'+fmt.format(Math.round(n||0));
+// Lee el valor NUMÉRICO real de un input de monto, sin importar si ya está formateado como
+// moneda chilena ("$7.460") o es un número plano ("7460") — el peso chileno no usa decimales,
+// así que quitar todo lo que no sea dígito (el "$" y los puntos de miles) es seguro y suficiente.
+function fdNum(input){
+  return Number(String((input&&input.value)||'').replace(/\D/g,''))||0;
+}
+// Formatea un input de monto en vivo como moneda chilena (separador de miles, sin decimales)
+// mientras se escribe — mismo criterio que ya usa peso() en el resto de la página.
+function fdFormatearInputMoneda(input){
+  if(!input)return;
+  input.addEventListener('input',()=>{
+    const n=fdNum(input);
+    input.value=n?peso(n):'';
+  });
+}
+// Los timestamps que manda el backend (fechaHora, fiadoMasAntiguo) son la fecha ISO cruda tal
+// cual la entrega Loyverse (ej. "2026-09-13T17:37:02.000Z") — se convierten a DD/MM/AAAA HH:MM
+// en hora de Chile (no la del navegador) antes de mostrarlos, mismo criterio que usa el resto
+// del sistema para fechas/horas.
+function fechaChileLegible(isoUtc){
+  if(!isoUtc) return '';
+  const d=new Date(isoUtc);
+  if(isNaN(d.getTime())) return isoUtc; // no es un ISO parseable — se muestra tal cual en vez de ocultar el dato
+  const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Santiago',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}).formatToParts(d);
+  const get=t=>(parts.find(p=>p.type===t)||{}).value||'';
+  const ampm=get('dayPeriod').toLowerCase().startsWith('a')?'a.m.':'p.m.';
+  return get('day')+'/'+get('month')+'/'+get('year')+' '+get('hour')+':'+get('minute')+' '+ampm;
+}
+function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');const dur=m.length>60?4600:2600;clearTimeout(window._toastT);window._toastT=setTimeout(()=>t.classList.remove('show'),dur);}
+// El backend guarda monto_total del fiado tal cual lo entrega Loyverse (r.total_money), que ya
+// viene neto de cualquier descuento del ticket (de línea o del total) — el saldo/lo que se
+// cobra SIEMPRE es correcto, sin importar el descuento. Lo único que no reconciliaba a simple
+// vista era el detalle de productos de abajo: line_items trae el precio de lista de cada uno,
+// sin descontar un descuento aplicado al TOTAL del ticket (no a una línea puntual) — sumados
+// daban más que el monto real. Se calcula acá la diferencia para mostrarla explícita ("Descuento
+// aplicado: -$X") en vez de dejar que los números no cuadren sin explicación.
+function fdDescuentoDeFiado(f){
+  const sumaLineas=(f.lineas||[]).reduce((s,l)=>s+(l.cantidad||0)*(l.precio_unitario||0),0);
+  const base=(f.montoTotal!=null?f.montoTotal:f.saldo)||0;
+  return Math.round(sumaLineas-base);
+}
+// Sugerencias de efectivo "cómodas" (estilo Loyverse), sin valores fijos: los pasos de
+// redondeo escalan según el orden de magnitud del monto (más finos para montos chicos, más
+// gruesos para montos grandes), y cada sugerencia sucesiva se calcula sobre la anterior para
+// garantizar que sean siempre crecientes y nunca menores al monto.
+function fdSugerenciasEfectivo(total){
+  if(!(total>0))return[];
+  let steps;
+  if(total<10000)steps=[500,1000,5000];
+  else if(total<100000)steps=[1000,5000,10000];
+  else steps=[1000,1000,1000];
+  const out=[];let prev=total;
+  for(const step of steps){
+    let candidato=Math.ceil(prev/step)*step;
+    if(candidato<=prev)candidato+=step;
+    out.push(candidato);
+    prev=candidato;
+  }
+  return out;
+}
+
+// ===================== FIADOS (cuentas por cobrar) =====================
+// Página independiente (mismo criterio que Marín 376: 1 toque desde su propio ícono en el
+// celular, sin navegar el menú "Más" de Los Cumpas). Backend en el mismo Worker de Los Cumpas
+// (argomedo455). Requisito de privacidad: nunca traer la lista completa de clientes de
+// Loyverse salvo pedido explícito del usuario ("Mostrar todos").
+const fdState={clienteId:null,clienteNombre:'',detalle:null,metodoPago:null,ultimoCobro:null,sinCliente:[]};
+
+// ---- Recordar qué cliente quedó "abierto para cobrar" (Vista B), para sobrevivir un refresco
+// accidental de la página ---- Un F5/recarga durante un cobro en curso (ej. un dedo que roza el
+// botón de recargar del navegador) antes NO dejaba rastro: la app volvía siempre a la Vista A y
+// se perdía la pantalla de cobro. Se guarda el cliente en localStorage (no sessionStorage —
+// tiene que sobrevivir incluso si Android reconstruye el WebView) apenas se abre su detalle, y
+// se limpia apenas se sale de esa pantalla (volver a la lista, o completar el cobro) — así un
+// refresco a mitad de cobro vuelve exactamente a ese mismo cliente, pero uno después de terminar
+// o de volver a la lista no "revive" nada viejo.
+const FD_LS_CLIENTE_ABIERTO='cumpas_fd_cliente_abierto';
+function fdGuardarClienteAbierto(clienteId,clienteNombre){
+  try{localStorage.setItem(FD_LS_CLIENTE_ABIERTO,JSON.stringify({clienteId,clienteNombre}));}catch(e){/* localStorage no disponible — degradación segura, simplemente no persiste */}
+}
+function fdLimpiarClienteAbierto(){
+  try{localStorage.removeItem(FD_LS_CLIENTE_ABIERTO);}catch(e){}
+}
+function fdClienteAbiertoGuardado(){
+  try{const raw=localStorage.getItem(FD_LS_CLIENTE_ABIERTO);return raw?JSON.parse(raw):null;}catch(e){return null;}
+}
+
+function fdShowLista(){
+  // Al volver a la Vista A (desde cualquier camino: botón, modal, o el atrás del celular) se
+  // limpia el cliente/cobro en curso — la lista/búsqueda de #fd-buscar-results NO se toca acá
+  // (ver fdAbrirDetalle), así que se ve igual que antes de abrir el detalle.
+  fdState.clienteId=null;fdState.detalle=null;fdState.metodoPago=null;
+  fdLimpiarClienteAbierto();
+  document.getElementById('fd-view-lista').classList.remove('hidden');document.getElementById('fd-view-detalle').classList.add('hidden');document.getElementById('fd-view-comprobante').classList.add('hidden');
+}
+function fdShowDetalle(){document.getElementById('fd-view-lista').classList.add('hidden');document.getElementById('fd-view-detalle').classList.remove('hidden');document.getElementById('fd-view-comprobante').classList.add('hidden');}
+function fdShowComprobante(){document.getElementById('fd-view-lista').classList.add('hidden');document.getElementById('fd-view-detalle').classList.add('hidden');document.getElementById('fd-view-comprobante').classList.remove('hidden');}
+
+// ---- Navegación con el botón/gesto "atrás" del celular ----
+// La página no usaba history.pushState — el atrás de Android simplemente salía de la app (no
+// había ninguna entrada de historial propia que "consumir"). Se arma una pila mínima con
+// pushState/popstate: abrir el detalle de un cliente, o los modales de historial/reconciliar,
+// agrega una entrada; "atrás" (hardware/gesto del celular, o los botones Volver/Listo/Cerrar/
+// Cancelar en pantalla — unificados acá para no desincronizar la pila) la saca y muestra la
+// pantalla anterior. Recién al llegar de nuevo a la Vista A sin nada abierto, atrás vuelve a
+// hacer lo de siempre (salir de la app / ir a la página anterior fuera de fiados.html), porque
+// ya no queda ninguna entrada propia que consumir.
+function fdEstadoActual(){
+  return {
+    vista: !document.getElementById('fd-view-comprobante').classList.contains('hidden') ? 'comprobante'
+      : !document.getElementById('fd-view-detalle').classList.contains('hidden') ? 'detalle' : 'lista',
+    historial: !document.getElementById('fd-historial-ov').classList.contains('hidden'),
+    recon: !document.getElementById('fd-recon-ov').classList.contains('hidden')
+  };
+}
+function fdAplicarEstado(st){
+  st=st||{vista:'lista'};
+  if(st.vista==='comprobante')fdShowComprobante();
+  else if(st.vista==='detalle')fdShowDetalle();
+  else fdShowLista();
+  document.getElementById('fd-historial-ov').classList.toggle('hidden',!st.historial);
+  document.getElementById('fd-recon-ov').classList.toggle('hidden',!st.recon);
+}
+// Abre una pantalla/modal nueva: agrega una entrada al historial del navegador (no cambia la
+// URL) y recién ahí actualiza la UI.
+function fdPush(cambios){
+  const st=Object.assign(fdEstadoActual(),cambios);
+  history.pushState(st,'');
+  fdAplicarEstado(st);
+}
+// Reemplaza la pantalla actual sin agregar una entrada nueva — usado al pasar de "cobrando" a
+// "comprobante" tras un pago exitoso: el atrás desde el comprobante debe ir directo a la Vista
+// A (no tiene sentido volver a una pantalla de cobro ya cerrada), igual que el botón "Listo".
+function fdReplace(cambios){
+  const st=Object.assign(fdEstadoActual(),cambios);
+  history.replaceState(st,'');
+  fdAplicarEstado(st);
+}
+window.addEventListener('popstate',ev=>fdAplicarEstado(ev.state));
+history.replaceState({vista:'lista'},'');
+
+document.getElementById('fd-det-volver').onclick=()=>history.back();
+function fdVolverALista(){history.back();}
+
+// ---- Callout "sin cliente asignado" (mejor esfuerzo: si falla, simplemente no aparece) ----
+async function fdCargarSinCliente(){
+  try{
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=fiados_sin_cliente');
+    const j=await res.json();
+    const fiados=(j&&j.ok)?(j.fiados||[]):[];
+    fdState.sinCliente=fiados;
+    document.getElementById('fd-sincliente-box').classList.toggle('hidden',!fiados.length);
+    document.getElementById('fd-sincliente-count').textContent=fiados.length?(' ('+fiados.length+')'):'';
+  }catch(e){/* silencioso: no bloquea el resto de la página */}
+}
+document.getElementById('fd-sincliente-box').onclick=function(){
+  const f=(fdState.sinCliente||[])[0];
+  if(f)fdAbrirReconciliar(f.id,f.receipt_id_loyverse,f.monto_total);
+};
+
+// ---- Buscador de clientes (Vista A) — debounce propio ----
+document.getElementById('fd-buscar').addEventListener('input',ev=>{
+  const q=ev.target.value.trim();
+  document.getElementById('fd-buscar-x').style.display=q?'':'none';
+  clearTimeout(window._fdSearchT);
+  if(!q){document.getElementById('fd-buscar-results').innerHTML='';return;}
+  window._fdSearchT=setTimeout(async()=>{
+    try{
+      const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=clientes_buscar&q='+encodeURIComponent(q));
+      const j=await res.json();
+      fdRenderClientesResultado((j&&j.ok)?(j.clientes||[]):[]);
+    }catch(e){document.getElementById('fd-buscar-results').innerHTML='<div class="vc-empty">Error de conexión</div>';}
+  },200);
+});
+document.getElementById('fd-buscar-x').onclick=()=>{document.getElementById('fd-buscar').value='';document.getElementById('fd-buscar').dispatchEvent(new Event('input',{bubbles:true}));};
+function fdRenderClientesResultado(clientes){
+  const box=document.getElementById('fd-buscar-results');
+  if(!clientes.length){box.innerHTML='<div class="vc-empty" style="padding:10px">Sin resultados</div>';return;}
+  box.innerHTML=clientes.map(c=>`<div class="mm-motivo" data-id="${c.id}" data-nombre="${(c.nombre||'').replace(/"/g,'&quot;')}">${c.nombre}${c.telefono?' <span style="color:var(--muted);font-weight:400">· '+c.telefono+'</span>':''}</div>`).join('');
+  document.querySelectorAll('#fd-buscar-results [data-id]').forEach(el=>el.onclick=()=>fdAbrirDetalle(el.dataset.id,el.dataset.nombre));
+}
+// Ícono de ojo (abierto = valor visible, tachado = valor oculto) — mismo estilo SVG de trazo
+// que el resto de la app.
+function fdOjoSvg(visible){
+  return visible
+    ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
+    : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a21.6 21.6 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a21.6 21.6 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+}
+// Clientes con fiado abierto (fiados_resumen) — NUNCA la lista completa de clientes de
+// Loyverse (ver comentario arriba). Los montos arrancan ocultos, fila por fila, más un total
+// general arriba — capa extra de privacidad encima de que la lista solo aparezca con una
+// acción explícita.
+let fdListaFiados=[];
+const fdMontosRevelados=new Set();
+let fdTotalRevelado=false;
+// Selección para "Fusionar" (equivalente a "combinar tickets" de Loyverse): tildar 2 clientes
+// de la lista habilita elegir a cuál de los dos se fusionan los fiados del otro — útil cuando
+// el mismo cliente real quedó duplicado con 2 registros distintos en Loyverse. Se limpia cada
+// vez que se recarga la lista.
+const fdSeleccionadosFusion=new Set();
+async function fdCargarListaFiados(){
+  const btn=document.getElementById('fd-mostrar-todos');
+  btn.disabled=true;btn.textContent='Cargando…';
+  try{
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=fiados_resumen');
+    const j=await res.json();
+    document.getElementById('fd-buscar').value='';
+    fdListaFiados=(j&&j.ok)?(j.clientes||[]):[];
+    fdMontosRevelados.clear();fdTotalRevelado=false;fdSeleccionadosFusion.clear();
+    fdRenderListaFiados();
+  }catch(e){showToast('Error de conexión al listar clientes con fiado');}
+  btn.disabled=false;btn.textContent='Ver clientes con fiado abierto';
+}
+document.getElementById('fd-mostrar-todos').onclick=fdCargarListaFiados;
+function fdRenderListaFiados(){
+  const box=document.getElementById('fd-buscar-results');
+  fdActualizarBannerFusion();
+  if(!fdListaFiados.length){box.innerHTML='<div class="vc-empty">No hay fiados abiertos</div>';return;}
+  const total=fdListaFiados.reduce((s,c)=>s+(c.saldo||0),0);
+  const header=`<div class="fd-total-row">
+    <span style="font-size:14px;font-weight:700;color:var(--ink)">${fdTotalRevelado?'Monto total: '+peso(total):'Monto total'}</span>
+    <button type="button" class="fd-eye" id="fd-total-eye" aria-label="Mostrar u ocultar el monto total">${fdOjoSvg(fdTotalRevelado)}</button>
+  </div>`;
+  const filas=fdListaFiados.map(c=>{
+    const revelado=fdMontosRevelados.has(c.clienteId);
+    return `<div class="fd-cliente-row">
+      <input type="checkbox" class="fd-cliente-check" data-fusion="${c.clienteId}" aria-label="Seleccionar para fusionar" ${fdSeleccionadosFusion.has(c.clienteId)?'checked':''}>
+      <div class="fd-cliente-abrir" data-id="${c.clienteId}" data-nombre="${(c.nombre||'').replace(/"/g,'&quot;')}">
+        <div style="font-size:16px;font-weight:700;color:var(--ink)">${c.nombre||'(sin nombre)'}</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:3px">${c.fiadosAbiertos} fiado${c.fiadosAbiertos===1?'':'s'} · más antiguo: ${c.fiadoMasAntiguo?fechaChileLegible(c.fiadoMasAntiguo):'—'}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex:none">
+        <span style="font-size:17px;font-weight:800;color:var(--rojo);min-width:60px;text-align:right">${revelado?peso(c.saldo):'••••'}</span>
+        <button type="button" class="fd-eye" data-ojo="${c.clienteId}" aria-label="Mostrar u ocultar el monto">${fdOjoSvg(revelado)}</button>
+      </div>
+    </div>`;
+  }).join('');
+  box.innerHTML=header+filas;
+  document.getElementById('fd-total-eye').onclick=()=>{fdTotalRevelado=!fdTotalRevelado;fdRenderListaFiados();};
+  document.querySelectorAll('#fd-buscar-results [data-ojo]').forEach(el=>el.onclick=()=>{
+    const id=el.dataset.ojo;
+    if(fdMontosRevelados.has(id))fdMontosRevelados.delete(id);else fdMontosRevelados.add(id);
+    fdRenderListaFiados();
+  });
+  document.querySelectorAll('#fd-buscar-results .fd-cliente-abrir').forEach(el=>el.onclick=()=>fdAbrirDetalle(el.dataset.id,el.dataset.nombre));
+  document.querySelectorAll('#fd-buscar-results [data-fusion]').forEach(el=>el.onchange=()=>{
+    const id=el.dataset.fusion;
+    if(el.checked)fdSeleccionadosFusion.add(id);else fdSeleccionadosFusion.delete(id);
+    fdActualizarBannerFusion();
+  });
+}
+// Solo con EXACTAMENTE 2 clientes tildados se muestra el banner con las 2 opciones de destino
+// (mismo criterio que el picker "Combinar con..." de Loyverse, simplificado a un solo paso:
+// tocar directamente el nombre del cliente que va a quedar como destino).
+function fdActualizarBannerFusion(){
+  const banner=document.getElementById('fd-fusionar-banner');
+  const opciones=document.getElementById('fd-fusionar-opciones');
+  if(!banner||!opciones)return;
+  const ids=[...fdSeleccionadosFusion];
+  if(ids.length!==2){banner.classList.add('hidden');opciones.innerHTML='';return;}
+  const c1=fdListaFiados.find(c=>c.clienteId===ids[0]);
+  const c2=fdListaFiados.find(c=>c.clienteId===ids[1]);
+  if(!c1||!c2){banner.classList.add('hidden');opciones.innerHTML='';return;}
+  banner.classList.remove('hidden');
+  opciones.innerHTML=`
+    <button type="button" class="loadbtn" style="flex:1" data-destino="${c1.clienteId}" data-origen="${c2.clienteId}">${c1.nombre||'(sin nombre)'}</button>
+    <button type="button" class="loadbtn" style="flex:1" data-destino="${c2.clienteId}" data-origen="${c1.clienteId}">${c2.nombre||'(sin nombre)'}</button>`;
+  opciones.querySelectorAll('button').forEach(b=>b.onclick=()=>fdEjecutarFusion(b.dataset.origen,b.dataset.destino));
+}
+async function fdEjecutarFusion(origenId,destinoId){
+  const origen=fdListaFiados.find(c=>c.clienteId===origenId);
+  const destino=fdListaFiados.find(c=>c.clienteId===destinoId);
+  const nombreOrigen=(origen&&origen.nombre)||'(sin nombre)', nombreDestino=(destino&&destino.nombre)||'(sin nombre)';
+  if(!confirm('¿Fusionar todos los fiados de "'+nombreOrigen+'" dentro de "'+nombreDestino+'"?\n\nEsta acción no se puede deshacer.'))return;
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'fiados_fusionar_clientes',payload:{cliente_origen_id:origenId,cliente_destino_id:destinoId}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      showToast('Clientes fusionados: ahora todo está bajo "'+nombreDestino+'"');
+      fdCargarListaFiados();
+    }else{showToast('Error: '+((j&&j.error)||'no se pudo fusionar'));}
+  }catch(e){showToast('Error de conexión al fusionar');}
+}
+
+// ---- Vista B: detalle de cliente + formulario de cobro ----
+async function fdAbrirDetalle(clienteId,nombreConocido){
+  fdState.clienteId=clienteId;fdState.clienteNombre=nombreConocido||'';fdState.metodoPago=null;fdState.detalle=null;
+  // No se limpia #fd-buscar-results acá — así "Volver" (fdVolverALista) muestra otra vez
+  // exactamente la lista/búsqueda que había antes de abrir el detalle, en vez de una Vista A
+  // en blanco (ver fdVolverALista, más abajo).
+  // Esta función también se reusa para refrescar el detalle ya abierto (botón Reintentar,
+  // fdConfirmarEliminarLinea) — en esos casos NO hay que apilar una entrada nueva de historial,
+  // solo cuando se entra a la Vista B por primera vez desde la Vista A.
+  if(fdEstadoActual().vista==='detalle')fdShowDetalle();else fdPush({vista:'detalle'});
+  fdGuardarClienteAbierto(clienteId,nombreConocido);
+  const body=document.getElementById('fd-det-body');
+  body.innerHTML='<div class="vc-empty">Cargando…</div>';
+  try{
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=fiados_cliente&cliente_id='+encodeURIComponent(clienteId));
+    const j=await res.json();
+    if(!j||!j.ok){body.innerHTML='<div class="vc-empty">No se pudo cargar</div><button class="loadbtn" id="fd-det-reintentar" type="button" style="width:100%;margin-top:8px">Reintentar</button>';document.getElementById('fd-det-reintentar').onclick=()=>fdAbrirDetalle(clienteId,nombreConocido);return;}
+    fdState.detalle=j;
+    fdRenderDetalle(j,nombreConocido);
+  }catch(e){body.innerHTML='<div class="vc-empty">Error de conexión</div><button class="loadbtn" id="fd-det-reintentar" type="button" style="width:100%;margin-top:8px">Reintentar</button>';document.getElementById('fd-det-reintentar').onclick=()=>fdAbrirDetalle(clienteId,nombreConocido);}
+}
+function fdRenderDetalle(j,nombre){
+  const body=document.getElementById('fd-det-body');
+  document.getElementById('fd-det-nombre-header').textContent=nombre||'Cliente';
+  document.getElementById('fd-dividir-btn').onclick=()=>showToast('Dividir cuenta: no disponible en fiados por ahora');
+  const fiados=j.fiadosAbiertos||[];
+  // Edge case: solo llega acá con 0 fiados si el cliente se buscó a mano, o si se acaba de
+  // eliminar la última línea/el último fiado abierto (ver fdConfirmarEliminarLinea) — la Vista A
+  // (fiados_resumen) nunca lista un cliente sin fiado abierto.
+  if(!fiados.length){
+    body.innerHTML=`<div class="vc-empty">Este cliente no tiene fiados abiertos</div>`;
+    fdLimpiarClienteAbierto(); // ya no queda nada "abierto para cobrar" acá — no tiene sentido restaurarlo en un refresco futuro
+    return;
+  }
+  const ticketsHtml=fiados.map(f=>{
+    const descuento=fdDescuentoDeFiado(f);
+    const lineasHtml=(f.lineas||[]).map(l=>fdLineaSwipeHtml(f.fiadoId,l)).join('')||'<div class="vc-empty" style="padding:14px">Sin líneas</div>';
+    return `<div class="fd-ticket-card">
+      <div class="fd-ticket-card-head"><span>${fechaChileLegible(f.fechaHora)}</span><span>${peso(f.saldo)}</span></div>
+      <div class="fd-lineas-list">${lineasHtml}</div>
+      ${descuento>1?`<div style="font-size:12.5px;color:var(--verde);font-weight:700;padding:8px 14px">Descuento aplicado: -${peso(descuento)}</div>`:''}
+    </div>`;
+  }).join('');
+  body.innerHTML=`
+    <div class="fd-checkout-grid">
+      <div class="fd-panel-ticket">
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <button type="button" class="loadbtn" id="fd-imprimir-abierto" style="flex:1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M6 9V3h12v6"/><path d="M6 18H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-2"/><rect x="6" y="14" width="12" height="7"/></svg> Imprimir</button>
+          <button type="button" class="loadbtn" id="fd-ver-historial" style="flex:1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg> Historial</button>
+        </div>
+        ${ticketsHtml}
+      </div>
+      <div class="fd-panel-pago">
+        <div class="fd-total-adeudado"><div class="val">${peso(j.saldoTotal)}</div><div class="lbl">Importe total adeudado</div></div>
+        <div class="mm-field fd-monto-abonar">
+          <label>Monto a abonar</label>
+          <input id="fd-monto" inputmode="decimal" value="${j.saldoTotal?peso(Math.round(j.saldoTotal)):''}">
+        </div>
+        <div id="fd-monto-error"></div>
+        <div class="fd-pago-efectivo">
+          <label class="fd-efectivo-label">Efectivo recibido</label>
+          <div class="fd-efectivo-row">
+            <div class="fd-efectivo-input-wrap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>
+              <input id="fd-recibido" inputmode="decimal" placeholder="$0">
+            </div>
+            <button type="button" class="fd-cobrar-efectivo-btn" id="fd-cobrar-btn" disabled>COBRAR</button>
+          </div>
+          <div id="fd-vuelto"></div>
+          <div id="fd-nuevo-saldo"></div>
+          <div class="fd-sugerencias" id="fd-sugerencias-efectivo"></div>
+        </div>
+        <button type="button" class="fd-pago-directo-btn fd-pago-directo" id="fd-pago-tarjeta-btn" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> POR TARJETA</button>
+        <button type="button" class="fd-pago-directo-btn fd-pago-directo" id="fd-pago-transferencia-btn" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg> TRANSFERENCIA</button>
+      </div>
+    </div>`;
+  fdFormatearInputMoneda(document.getElementById('fd-monto'));
+  fdFormatearInputMoneda(document.getElementById('fd-recibido'));
+  document.getElementById('fd-monto').addEventListener('input',()=>{fdCalcularVuelto();fdValidarCobro();fdRenderSugerenciasEfectivo();});
+  document.getElementById('fd-recibido').addEventListener('input',()=>{fdCalcularVuelto();fdValidarCobro();});
+  document.getElementById('fd-cobrar-btn').onclick=fdCobrarEfectivo;
+  document.getElementById('fd-pago-tarjeta-btn').onclick=()=>fdCobrarDirecto('tarjeta');
+  document.getElementById('fd-pago-transferencia-btn').onclick=()=>fdCobrarDirecto('transferencia');
+  document.getElementById('fd-imprimir-abierto').onclick=()=>fdImprimirTicketAbierto(j,nombre);
+  document.getElementById('fd-ver-historial').onclick=fdAbrirHistorial;
+  fdWireSwipeRows();
+  fdRenderSugerenciasEfectivo();
+  fdCalcularVuelto();
+  fdValidarCobro();
+}
+
+// ---- Línea de producto con gesto swipe-to-delete (estilo Loyverse) ----
+function fdLineaSwipeHtml(fiadoId,l){
+  const nombreAttr=(l.producto_nombre||'').replace(/"/g,'&quot;');
+  return `<div class="fd-linea-swipe" data-linea-id="${l.id}" data-fiado-id="${fiadoId}" data-cantidad="${l.cantidad}" data-nombre="${nombreAttr}" data-open="0">
+    <div class="fd-linea-swipe-bg"><button type="button" class="fd-linea-del-btn" data-linea-id="${l.id}" aria-label="Eliminar línea"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></div>
+    <div class="fd-linea-swipe-fg">
+      <div class="fd-linea-texto">${l.cantidad} × ${l.producto_nombre}</div>
+      <div style="display:flex;align-items:center;gap:6px;flex:none">
+        <span class="fd-linea-precio">${peso(l.precio_unitario)}</span>
+        <button type="button" class="fd-linea-x" data-linea-id="${l.id}" aria-label="Eliminar línea">×</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+const FD_SWIPE_REVEAL_PX=72;
+const FD_SWIPE_TRIGGER_RATIO=0.4;
+const FD_SWIPE_MIN_PX=8;
+let fdSwipeAbierta=null;
+
+// Gesto nativo (sin librerías): touchstart guarda la posición inicial; touchmove decide en el
+// primer movimiento significativo si es horizontal (swipe, se bloquea el scroll recién ahí con
+// preventDefault) o vertical (se deja pasar, es scroll normal de la lista); touchend siempre
+// snapea a abierto o cerrado, nunca queda a medias. Solo una fila puede estar abierta a la vez.
+function fdWireSwipeRows(){
+  document.querySelectorAll('.fd-linea-swipe').forEach(row=>{
+    const fg=row.querySelector('.fd-linea-swipe-fg');
+    let startX=0,startY=0,dragging=false,decided=false,base=0;
+
+    fg.addEventListener('touchstart',ev=>{
+      const t=ev.touches[0];
+      startX=t.clientX;startY=t.clientY;
+      dragging=false;decided=false;
+      base=row.dataset.open==='1'?-FD_SWIPE_REVEAL_PX:0;
+    },{passive:true});
+
+    fg.addEventListener('touchmove',ev=>{
+      const t=ev.touches[0];
+      const dx=t.clientX-startX,dy=t.clientY-startY;
+      if(!decided){
+        if(Math.abs(dx)<FD_SWIPE_MIN_PX&&Math.abs(dy)<FD_SWIPE_MIN_PX)return;
+        decided=true;
+        dragging=Math.abs(dx)>Math.abs(dy);
+        if(dragging)fg.classList.add('fd-dragging');
+      }
+      if(!dragging)return;
+      ev.preventDefault();
+      let next=base+dx;
+      next=Math.max(-FD_SWIPE_REVEAL_PX,Math.min(0,next));
+      fg.style.transform='translateX('+next+'px)';
+      fg._fdLastNext=next;
+    },{passive:false});
+
+    fg.addEventListener('touchend',()=>{
+      fg.classList.remove('fd-dragging');
+      if(!dragging)return;
+      const next=fg._fdLastNext||0;
+      const abrir=next<=-FD_SWIPE_REVEAL_PX*FD_SWIPE_TRIGGER_RATIO;
+      fdSetSwipeOpen(row,fg,abrir);
+    },{passive:true});
+
+    row.querySelector('.fd-linea-del-btn').onclick=()=>fdConfirmarEliminarLinea(row);
+    row.querySelector('.fd-linea-x').onclick=()=>fdConfirmarEliminarLinea(row);
+  });
+
+  // Tocar en cualquier otro lado de la Vista B cierra la fila que haya quedado abierta.
+  const detBody=document.getElementById('fd-det-body');
+  detBody.onclick=ev=>{
+    if(fdSwipeAbierta&&!fdSwipeAbierta.contains(ev.target))fdCerrarSwipeAbierta();
+  };
+}
+function fdSetSwipeOpen(row,fg,abrir){
+  if(fdSwipeAbierta&&fdSwipeAbierta!==row)fdCerrarSwipeAbierta();
+  fg.style.transform='translateX('+(abrir?-FD_SWIPE_REVEAL_PX:0)+'px)';
+  row.dataset.open=abrir?'1':'0';
+  fdSwipeAbierta=abrir?row:null;
+}
+function fdCerrarSwipeAbierta(){
+  if(!fdSwipeAbierta)return;
+  const fg=fdSwipeAbierta.querySelector('.fd-linea-swipe-fg');
+  fg.style.transform='translateX(0px)';
+  fdSwipeAbierta.dataset.open='0';
+  fdSwipeAbierta=null;
+}
+// Borra la línea (el cajero cargó de más por error) — el backend devuelve el stock a Loyverse.
+// Se pide confirmación nativa (mismo criterio que fdConfirmarCobro: mover stock/plata real) y,
+// si el backend confirma, se vuelve a pedir fiados_cliente completo en vez de parchear el
+// estado local — evita duplicar acá el recálculo de saldo/estado que ya hace el backend.
+async function fdConfirmarEliminarLinea(row){
+  const lineaId=Number(row.dataset.lineaId);
+  const cantidad=row.dataset.cantidad;
+  const nombreProducto=row.dataset.nombre;
+  if(!confirm('¿Eliminar '+cantidad+' × '+nombreProducto+' del ticket? El stock se devolverá.')){
+    fdCerrarSwipeAbierta();
+    return;
+  }
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'fiados_eliminar_linea',payload:{linea_id:lineaId}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      showToast(j.avisoStock?('Línea eliminada. '+j.avisoStock):'Línea eliminada, stock devuelto');
+      fdAbrirDetalle(fdState.clienteId,fdState.clienteNombre);
+    }else{
+      showToast('Error: '+((j&&j.error)||'no se pudo eliminar la línea'));
+      fdCerrarSwipeAbierta();
+    }
+  }catch(e){
+    showToast('Error de conexión al eliminar la línea');
+    fdCerrarSwipeAbierta();
+  }
+}
+// Ticket del/los fiado(s) abierto(s) de un cliente — para entregarle un comprobante en papel
+// de lo que debe, sin que eso implique ningún cobro (a diferencia de fdRenderComprobante, que
+// solo existe DESPUÉS de un pago). Mismo layout/técnica de impresión que el comprobante de abono.
+function fdImprimirTicketAbierto(j,nombre){
+  const fiados=j.fiadosAbiertos||[];
+  const fiadosHtml=fiados.map(f=>{
+    const descuento=fdDescuentoDeFiado(f);
+    return `<div style="border-top:1px dashed #000;padding-top:8px;margin-top:8px">
+    <div style="font-size:14px;font-weight:700">Fiado del ${fechaChileLegible(f.fechaHora)}</div>
+    ${(f.lineas||[]).map(l=>`<div style="display:flex;justify-content:space-between;font-size:13px"><span>${l.cantidad} × ${l.producto_nombre}</span><span>${peso(l.precio_unitario)}</span></div>`).join('')}
+    ${descuento>1?`<div style="display:flex;justify-content:space-between;font-size:12.5px"><span>Descuento aplicado</span><span>-${peso(descuento)}</span></div>`:''}
+    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-top:4px"><span>Subtotal</span><span>${peso(f.saldo)}</span></div>
+  </div>`;
+  }).join('');
+  const html=`
+    <div style="text-align:center;font-weight:800;font-size:17px;margin-bottom:3px">Los Cumpas</div>
+    <div style="text-align:center;font-size:12.5px;margin-bottom:14px">Ticket abierto — fiado pendiente</div>
+    <div style="font-size:15px;font-weight:700">${nombre||'Cliente'}</div>
+    <div style="font-size:12.5px;margin-bottom:10px">${fechaChileLegible(new Date().toISOString())}</div>
+    ${fiadosHtml}
+    <div style="border-top:1.5px solid #000;margin-top:12px;padding-top:10px;display:flex;justify-content:space-between;font-weight:800;font-size:15px"><span>Saldo total pendiente</span><span>${peso(j.saldoTotal)}</span></div>`;
+  fdImprimir(html);
+}
+// ---- Flujo de cobro "un toque" (estilo Loyverse): sin selector de método previo — cada botón
+// de pago fija fdState.metodoPago y dispara fdConfirmarCobro() directo (misma función de
+// siempre, sin duplicar lógica). Efectivo tiene su propio botón "COBRAR" junto al monto
+// recibido (deshabilitado hasta que alcance); Tarjeta/Transferencia cobran directo con el mismo
+// confirm() de seguridad ya usado, sin depender del campo de efectivo. ----
+function fdCobrarEfectivo(){fdState.metodoPago='efectivo';fdConfirmarCobro();}
+function fdCobrarDirecto(metodo){fdState.metodoPago=metodo;fdConfirmarCobro();}
+function fdRenderSugerenciasEfectivo(){
+  const box=document.getElementById('fd-sugerencias-efectivo');
+  if(!box)return;
+  const monto=fdNum(document.getElementById('fd-monto'));
+  const sugerencias=fdSugerenciasEfectivo(monto);
+  box.innerHTML=sugerencias.map(s=>`<button type="button" class="fd-sugerencia-btn" data-monto="${s}">${peso(s)}</button>`).join('');
+  box.querySelectorAll('[data-monto]').forEach(b=>b.onclick=()=>{
+    document.getElementById('fd-recibido').value=peso(Number(b.dataset.monto));
+    fdCalcularVuelto();fdValidarCobro();
+  });
+}
+function fdCalcularVuelto(){
+  const el=document.getElementById('fd-vuelto');
+  if(!el)return;
+  const monto=fdNum(document.getElementById('fd-monto'));
+  const recibido=fdNum(document.getElementById('fd-recibido'));
+  if(!recibido){el.textContent='';return;}
+  if(recibido<monto){el.style.color='var(--rojo)';el.textContent='Falta '+peso(monto-recibido);}
+  else if(recibido===monto){el.style.color='var(--verde)';el.textContent='Pago exacto';}
+  else{el.style.color='var(--verde)';el.textContent='Vuelto: '+peso(recibido-monto);}
+}
+// "Monto a abonar" es obligatorio y debe estar entre $0 (exclusivo) y la deuda actual
+// (inclusive) — mientras no sea válido, los 3 medios de pago quedan deshabilitados (flujo
+// obligatorio: TOTAL → MONTO A ABONAR → MEDIO DE PAGO → CONFIRMAR). EPS=0.5 es tolerancia de
+// redondeo, mismo criterio ya usado en el backend (accionFiadosEliminarLinea).
+const FD_EPS_REDONDEO=0.5;
+function fdMontoAAbonarValido(){
+  const monto=fdNum(document.getElementById('fd-monto'));
+  const deuda=(fdState.detalle&&fdState.detalle.saldoTotal)||0;
+  return monto>0&&monto<=deuda+FD_EPS_REDONDEO;
+}
+function fdValidarCobro(){
+  const monto=fdNum(document.getElementById('fd-monto'));
+  const deuda=(fdState.detalle&&fdState.detalle.saldoTotal)||0;
+  const recibido=fdNum(document.getElementById('fd-recibido'));
+  const montoValido=fdMontoAAbonarValido();
+  const errEl=document.getElementById('fd-monto-error');
+  if(errEl)errEl.textContent=(monto>deuda+FD_EPS_REDONDEO)?'El monto a abonar no puede superar la deuda.':'';
+  const btnEfectivo=document.getElementById('fd-cobrar-btn');
+  if(btnEfectivo)btnEfectivo.disabled=!(montoValido&&recibido>=monto);
+  document.querySelectorAll('.fd-pago-directo').forEach(b=>b.disabled=!montoValido);
+  fdActualizarNuevoSaldo(montoValido?monto:0,deuda);
+}
+function fdActualizarNuevoSaldo(monto,deuda){
+  const el=document.getElementById('fd-nuevo-saldo');
+  if(!el)return;
+  if(!(monto>0)){el.textContent='';return;}
+  const nuevo=Math.max(0,Math.round((deuda-monto)*100)/100);
+  el.textContent=nuevo<=FD_EPS_REDONDEO?'PAGO TOTAL — Nuevo saldo $0':'Nuevo saldo: '+peso(nuevo);
+}
+
+// ---- Confirmar cobro (POST fiados_cobrar) + comprobante ----
+// confirm() nativo antes de mover plata real — mismo patrón ya usado en Los Cumpas para
+// acciones irreversibles con stock/plata. Resumen completo antes de registrar el cobro
+// (cliente, deuda anterior, monto a abonar, medio de pago, efectivo recibido/vuelto si aplica,
+// nuevo saldo) para que el empleado pueda verificar los datos fácilmente antes de mover plata
+// real.
+function fdMensajeConfirmacion(monto,metodoPago,recibido){
+  const deuda=(fdState.detalle&&fdState.detalle.saldoTotal)||0;
+  const nuevoSaldo=Math.max(0,Math.round((deuda-monto)*100)/100);
+  const nombreMetodo={efectivo:'Efectivo',tarjeta:'Tarjeta',transferencia:'Transferencia'}[metodoPago]||metodoPago;
+  const lineas=[
+    'Cliente: '+(fdState.clienteNombre||'—'),
+    'Deuda anterior: '+peso(deuda),
+    'Monto a abonar: '+peso(monto),
+    'Medio de pago: '+nombreMetodo
+  ];
+  if(metodoPago==='efectivo'){
+    lineas.push('Efectivo recibido: '+peso(recibido));
+    lineas.push('Vuelto: '+peso(Math.max(0,recibido-monto)));
+  }
+  lineas.push(nuevoSaldo<=FD_EPS_REDONDEO?'PAGO TOTAL — Nuevo saldo: $0':'Nuevo saldo: '+peso(nuevoSaldo));
+  return lineas.join('\n');
+}
+async function fdConfirmarCobro(){
+  const monto=fdNum(document.getElementById('fd-monto'));
+  const recibido=fdNum(document.getElementById('fd-recibido'));
+  if(!confirm(fdMensajeConfirmacion(monto,fdState.metodoPago,recibido)))return;
+  // Flujo de un toque (3 botones distintos pueden disparar esto: COBRAR/efectivo, POR TARJETA,
+  // TRANSFERENCIA) — se deshabilitan los 3 mientras la request está en vuelo, y se restauran
+  // con fdValidarCobro() (recalcula el estado correcto de cada uno) en vez de un solo botón fijo.
+  const botones=[document.getElementById('fd-cobrar-btn'),...document.querySelectorAll('.fd-pago-directo')].filter(Boolean);
+  botones.forEach(b=>b.disabled=true);
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'fiados_cobrar',payload:{cliente_id:fdState.clienteId,monto,metodo_pago:fdState.metodoPago}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      fdState.ultimoCobro=Object.assign({},j,{monto,metodoPago:fdState.metodoPago,vuelto:fdState.metodoPago==='efectivo'?Math.max(0,recibido-monto):0,clienteNombre:fdState.clienteNombre});
+      fdRenderComprobante(fdState.ultimoCobro);
+      // El cobro ya se registró — deja de estar "abierto para cobrar", así que un refresco
+      // accidental desde acá en adelante no debe reabrir esta pantalla (ver fdGuardarClienteAbierto).
+      fdLimpiarClienteAbierto();
+      // Reemplaza la entrada de "cobrando" por la de "comprobante" (no apila) — así el atrás
+      // desde acá va directo a la Vista A, igual que el botón "Listo" (no tiene sentido volver
+      // a una pantalla de cobro ya cerrada).
+      fdReplace({vista:'comprobante'});
+    }else{
+      // El mensaje ya viene armado y claro desde el backend (ej. monto supera la deuda total,
+      // o falta configurar algo en el Worker) — se muestra tal cual, sin reinterpretarlo.
+      showToast('Error: '+((j&&j.error)||'no se pudo registrar el cobro'));
+      fdValidarCobro();
+    }
+  }catch(e){showToast('Error de conexión al registrar el cobro');fdValidarCobro();}
+}
+function fdRenderComprobante(c){
+  const fiadosHtml=(c.fiadosCubiertos||[]).map(f=>`<div style="border-top:1px dashed var(--line);padding-top:10px;margin-top:10px">
+    <div style="font-size:14px;font-weight:700">Fiado del ${fechaChileLegible(f.fechaHora)}</div>
+    ${(f.lineas||[]).map(l=>`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted)"><span>${l.cantidad} × ${l.producto_nombre}</span><span>${peso(l.precio_unitario)}</span></div>`).join('')}
+    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;margin-top:5px"><span>Aplicado</span><span>${peso(f.montoAplicado)}</span></div>
+    <div style="font-size:12.5px;color:var(--muted)">${f.quedaAbierto?'Queda saldo pendiente: '+peso(f.saldoRestanteFiado):'Cubierto por completo'}</div>
+  </div>`).join('');
+  document.getElementById('fd-comp-body').innerHTML=`
+    <div id="fd-comprobante-print" style="background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:18px">
+      <div style="text-align:center;font-weight:800;font-size:17px;margin-bottom:3px">Los Cumpas</div>
+      <div style="text-align:center;font-size:12.5px;color:var(--muted);margin-bottom:14px">Comprobante de abono a fiado</div>
+      <div style="font-size:15px;font-weight:700">${c.clienteNombre||'Cliente'}</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">${fechaChileLegible(new Date().toISOString())}</div>
+      ${fiadosHtml}
+      <div style="border-top:1.5px solid var(--ink);margin-top:12px;padding-top:10px">
+        <div style="display:flex;justify-content:space-between;font-weight:800;font-size:15px"><span>Monto abonado</span><span>${peso(c.monto)}</span></div>
+        <div style="font-size:12.5px;color:var(--muted)">Método: ${c.metodoPago}</div>
+        ${c.metodoPago==='efectivo'&&c.vuelto>0?`<div style="display:flex;justify-content:space-between;font-weight:700;color:var(--verde);font-size:15px"><span>Vuelto</span><span>${peso(c.vuelto)}</span></div>`:''}
+        <div style="display:flex;justify-content:space-between;font-weight:800;margin-top:6px;font-size:15px"><span>Saldo restante</span><span>${peso(c.saldoRestante)}</span></div>
+      </div>
+    </div>`;
+}
+document.getElementById('fd-comp-listo').onclick=()=>history.back();
+document.getElementById('fd-comp-imprimir').onclick=()=>fdImprimir(document.getElementById('fd-comprobante-print').innerHTML);
+// Impresora térmica de 58mm — mismo truco de iframe oculto + window.print() ya usado en Los
+// Cumpas para imprimir etiquetas de precio. Recibe el HTML ya armado a imprimir (reusado tanto
+// para el comprobante de abono como para el ticket abierto).
+function fdImprimir(contenidoHtml){
+  const html='<!doctype html><html><head><meta charset="utf-8"><style>'
+    +'@page{size:58mm auto;margin:2mm}'
+    +'*{margin:0;padding:0;box-sizing:border-box}'
+    +'body{font-family:Arial,Helvetica,sans-serif;font-size:9.5px}'
+    +'</style></head><body>'+contenidoHtml+'</body></html>';
+  const iframe=document.createElement('iframe');
+  iframe.style.position='fixed';iframe.style.right='0';iframe.style.bottom='0';
+  iframe.style.width='0';iframe.style.height='0';iframe.style.border='0';
+  document.body.appendChild(iframe);
+  const doc=iframe.contentDocument||iframe.contentWindow.document;
+  doc.open();doc.write(html);doc.close();
+  const limpiar=()=>{if(iframe.parentNode)iframe.parentNode.removeChild(iframe);};
+  iframe.contentWindow.onafterprint=limpiar;
+  setTimeout(()=>{try{iframe.contentWindow.focus();iframe.contentWindow.print();}catch(e){}setTimeout(limpiar,60000);},200);
+}
+
+// ---- Reconciliar fiado sin cliente asignado (modal fd-recon-ov) ----
+function fdAbrirReconciliar(fiadoId,receiptId,montoTotal){
+  document.getElementById('fd-recon-info').textContent='Fiado #'+fiadoId+' · '+peso(montoTotal)+(receiptId?' · boleta '+receiptId:'');
+  document.getElementById('fd-recon-buscar').value='';
+  document.getElementById('fd-recon-results').innerHTML='';
+  document.getElementById('fd-recon-ov').dataset.fiadoId=fiadoId;
+  fdPush({recon:true});
+}
+document.getElementById('fd-recon-cancelar').onclick=()=>history.back();
+document.getElementById('fd-recon-buscar').addEventListener('input',ev=>{
+  const q=ev.target.value.trim();
+  clearTimeout(window._fdReconSearchT);
+  if(!q){document.getElementById('fd-recon-results').innerHTML='';return;}
+  window._fdReconSearchT=setTimeout(async()=>{
+    try{
+      const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=clientes_buscar&q='+encodeURIComponent(q));
+      const j=await res.json();
+      const clientes=(j&&j.ok)?(j.clientes||[]):[];
+      document.getElementById('fd-recon-results').innerHTML=clientes.map(c=>`<div class="mm-motivo" data-id="${c.id}">${c.nombre}</div>`).join('')||'<div class="vc-empty" style="padding:10px">Sin resultados</div>';
+      document.querySelectorAll('#fd-recon-results [data-id]').forEach(el=>el.onclick=()=>fdAsignarCliente(document.getElementById('fd-recon-ov').dataset.fiadoId,el.dataset.id));
+    }catch(e){document.getElementById('fd-recon-results').innerHTML='<div class="vc-empty">Error de conexión</div>';}
+  },200);
+});
+async function fdAsignarCliente(fiadoId,clienteId){
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'fiados_asignar_cliente',payload:{fiado_id:Number(fiadoId),cliente_id:clienteId}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      showToast('Cliente asignado correctamente');
+      history.back();
+      fdCargarSinCliente();
+    }else{showToast('Error: '+((j&&j.error)||'no se pudo asignar'));}
+  }catch(e){showToast('Error de conexión al asignar cliente');}
+}
+
+// ---- Historial de fiados/abonos del cliente abierto en Vista B (modal fd-historial-ov) ----
+// Se pide solo cuando el empleado toca "Historial" — nunca se precarga al abrir la lista de
+// tickets abiertos ni al abrir el detalle de un cliente (fiados_historial_cliente es una
+// llamada aparte, bajo demanda).
+async function fdAbrirHistorial(){
+  document.getElementById('fd-historial-nombre').textContent='Historial de '+(fdState.clienteNombre||'cliente');
+  document.getElementById('fd-historial-saldo').textContent='';
+  const box=document.getElementById('fd-historial-lista');
+  box.innerHTML='<div class="vc-empty">Cargando…</div>';
+  fdPush({historial:true});
+  try{
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=fiados_historial_cliente&cliente_id='+encodeURIComponent(fdState.clienteId));
+    const j=await res.json();
+    if(!j||!j.ok){box.innerHTML='<div class="vc-empty">No se pudo cargar</div>';return;}
+    document.getElementById('fd-historial-saldo').textContent=peso(j.saldoActual);
+    fdRenderHistorial(j.movimientos||[]);
+  }catch(e){box.innerHTML='<div class="vc-empty">Error de conexión</div>';}
+}
+function fdEtiquetaMovimiento(tipo){
+  if(tipo==='fiado')return'Fiado';
+  if(tipo==='abono_efectivo')return'Abono efectivo';
+  if(tipo==='abono_tarjeta')return'Abono tarjeta';
+  if(tipo==='abono_transferencia')return'Abono transferencia';
+  if(tipo==='abono_reembolso')return'Reembolso (Loyverse)';
+  if(tipo==='abono_anulado')return'Venta anulada (Loyverse)';
+  return tipo;
+}
+function fdRenderHistorial(movs){
+  const box=document.getElementById('fd-historial-lista');
+  if(!movs.length){box.innerHTML='<div class="vc-empty">Sin movimientos</div>';return;}
+  // Más reciente primero — igual que cualquier historial/extracto.
+  box.innerHTML=movs.slice().reverse().map(m=>{
+    const positivo=m.monto>=0;
+    return `<div style="border-bottom:1px solid var(--line);padding:10px 0">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)"><span>${fechaChileLegible(m.fechaHora)}</span><span>${fdEtiquetaMovimiento(m.tipo)}</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
+        <span style="font-size:16px;font-weight:800;color:${positivo?'var(--rojo)':'var(--verde)'}">${positivo?'+':'-'}${peso(Math.abs(m.monto))}</span>
+        <span style="font-size:12.5px;color:var(--muted)">Saldo: ${peso(m.saldo)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+document.getElementById('fd-historial-cerrar').onclick=()=>history.back();
+
+// ---- Arranque ----
+// Por defecto: Vista A, vacía por privacidad (sin lista automática de quién debe). EXCEPCIÓN:
+// si quedó un cliente "abierto para cobrar" guardado (ver fdGuardarClienteAbierto) — ej. un
+// refresco accidental de la página a mitad de un cobro — se reabre directo su Vista B en vez de
+// perder la pantalla y volver a la lista.
+const fdClienteGuardadoAlArrancar=fdClienteAbiertoGuardado();
+if(fdClienteGuardadoAlArrancar&&fdClienteGuardadoAlArrancar.clienteId){
+  fdAbrirDetalle(fdClienteGuardadoAlArrancar.clienteId,fdClienteGuardadoAlArrancar.clienteNombre);
+}else{
+  fdShowLista();
+}
+fdCargarSinCliente();
+
+// ---- Instalación como app (pantalla de inicio) ----
+// Ya abierta como app instalada (standalone) -> no mostrar nada, ya se cumplió el objetivo.
+const yaInstalada=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;
+if(!yaInstalada){
+  const esIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)&&!window.MSStream;
+  if(esIOS){
+    // iOS no permite disparar la instalación por código — solo Compartir → Agregar a inicio.
+    document.getElementById('fd-install-texto').textContent='Para instalarla: toca el botón "Compartir" de Safari (el cuadrado con flecha) y elige "Agregar a pantalla de inicio".';
+    document.getElementById('fd-install-btn').classList.add('hidden');
+    document.getElementById('fd-install-box').classList.remove('hidden');
+  }else{
+    // Android/Chrome/Edge: el navegador avisa con beforeinstallprompt cuando la página ya
+    // cumple los requisitos de instalación (manifest + ícono + HTTPS) — se guarda el evento
+    // y se dispara recién cuando el usuario toca el botón grande, en vez de depender de que
+    // encuentre la opción escondida en el menú del navegador.
+    let deferredPrompt=null;
+    window.addEventListener('beforeinstallprompt',ev=>{
+      ev.preventDefault();
+      deferredPrompt=ev;
+      document.getElementById('fd-install-box').classList.remove('hidden');
+    });
+    document.getElementById('fd-install-btn').onclick=async()=>{
+      if(!deferredPrompt)return;
+      deferredPrompt.prompt();
+      try{ await deferredPrompt.userChoice; }catch(e){}
+      deferredPrompt=null;
+      document.getElementById('fd-install-box').classList.add('hidden');
+    };
+    window.addEventListener('appinstalled',()=>{
+      document.getElementById('fd-install-box').classList.add('hidden');
+      showToast('App instalada — ya puedes abrirla desde la pantalla de inicio');
+    });
+  }
+}
+// Service Worker propio (reusa sw.js, ya existente y dedicado a Web Push — no cachea nada ni
+// interfiere acá) — registrarlo ayuda a que el navegador reconozca la página como instalable
+// aunque nunca se haya abierto index.html antes en ese celular.
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').catch(()=>{/* si falla, la página sigue funcionando igual sin instalación */});
+}
+</script>
+</body>
+</html>
