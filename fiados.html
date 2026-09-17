@@ -608,7 +608,9 @@ function fdRenderDetalle(j,nombre){
           <div class="fd-sugerencias" id="fd-sugerencias-efectivo"></div>
         </div>
         <button type="button" class="fd-pago-directo-btn fd-pago-directo" id="fd-pago-tarjeta-btn" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> POR TARJETA</button>
-        <button type="button" class="fd-pago-directo-btn fd-pago-directo" id="fd-pago-transferencia-btn" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg> TRANSFERENCIA</button>
+        <!-- Sin botón de Transferencia: la cuenta de Loyverse de Los Cumpas todavía no tiene
+             ese método de pago creado (solo Efectivo/Tarjeta/Otros) — se puede agregar después
+             si se crea en Loyverse y se configura payment_type_id_transferencia. -->
       </div>
     </div>`;
   fdFormatearInputMoneda(document.getElementById('fd-monto'));
@@ -617,7 +619,6 @@ function fdRenderDetalle(j,nombre){
   document.getElementById('fd-recibido').addEventListener('input',()=>{fdCalcularVuelto();fdValidarCobro();});
   document.getElementById('fd-cobrar-btn').onclick=fdCobrarEfectivo;
   document.getElementById('fd-pago-tarjeta-btn').onclick=()=>fdCobrarDirecto('tarjeta');
-  document.getElementById('fd-pago-transferencia-btn').onclick=()=>fdCobrarDirecto('transferencia');
   document.getElementById('fd-imprimir-abierto').onclick=()=>fdImprimirTicketAbierto(j,nombre);
   document.getElementById('fd-ver-historial').onclick=fdAbrirHistorial;
   fdWireSwipeRows();
@@ -845,9 +846,9 @@ async function fdConfirmarCobro(){
   const monto=fdNum(document.getElementById('fd-monto'));
   const recibido=fdNum(document.getElementById('fd-recibido'));
   if(!confirm(fdMensajeConfirmacion(monto,fdState.metodoPago,recibido)))return;
-  // Flujo de un toque (3 botones distintos pueden disparar esto: COBRAR/efectivo, POR TARJETA,
-  // TRANSFERENCIA) — se deshabilitan los 3 mientras la request está en vuelo, y se restauran
-  // con fdValidarCobro() (recalcula el estado correcto de cada uno) en vez de un solo botón fijo.
+  // Flujo de un toque (2 botones distintos pueden disparar esto: COBRAR/efectivo, POR TARJETA)
+  // — se deshabilitan mientras la request está en vuelo, y se restauran con fdValidarCobro()
+  // (recalcula el estado correcto de cada uno) en vez de un solo botón fijo.
   const botones=[document.getElementById('fd-cobrar-btn'),...document.querySelectorAll('.fd-pago-directo')].filter(Boolean);
   botones.forEach(b=>b.disabled=true);
   try{

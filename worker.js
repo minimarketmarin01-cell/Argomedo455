@@ -1786,7 +1786,10 @@ async function aplicarVentas(env, receipts) {
 //  cliente. cliente_id = customer_id de Loyverse (el cajero debe asignar/crear el Cliente en
 //  Loyverse al fiar; si lo olvida, fiados_sin_cliente/fiados_asignar_cliente lo reconcilian).
 // ============================================================
-const METODOS_PAGO_FIADO_VALIDOS = ["efectivo", "tarjeta", "transferencia"];
+// La cuenta real de Loyverse de Los Cumpas hoy solo tiene Efectivo y Tarjeta (además del método
+// "OTROS" dedicado a fiar) — sin Transferencia todavía. Agregar "transferencia" acá cuando se
+// cree ese método en Loyverse y se configure payment_type_id_transferencia.
+const METODOS_PAGO_FIADO_VALIDOS = ["efectivo", "tarjeta"];
 
 async function configFiadosGet(env, clave) {
   const fila = await get(env, "SELECT valor FROM config WHERE clave = ?", "fiados_" + clave);
