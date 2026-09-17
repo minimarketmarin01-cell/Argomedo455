@@ -3,6 +3,8 @@
   "short_name": "Fiados",
   "description": "Cuentas por cobrar (fiado) de Los Cumpas Mini Market",
   "start_url": "./fiados.html",
+  "scope": "./fiados.html",
+  "id": "./fiados.html",
   "display": "standalone",
   "background_color": "#F7F9FC",
   "theme_color": "#F7F9FC",
