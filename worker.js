@@ -4542,6 +4542,32 @@ async function accionEditarProducto(env, payload) {
   const soldByWeight = payload.soldByWeight != null ? !!payload.soldByWeight : !!it.sold_by_weight;
   const { storeId } = await obtenerStoreId(env);
 
+  // Categoría de Loyverse — FIX: el frontend (Ficha de producto, combo "Categoría de
+  // Loyverse") manda payload.categoria hace rato, pero esta función nunca la leía: se
+  // guardaba en el estado del combo y nada más, category_id nunca se tocaba en Loyverse
+  // ni se actualizaba productos.categoria en D1 (el usuario reportó exactamente esto:
+  // "asigné la categoría por la webapp pero Loyverse no la asocia"). El <select> manda el
+  // NOMBRE (no el id, ver comentario en index.html junto al combo), así que acá se
+  // resuelve a su id real contra Loyverse — mismo patrón ya usado en accionCrearCategoria
+  // (busca por nombre, la crea si no existe) — antes de reenviar el ítem.
+  const categoriaNombre = payload.categoria != null ? String(payload.categoria).trim() : it.categoria;
+  let categoryId = null;
+  if (categoriaNombre && categoriaNombre !== it.categoria) {
+    try {
+      const categorias = await loyverseGetAll(env, "/categories", "categories");
+      const match = categorias.find(c => String(c.name || "").trim().toUpperCase() === categoriaNombre.toUpperCase());
+      if (match) {
+        categoryId = match.id;
+      } else {
+        const creada = await loyversePost(env, "/categories", { name: categoriaNombre });
+        if (creada && creada.id) categoryId = creada.id;
+      }
+    } catch (e) {
+      // No bloquea el resto del guardado — el nombre igual queda actualizado en D1 más
+      // abajo, solo no se pudo sincronizar el category_id real con Loyverse esta vez.
+    }
+  }
+
   // Deja registro en historial_precios ANTES de escribir en Loyverse (igual que Marín
   // 376) — es la fuente que después lee Ficha de producto y el futuro proyecto
   // financiero para reconstruir la evolución de costo/precio.
@@ -4569,7 +4595,9 @@ async function accionEditarProducto(env, payload) {
     copia.stores = stores;
     return copia;
   });
-  await loyversePost(env, "/items", Object.assign({}, item, { item_name: nombre, sold_by_weight: soldByWeight, variants: variantes }));
+  const itemPost = Object.assign({}, item, { item_name: nombre, sold_by_weight: soldByWeight, variants: variantes });
+  if (categoryId) itemPost.category_id = categoryId;
+  await loyversePost(env, "/items", itemPost);
 
   // Ficha (fp-pv-prov, pestaña "Proveedores") manda proveedor_id — el select real de
   // proveedores de la WebApp, no texto libre. FIX: esto leía payload.proveedor (un
@@ -4594,17 +4622,17 @@ async function accionEditarProducto(env, payload) {
   }
   const sector = payload.sector != null ? String(payload.sector).trim() : it.sector;
   await run(env,
-    "UPDATE productos SET nombre=?, barcode=?, precio=?, costo=?, sold_by_weight=?, proveedor=?, proveedor_id=?, sector=? WHERE sku=?",
-    nombre, nuevoBarcode, precio, costo, soldByWeight ? 1 : 0, proveedor || null, proveedorId, sector || null, sku);
+    "UPDATE productos SET nombre=?, barcode=?, precio=?, costo=?, sold_by_weight=?, proveedor=?, proveedor_id=?, sector=?, categoria=? WHERE sku=?",
+    nombre, nuevoBarcode, precio, costo, soldByWeight ? 1 : 0, proveedor || null, proveedorId, sector || null, categoriaNombre || it.categoria, sku);
   if (proveedor) await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedor);
   if (sector) await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sector);
 
   await run(env,
     `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
      VALUES (?,?,?,?,?,?,?,?,?)`,
-    fechaHoraDDMMAAAA(), "editar_producto", sku, nombre, it.categoria, it.id_loyverse, it.stock, "Ficha editada desde la app", payload.responsable || "");
+    fechaHoraDDMMAAAA(), "editar_producto", sku, nombre, categoriaNombre || it.categoria, it.id_loyverse, it.stock, "Ficha editada desde la app", payload.responsable || "");
 
-  return { sku, nombre, precio, costo, barcode: nuevoBarcode, proveedor, sector, peso: soldByWeight };
+  return { sku, nombre, precio, costo, barcode: nuevoBarcode, proveedor, sector, categoria: categoriaNombre || it.categoria, peso: soldByWeight };
 }
 
 // ============================================================

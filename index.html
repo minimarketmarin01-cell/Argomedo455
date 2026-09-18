@@ -4461,7 +4461,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-09-10.1';
+const APP_VERSION='2026-09-18.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -6315,9 +6315,10 @@ function fpPaneProveedores(f){
 
   // Combo de Categoría Loyverse — reutiliza _cpCats/cpCargarCatalogo (mismo endpoint
   // action=catalogo_crear que ya usa Crear producto) y el combobox genérico catComboWire.
-  // Preselecciona por nombre (p.categoria) buscando su id en _cpCats — accionEditarProducto
-  // en el backend recibe el NOMBRE (no id), así que el <select> solo sirve de estado interno
-  // del combo; fpGuardarTodo sigue leyendo #fp-pv-cat.value tal cual ya hacía.
+  // Preselecciona por nombre (p.categoria) buscando su id en _cpCats. accionEditarProducto
+  // recibe el NOMBRE (no id) y ahora sí lo resuelve a un category_id real de Loyverse antes
+  // de reenviar el ítem (antes se guardaba en el estado del combo y no pasaba de ahí) —
+  // fpGuardarTodo sigue leyendo #fp-pv-cat.value tal cual ya hacía.
   cpCargarCatalogo().then(()=>{
     const sel=document.getElementById('fp-pv-cat'),input=document.getElementById('fp-pv-cat-input');
     if(!sel)return;
@@ -6734,7 +6735,12 @@ async function fpGuardarTodo(){
 
     const it=DB.items.find(x=>x.ref===sku);
     if(it){
-      it.nombre=nombre;it.prov=categoria;it.descripcion=descripcion;
+      // FIX: acá se guardaba la categoría de Loyverse en it.prov por error — it.prov es el
+      // proveedor real de la WebApp (ver worker.js, catalogoCompacto: prov=p.proveedor), no
+      // la categoría. Pisarlo con la categoría corrompía el proveedor mostrado en Armar
+      // pedido/Recepción/etc. hasta el próximo sync completo. La categoría va en su propio
+      // campo, it.categoria (ahora sí se guarda de verdad en Loyverse, ver accionEditarProducto).
+      it.nombre=nombre;it.categoria=categoria;it.descripcion=descripcion;
       if(!avisoBarcode)it.barcode=barcode;
       it.peso=fpEditState.soldByWeight;it.track=fpEditState.trackStock;
       if(proveedorId!==undefined){
