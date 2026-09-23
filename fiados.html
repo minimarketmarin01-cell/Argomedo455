@@ -317,7 +317,7 @@ function fdSugerenciasEfectivo(total){
 // celular, sin navegar el menú "Más" de Los Cumpas). Backend en el mismo Worker de Los Cumpas
 // (argomedo455). Requisito de privacidad: nunca traer la lista completa de clientes de
 // Loyverse salvo pedido explícito del usuario ("Mostrar todos").
-const fdState={clienteId:null,clienteNombre:'',detalle:null,metodoPago:null,ultimoCobro:null,sinCliente:[]};
+const fdState={clienteId:null,clienteNombre:'',detalle:null,metodoPago:null,ultimoCobro:null,sinCliente:[],recibidoTocado:false};
 
 // ---- Recordar qué cliente quedó "abierto para cobrar" (Vista B), para sobrevivir un refresco
 // accidental de la página ---- Un F5/recarga durante un cobro en curso (ej. un dedo que roza el
@@ -619,8 +619,29 @@ function fdRenderDetalle(j,nombre){
     </div>`;
   fdFormatearInputMoneda(document.getElementById('fd-monto'));
   fdFormatearInputMoneda(document.getElementById('fd-recibido'));
-  document.getElementById('fd-monto').addEventListener('input',()=>{fdCalcularVuelto();fdValidarCobro();fdRenderSugerenciasEfectivo();});
-  document.getElementById('fd-recibido').addEventListener('input',()=>{fdCalcularVuelto();fdValidarCobro();});
+  // "Efectivo recibido" se autocompleta con el mismo valor que "Monto a abonar" mientras el
+  // cajero no haya tocado el campo a mano (fdState.recibidoTocado, reseteado acá abajo al abrir
+  // el detalle de un cliente) — el caso más común es que el cliente paga justo lo que abona, así
+  // se ahorra escribirlo dos veces. Apenas el cajero edita "Efectivo recibido" directamente (a
+  // mano, o con una sugerencia — ver fdRenderSugerenciasEfectivo) deja de seguir a "Monto a
+  // abonar" — sigue siendo 100% editable, esto es solo el valor inicial.
+  fdState.recibidoTocado=false;
+  document.getElementById('fd-monto').addEventListener('input',()=>{
+    if(!fdState.recibidoTocado){
+      const recEl=document.getElementById('fd-recibido');
+      const montoNum=fdNum(document.getElementById('fd-monto'));
+      recEl.value=montoNum?peso(montoNum):'';
+    }
+    fdCalcularVuelto();fdValidarCobro();fdRenderSugerenciasEfectivo();
+  });
+  document.getElementById('fd-recibido').addEventListener('input',()=>{fdState.recibidoTocado=true;fdCalcularVuelto();fdValidarCobro();});
+  // "Monto a abonar" ya arranca prellenado con la deuda total (ver el value="" del input más
+  // arriba) — se replica el mismo valor en "Efectivo recibido" desde el arranque, no solo
+  // cuando el cajero empieza a escribir, para el caso más común (paga todo, en efectivo justo).
+  {
+    const montoInicial=fdNum(document.getElementById('fd-monto'));
+    if(montoInicial)document.getElementById('fd-recibido').value=peso(montoInicial);
+  }
   document.getElementById('fd-cobrar-btn').onclick=fdCobrarEfectivo;
   document.getElementById('fd-pago-tarjeta-btn').onclick=()=>fdCobrarDirecto('tarjeta');
   document.getElementById('fd-imprimir-abierto').onclick=()=>fdImprimirTicketAbierto(j,nombre);
@@ -779,6 +800,7 @@ function fdRenderSugerenciasEfectivo(){
   const sugerencias=fdSugerenciasEfectivo(monto);
   box.innerHTML=sugerencias.map(s=>`<button type="button" class="fd-sugerencia-btn" data-monto="${s}">${peso(s)}</button>`).join('');
   box.querySelectorAll('[data-monto]').forEach(b=>b.onclick=()=>{
+    fdState.recibidoTocado=true; // elección explícita de un monto redondeado — deja de seguir a "Monto a abonar"
     document.getElementById('fd-recibido').value=peso(Number(b.dataset.monto));
     fdCalcularVuelto();fdValidarCobro();
   });
@@ -983,20 +1005,54 @@ function fdEtiquetaMovimiento(tipo){
   if(tipo==='abono_anulado')return'Venta anulada (Loyverse)';
   return tipo;
 }
+// Solo los cobros reales (efectivo/tarjeta) se pueden deshacer — un "Fiado" nuevo se corrige
+// borrando la línea desde la Vista B (swipe), y un reembolso/anulación de Loyverse ya es en sí
+// mismo una reversión, no tiene sentido "deshacer" eso desde acá.
+const FD_TIPOS_DESHACIBLES=['abono_efectivo','abono_tarjeta'];
 function fdRenderHistorial(movs){
   const box=document.getElementById('fd-historial-lista');
   if(!movs.length){box.innerHTML='<div class="vc-empty">Sin movimientos</div>';return;}
   // Más reciente primero — igual que cualquier historial/extracto.
   box.innerHTML=movs.slice().reverse().map(m=>{
     const positivo=m.monto>=0;
+    const deshacible=FD_TIPOS_DESHACIBLES.includes(m.tipo)&&m.ticket;
     return `<div style="border-bottom:1px solid var(--line);padding:10px 0">
       <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)"><span>${fechaChileLegible(m.fechaHora)}</span><span>${fdEtiquetaMovimiento(m.tipo)}</span></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
         <span style="font-size:16px;font-weight:800;color:${positivo?'var(--rojo)':'var(--verde)'}">${positivo?'+':'-'}${peso(Math.abs(m.monto))}</span>
         <span style="font-size:12.5px;color:var(--muted)">Saldo: ${peso(m.saldo)}</span>
       </div>
+      ${deshacible?`<button type="button" class="fd-deshacer-btn" data-ticket="${m.ticket}" data-monto="${Math.abs(m.monto)}" style="margin-top:6px;border:1.5px solid var(--rojo);background:none;color:var(--rojo);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer">Deshacer este cobro</button>`:''}
     </div>`;
   }).join('');
+  box.querySelectorAll('.fd-deshacer-btn').forEach(b=>b.onclick=()=>fdConfirmarDeshacerCobro(b));
+}
+// Deshace un cobro equivocado (monto mal tipeado, cliente confundido, etc.) — genera un
+// reembolso real en Loyverse (mismo criterio que borrar una línea de fiado: mover plata/stock
+// real siempre pide confirmación explícita) y reabre el/los fiado(s) que ese cobro hubiera
+// cerrado. Vuelve a pedir fiados_historial_cliente completo en vez de parchear el estado local
+// — evita duplicar acá el recálculo de saldo que ya hace el backend.
+async function fdConfirmarDeshacerCobro(btn){
+  const ticket=btn.dataset.ticket, monto=Number(btn.dataset.monto);
+  if(!confirm('¿Deshacer este cobro de '+peso(monto)+'?\n\nSe genera un reembolso real en Loyverse y el saldo del cliente vuelve a subir.\n\nEsta acción no se puede deshacer.'))return;
+  btn.disabled=true;btn.textContent='Deshaciendo…';
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'fiados_deshacer_cobro',payload:{receipt_id_loyverse_abono:ticket}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      showToast('Cobro deshecho'+(j.aviso?(' — '+j.aviso):''));
+      fdAbrirHistorial();
+      // El saldo del cliente cambió — refresca también la Vista B de atrás (mismo patrón que
+      // fdConfirmarEliminarLinea), sin apilar una entrada nueva de historial (vista ya es 'detalle').
+      fdAbrirDetalle(fdState.clienteId,fdState.clienteNombre);
+    }else{
+      showToast('Error: '+((j&&j.error)||'no se pudo deshacer el cobro'));
+      btn.disabled=false;btn.textContent='Deshacer este cobro';
+    }
+  }catch(e){
+    showToast('Error de conexión al deshacer el cobro');
+    btn.disabled=false;btn.textContent='Deshacer este cobro';
+  }
 }
 document.getElementById('fd-historial-cerrar').onclick=()=>history.back();
 
