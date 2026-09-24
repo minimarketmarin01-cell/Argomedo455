@@ -2233,7 +2233,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
     </div>
     <div class="mm-ov hidden" id="rc-ov">
       <div class="mm-card">
-        <div class="mm-head"><h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mm-head-ic"><rect x="1" y="6" width="14" height="10" rx="1"/><path d="M15 9h4l3 3.5V16h-7z"/><circle cx="6" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span id="rc-titulo">Recibir mercadería</span></h3></div>
+        <div class="mm-head"><h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mm-head-ic"><rect x="1" y="6" width="14" height="10" rx="1"/><path d="M15 9h4l3 3.5V16h-7z"/><circle cx="6" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span id="rc-titulo">Recibir mercadería</span></h3><button class="loadbtn" type="button" id="rc-descartar" style="padding:6px 12px;font-size:12.5px;white-space:nowrap;flex:none">Descartar</button></div>
         <div class="mm-body" style="padding-bottom:8px">
 
         <div class="seg" id="rc-modo-seg" style="width:100%;margin-bottom:10px">
@@ -2386,7 +2386,6 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
              solo aparece cuando ya hay un producto elegido (ver rc-detalle arriba). -->
         <div id="rc-footer" style="padding:8px 16px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);flex:none;background:var(--card)">
           <button class="mm-save hidden" id="rc-guardar" disabled style="padding:11px">Guardar y sumar stock</button>
-          <button class="loadbtn" id="rc-cancelar" style="width:100%;margin-top:6px;padding:9px">Cancelar</button>
         </div>
       </div>
     </div>
@@ -4461,7 +4460,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-09-24.1';
+const APP_VERSION='2026-09-24.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -12574,14 +12573,31 @@ function openRecibir(){
 // cerraba el modal sin limpiar rcState, así que la próxima vez que se abriera Recepción
 // (desde el botón de nav, Inicio, o el menú) seguía mostrando el producto ya cancelado con
 // su costo/margen/modo unidad-caja/IVA pegados, en vez de arrancar listo para escanear otro.
+// Ya no hay ningún botón "Cancelar" que llame a esto directo (se quitó del pie: se tocaba de
+// casualidad junto a Guardar y descartaba la recepción a medio cargar, mismo criterio que
+// Marín Pedidos). Queda para "Descartar" (tras confirmar) y para el escáner, que cierra y
+// reabre la pantalla alrededor de la cámara.
 function closeRecibir(){
   rcReset();
   rcLimpiarBorrador(); // se canceló a propósito — un F5 después no debe revivir este borrador
   cerrarModal('rc-ov');
 }
 
+// "Descartar" vive en la CABECERA, lo más lejos posible de "Guardar y sumar stock" (arriba
+// contra abajo): antes era un botón a todo el ancho pegado justo debajo de Guardar y se tocaba
+// de casualidad, perdiendo la recepción a medio cargar. Va con la palabra escrita y no con una
+// ✕ a secas a propósito — una ✕ se lee como "volver" inocuo, y esto borra lo cargado.
+// Solo pregunta cuando hay algo que perder: salir de una pantalla vacía no debe molestar con
+// un confirm. Para SALIR sin perder nada siguen estando la barra inferior y el botón atrás.
+function rcDescartar(){
+  const buscador=document.getElementById('rc-search');
+  const hayAlgo=!!rcState.item||!!(buscador&&buscador.value.trim());
+  if(hayAlgo&&!confirm('¿Descartar la recepción a medio cargar?\n\nSe pierde el producto elegido y lo que hayas ingresado.\n\nSi solo quieres salir sin perderla, usa la barra de abajo o el botón atrás.'))return;
+  closeRecibir();
+}
+
 document.getElementById('btn-recibir').onclick=openRecibir;
-document.getElementById('rc-cancelar').onclick=closeRecibir;
+document.getElementById('rc-descartar').onclick=rcDescartar;
 // ===================== Recepción: "Guardar" siempre visible sobre el teclado =====================
 // #rc-ov es position:fixed;inset:0 con altura 100% del layout viewport; el footer #rc-footer
 // (Guardar/Cancelar) queda pegado a su fondo por flexbox — eso YA lo mantiene visible y respeta
