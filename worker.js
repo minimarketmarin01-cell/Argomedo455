@@ -4320,6 +4320,39 @@ async function accionConsumoInterno(env, payload) {
   return { resumen: { n, total, avisoStock } };
 }
 
+// POST { action:'merma_lote', payload:{items:[{sku,cantidad,costoManual,origen,lote}],motivo,responsable} }
+// (portado de Marín 376) → registra varios productos con el mismo motivo/responsable en una
+// sola operación desde la pantalla de Merma (antes solo aceptaba un producto por vez). Mismo
+// patrón que accionConsumoInterno (que ya es, en el fondo, este mismo caso con motivo fijo) —
+// reusa accionMerma() por producto, sin duplicar su lógica de costo/descuento de stock. Si un
+// item falla (SKU inexistente, cantidad inválida), se corta ahí: los anteriores del lote ya
+// quedaron guardados con su stock ya descontado (mismo comportamiento ya aceptado en
+// accionConsumoInterno, no es nuevo de esta función).
+async function accionMermaLote(env, payload) {
+  payload = payload || {};
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!items.length) throw new Error("No hay productos para registrar");
+  if (!MOTIVOS_MERMA_VALIDOS.includes(payload.motivo)) throw new Error("Motivo inválido");
+  let total = 0, n = 0, avisoStock = "";
+  const filas = [];
+  for (const it of items) {
+    // origen/lote son por ítem, no por lote entero: solo el producto agregado desde "Es
+    // merma"/"Consumo interno" en Vencimientos trae esos datos, el resto del carrito se guarda
+    // como origen manual normal.
+    const r = await accionMerma(env, {
+      sku: it.sku, cantidad: it.cantidad, costoManual: it.costoManual,
+      motivo: payload.motivo, responsable: payload.responsable,
+      origen: it.origen === "vencimiento" ? "vencimiento" : "manual",
+      lote: it.lote || ""
+    });
+    total += r.costoTotal || 0;
+    n++;
+    filas.push(r);
+    if (r.avisoStock) avisoStock = r.avisoStock;
+  }
+  return { resumen: { n, total, avisoStock }, filas };
+}
+
 // POST { action:'marcar_descuento_factura', payload:{filaIndex,montoDescuento,revisadoPor} }
 // (portado de Marín 376) → cierra un lote "Retirado" cuando el proveedor lo cambió con
 // descuento en la factura (en vez de reponer el producto físico).
@@ -5410,6 +5443,14 @@ export default {
       // → registra varias mermas de una con motivo fijo "consumo_interno".
       if (action === "consumo_interno") {
         const resultado = await accionConsumoInterno(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'merma_lote', payload:{items:[{sku,cantidad,costoManual,origen,lote}],motivo,responsable} }
+      // → registra varios productos en un solo lote de merma, motivo/responsable compartidos.
+      if (action === "merma_lote") {
+        const resultado = await accionMermaLote(env, payload);
         await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
