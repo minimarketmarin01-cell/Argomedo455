@@ -4784,6 +4784,50 @@ async function accionEditarPrecio(env, payload) {
   return { sku, nombre: it.nombre, ok: true, precio: precioNuevo, advertencia };
 }
 
+// Redondeo comercial "terminación 50/90": dentro de cada centena, un precio con resto
+// (precio mod 100) entre 1 y 50 sube al _50 de esa misma centena, y entre 51 y 99 sube al
+// _90 (ej: 744→750, 767→790, 760→790). Los que ya terminan en 00/50/90 no se tocan — se
+// asume que esos ya son precios "limpios" puestos a propósito. Pedido explícito del dueño
+// tras revisar el catálogo completo (2026-09-26): solo ~29 de 3211 productos con precio
+// "raro" calzaban con esta regla.
+function redondeoComercial5090(precio) {
+  const entero = Math.round(Number(precio));
+  const resto = ((entero % 100) + 100) % 100;
+  if (resto === 0 || resto === 50 || resto === 90) return entero;
+  const base = entero - resto;
+  if (resto <= 50) return base + 50;
+  if (resto <= 90) return base + 90;
+  return base + 150;
+}
+
+// GET /?action=redondear_precios_comercial[&dry=1]  →  aplica redondeoComercial5090 a
+// TODOS los productos con precio (excluye los sin precio), reusando accionEditarPrecio por
+// SKU para que cada cambio quede igual de trazado que uno manual (Loyverse + D1 +
+// historial_precios + auditoria). Con &dry=1 solo devuelve la vista previa sin aplicar
+// nada — pensado para volver a correrlo sin riesgo si el catálogo cambia con el tiempo.
+async function accionRedondearPreciosComercial(env, dryRun) {
+  const { results: productos } = await env.DB.prepare(
+    "SELECT sku, nombre, precio FROM productos WHERE precio IS NOT NULL AND precio > 0"
+  ).all();
+  const cambios = [];
+  for (const p of productos) {
+    const nuevo = redondeoComercial5090(p.precio);
+    if (nuevo !== Math.round(Number(p.precio))) cambios.push({ sku: p.sku, nombre: p.nombre, precioAntes: p.precio, precioDespues: nuevo });
+  }
+  if (dryRun) return { dryRun: true, total: productos.length, aCambiar: cambios.length, cambios };
+  const aplicados = [];
+  const errores = [];
+  for (const c of cambios) {
+    try {
+      const r = await accionEditarPrecio(env, { sku: c.sku, precio: c.precioDespues, responsable: "Redondeo comercial 50/90" });
+      aplicados.push(r);
+    } catch (e) {
+      errores.push({ sku: c.sku, nombre: c.nombre, error: String((e && e.message) || e) });
+    }
+  }
+  return { dryRun: false, total: productos.length, aCambiar: cambios.length, aplicados: aplicados.length, errores };
+}
+
 // ============================================================
 //  ELIMINAR PRODUCTO — borrado real en Loyverse (irreversible).
 //  Se pide confirmación en el frontend antes de llamar esto.
@@ -5748,6 +5792,15 @@ export default {
       if (action === "migrar_mayusculas") {
         const r = await migrarMayusculas(env);
         await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...r });
+      }
+
+      // GET /?action=redondear_precios_comercial[&dry=1]  →  ver comentario de
+      // accionRedondearPreciosComercial(). Con &dry=1 solo previsualiza, sin tocar nada.
+      if (action === "redondear_precios_comercial") {
+        const dry = url.searchParams.get("dry") === "1";
+        const r = await accionRedondearPreciosComercial(env, dry);
+        if (!dry) await marcarCatalogoActualizado(env);
         return json({ ok: true, ...r });
       }
 
