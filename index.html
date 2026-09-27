@@ -4436,7 +4436,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-09-25.1';
+const APP_VERSION='2026-09-27.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5989,6 +5989,23 @@ function pcSugerirRedondeos(precio){
   });
   return out.sort((a,b)=>a-b);
 }
+// Redondeo comercial "hacia arriba" — misma regla ya aplicada a todo el catálogo existente
+// (worker.js: redondeoComercial5090, pedido explícito del dueño 2026-09-26): dentro de cada
+// centena, un resto entre 1 y 50 sube al _50, entre 51 y 99 sube al _90 (744→750, 767→790,
+// 760→790). Los que ya terminan en 00/50/90 quedan igual. Se usa para autocompletar el precio
+// sugerido — a diferencia de pcSugerirRedondeos (que ofrece 3 alternativas cercanas para elegir
+// a mano), esta siempre da UN solo resultado determinístico, pensado para rellenar el campo
+// solo mientras el usuario no lo haya editado directamente (ver PcWidget.recalcularTodo).
+function pcRedondeoComercialSuperior(precio){
+  const entero=Math.round(Number(precio)||0);
+  if(!entero||entero<=0)return entero;
+  const resto=((entero%100)+100)%100;
+  if(resto===0||resto===50||resto===90)return entero;
+  const base=entero-resto;
+  if(resto<=50)return base+50;
+  if(resto<=90)return base+90;
+  return base+150;
+}
 // ---- El componente en sí: PcWidget.render(cfg) devuelve el HTML del bloque completo;
 // PcWidget.wire(cfg) cablea toda la interacción sobre ese HTML ya insertado en el DOM.
 // cfg = {
@@ -6123,9 +6140,12 @@ const PcWidget=(function(){
     }
     function recalcularTodo(){
       renderCalculado();
+      // El precio sugerido se autocompleta YA redondeado a terminación comercial 50/90 (no el
+      // valor crudo de la división) — así el usuario no tiene que tocar un chip aparte cada vez;
+      // "Precio calculado (referencia)" arriba sigue mostrando el valor exacto sin redondear.
       if(cfg.autocompletar&&!state.precioTocado){
         const val=precioCalculado();
-        if(val!=null)$('precio').value=val;
+        if(val!=null)$('precio').value=pcRedondeoComercialSuperior(val);
       }
       renderVenta();
       if(cfg.onCambio)cfg.onCambio();
@@ -6179,8 +6199,13 @@ const PcWidget=(function(){
     $('ila').checked=!!state.ilaAplica;
     $('ila').addEventListener('change',()=>{state.ilaAplica=ilaMarcado();setIva(state.ivaModo);});
     setIva(state.ivaModo||'con');
-    $('costo').addEventListener('input',recalcularTodo);
-    $('margen-obj').addEventListener('input',recalcularTodo);
+    // Un cambio real de Costo o Margen objetivo "desbloquea" el autocompletado aunque el precio
+    // ya estuviera fijado antes (ej. Recepción/Ficha muestran el precio vigente al abrir, con
+    // precioTocado=true a propósito) — el usuario acaba de darle un motivo nuevo para recalcular,
+    // así que se vuelve a sugerir un precio (redondeado) desde cero; si de verdad quiere otro
+    // valor, sigue pudiendo escribirlo a mano en el campo Precio (eso sí vuelve a fijarlo).
+    $('costo').addEventListener('input',()=>{state.precioTocado=false;recalcularTodo();});
+    $('margen-obj').addEventListener('input',()=>{state.precioTocado=false;recalcularTodo();});
     $('precio').addEventListener('input',()=>{state.precioTocado=true;renderVenta();if(cfg.onCambio)cfg.onCambio();});
     if(cfg.mostrarBotonAplicar&&$('aplicar-btn')){
       $('aplicar-btn').onclick=()=>{
@@ -6208,9 +6233,14 @@ function fpPanePrecios(f){
   // bruto"), así que si el producto ya tenía costo cargado se arranca en "Con IVA" sin
   // obligar al usuario a elegirlo de nuevo. Si no tenía costo, se asume que va a escribir un
   // valor recién cotizado con el proveedor y probablemente sin IVA todavía.
-  fpPState={precioTocado:false,modo:'unidad',ivaModo:(p.costo!=null&&p.costo>0)?'con':'sin'};
+  // precioTocado arranca en true cuando ya hay un precio real vigente (p.precio) — así al abrir
+  // la Ficha se sigue mostrando ese precio tal cual, sin que el auto-redondeo lo pise antes de
+  // que el usuario toque nada. En cuanto edite Costo o Margen objetivo, el widget lo libera solo
+  // (ver PcWidget.wire) y ahí sí sugiere un precio nuevo, ya redondeado.
+  const margenInicial=(p.costo>0&&p.precio>0)?Math.round(PriceCalc.margenDesdePrecio(p.precio,p.costo)*10)/10:30;
+  fpPState={precioTocado:!!(p.precio>0),modo:'unidad',ivaModo:(p.costo!=null&&p.costo>0)?'con':'sin'};
   pane.innerHTML=PcWidget.render({
-    prefix:'fp-pr',costo:p.costo,margen:p.margen,precio:p.precio,
+    prefix:'fp-pr',costo:p.costo,margen:margenInicial,precio:p.precio,
     mostrarUnidadCaja:true,mostrarBotonAplicar:true,costoLabel:'Costo'
   })+
     '<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">'+
@@ -6220,7 +6250,7 @@ function fpPanePrecios(f){
     '</div>';
   PcWidget.wire({
     prefix:'fp-pr',state:fpPState,mostrarUnidadCaja:true,mostrarBotonAplicar:true,
-    autocompletar:false, // Ficha de producto: el precio de venta NO se auto-rellena solo — el usuario elige un chip de redondeo o lo escribe a mano, luego "Aplicar precio" lo confirma
+    autocompletar:true, // Ficha de producto: al abrir se respeta el precio vigente (fpPState.precioTocado ya arranca en true); si el usuario edita Costo o Margen objetivo, se sugiere solo un precio nuevo YA redondeado — sigue editable a mano para darle más margen, y "Aplicar precio" confirma
     costoLabel:'Costo',
     onCambio:()=>fpGuardarBorrador(),
     onAplicar:(precioFinal)=>{
@@ -12205,7 +12235,7 @@ function rcShowPicked(it){
   // margen por defecto) — más simple y seguro que ir tocando cada botón/input a mano para
   // reproducir el estado, y evita cualquier desincronización entre rcState y lo que el
   // widget muestra.
-  rcMontarPrecio();
+  rcMontarPrecio(_margenActual);
   const cIdx=document.getElementById('rc-costo');
   if(cIdx){
     // costoOriginal es siempre el bruto (con IVA) que trae Loyverse — si el modo arranca en
@@ -12858,7 +12888,7 @@ function rcRenderResumen(){
 // mismo rcState.modo con el widget: si compraste "por caja", tanto el costo como la cantidad
 // que escribiste están en unidades de caja, y ambos deben dividir/multiplicar igual.
 let rcPcApi=null;
-function rcMontarPrecio(){
+function rcMontarPrecio(margenInicial){
   const mount=document.getElementById('rc-pc-mount');
   if(!mount)return;
   rcState.ivaModo=rcState.ivaModo||'con';
@@ -12867,7 +12897,7 @@ function rcMontarPrecio(){
   // cambiar de modo/cantidad/unidades — ver rcSincronizarCostoPresentacion.
   rcState.costoUnitarioBase=0;
   mount.innerHTML=PcWidget.render({
-    prefix:'rc',costo:null,margen:null,precio:null,
+    prefix:'rc',costo:null,margen:(margenInicial!=null?Math.round(margenInicial*10)/10:30),precio:null,
     mostrarUnidadCaja:false, // el toggle unidad/caja de Recepción ya vive en "Cantidad recibida", justo arriba — se comparte el mismo rcState.modo en vez de duplicar el control
     mostrarBotonAplicar:true,
     costoLabel:'Costo',
@@ -12875,7 +12905,7 @@ function rcMontarPrecio(){
   });
   rcPcApi=PcWidget.wire({
     prefix:'rc',state:rcState,mostrarUnidadCaja:false,
-    autocompletar:false, // Recepción: precio de venta es el ACTUAL/vigente del producto — no se pisa solo, el usuario elige un chip o "Aplicar precio"
+    autocompletar:true, // Recepción: al elegir un producto se sigue mostrando su precio vigente (rcState.precioTocado ya arranca en true, ver rcShowPicked); si el usuario edita Costo o Margen objetivo (ej. llegó una factura con costo distinto), se sugiere solo un precio nuevo YA redondeado — sigue editable a mano si quiere darle más margen
     costoLabel:'Costo',
     // En modo "caja", "Costo" es el TOTAL de esta recepción (todas las cajas juntas), no el de
     // una sola — se divide acá por la cantidad de cajas además de por unidades/caja.
