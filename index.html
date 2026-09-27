@@ -4436,7 +4436,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-09-27.1';
+const APP_VERSION='2026-09-27.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -4480,6 +4480,12 @@ const SYNC_URL='https://argomedo455.minimarketmarin01.workers.dev';
 // (crear/eliminar productos, categorías, costo, consumo interno) siguen
 // en Apps Script hasta que se migren en una próxima sesión.
 const SYNC_MAX_AGE=3600000; // 1 hora en ms
+// "Copiar a otro local" (Ficha de producto) — Marín 376 y Argomedo 455 son dos locales
+// independientes, cada uno con su propia cuenta de Loyverse y su propio Worker/D1. Se copia
+// llamando DIRECTO al Worker del otro local desde el navegador (ambos ya aceptan cualquier
+// origen — Access-Control-Allow-Origin: *), sin pasar por este backend.
+const OTRO_LOCAL_NOMBRE='Marín 376';
+const OTRO_LOCAL_URL='https://marin376-api.minimarketmarin01.workers.dev';
 
 function lastSyncTime(){const t=localStorage.getItem('cumpas_last_sync');return t?+t:0;}
 function setLastSync(t){localStorage.setItem('cumpas_last_sync',String(t));}
@@ -5726,7 +5732,23 @@ function fpPaneGeneral(f){
         '<button type="button" id="fp-i-recuento-guardar" style="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1.5px solid var(--gold);background:var(--gold-bg);color:var(--gold);font-weight:700;font-size:13px;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polyline points="20 6 9 17 4 12"/></svg> Guardar stock</button>'
       ):'<div class="cat">Activa "Seguir inventario" para poder recontar.</div>')+
       fpCampo('Stock mínimo (opcional)','<input id="fp-i-stockmin" type="number" inputmode="numeric" value="'+(p.stockMinimo!=null?p.stockMinimo:'')+'" placeholder="Ej: 5" style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:13px;font-family:\'JetBrains Mono\';margin-top:10px">')+
+    '</div>'+
+    // Copiar a Marín 376 — empareja por CÓDIGO DE BARRAS (el único dato que puede coincidir
+    // entre los dos catálogos de Loyverse, independientes entre sí; el SKU se genera aparte en
+    // cada sistema). Sin código de barras no hay forma confiable de saber si ya existe allá, así
+    // que directamente no se ofrece la acción. Nunca copia stock (ver accionCopiarProductoExterno).
+    '<div style="margin:-4px 0 14px">'+
+      '<div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Copiar a '+OTRO_LOCAL_NOMBRE+'</div>'+
+      (p.barcode?
+        ('<div style="display:flex;gap:8px">'+
+          '<button type="button" id="fp-copiar-todo" class="loadbtn" style="flex:1">Copiar todo</button>'+
+          '<button type="button" id="fp-copiar-costo-precio" class="loadbtn" style="flex:1">Solo costo y precio</button>'+
+        '</div>')
+        :'<div class="cat">Este producto no tiene código de barras — hace falta para saber si ya existe en '+OTRO_LOCAL_NOMBRE+'.</div>')+
+      '<div id="fp-copiar-res" class="hidden" style="margin-top:8px;font-size:13px;line-height:1.45"></div>'+
     '</div>';
+  { const bt=document.getElementById('fp-copiar-todo'); if(bt)bt.onclick=()=>fpCopiarAOtroLocal(p,'todo'); }
+  { const bc=document.getElementById('fp-copiar-costo-precio'); if(bc)bc.onclick=()=>fpCopiarAOtroLocal(p,'costo_precio'); }
   document.querySelectorAll('#fp-g-nombre,#fp-g-barcode').forEach(el=>el&&el.addEventListener('input',fpGuardarBorrador));
   const stockMinInp=document.getElementById('fp-i-stockmin');
   if(stockMinInp)stockMinInp.addEventListener('input',fpGuardarBorrador);
@@ -5894,6 +5916,42 @@ async function fpGuardarRecuento(sku){
     showToast('Error de conexión al guardar');
     btn.disabled=false;btn.textContent='Guardar stock';
   }
+}
+// "Copiar a otro local" (ver contexto junto a OTRO_LOCAL_URL): llama DIRECTO al Worker del
+// otro local — no pasa por el propio backend — con los datos que este local ya tiene del
+// producto. modo:'todo' copia nombre/categoría/costo/precio/sigue-inventario/vendido-por-peso;
+// modo:'costo_precio' copia solo costo y precio. El otro local decide crear o actualizar según
+// si ya tiene un producto con ese código de barras — acá solo se muestra el resultado.
+async function fpCopiarAOtroLocal(p,modo){
+  const box=document.getElementById('fp-copiar-res');
+  const btnTodo=document.getElementById('fp-copiar-todo'),btnCP=document.getElementById('fp-copiar-costo-precio');
+  if(!box)return;
+  if(!p.barcode){showToast('Este producto no tiene código de barras');return;}
+  const confirmMsg=modo==='todo'
+    ?('¿Copiar "'+p.nombre+'" completo a '+OTRO_LOCAL_NOMBRE+'?\n\nSi ya existe allá (mismo código de barras), se actualiza. Si no existe, se crea. El stock NUNCA se copia.')
+    :('¿Copiar solo costo y precio de "'+p.nombre+'" a '+OTRO_LOCAL_NOMBRE+'?');
+  if(!confirm(confirmMsg))return;
+  box.classList.remove('hidden');
+  box.innerHTML='<span class="cat">Enviando a '+OTRO_LOCAL_NOMBRE+'…</span>';
+  if(btnTodo)btnTodo.disabled=true; if(btnCP)btnCP.disabled=true;
+  const ctrl=new AbortController();
+  const to=setTimeout(()=>ctrl.abort(),20000);
+  try{
+    const res=await fetch(OTRO_LOCAL_URL,{method:'POST',signal:ctrl.signal,body:JSON.stringify({action:'copiar_producto_externo',payload:{
+      nombre:p.nombre,categoria:p.categoria,barcode:p.barcode,costo:p.costo,precio:p.precio,
+      trackStock:!!p.trackStock,soldByWeight:!!p.soldByWeight,stockMinimo:p.stockMinimo,
+      modo:modo,responsable:'Copiado desde Argomedo 455'
+    }})});
+    const j=await res.json();
+    if(j&&j.ok){
+      box.innerHTML='<span style="color:var(--verde);font-weight:700">✅ '+(j.creado?'Creado':'Actualizado')+' en '+OTRO_LOCAL_NOMBRE+'.</span>';
+      showToast((j.creado?'Creado en ':'Actualizado en ')+OTRO_LOCAL_NOMBRE);
+    }else{
+      box.innerHTML='<span style="color:var(--rojo)">No se pudo copiar: '+((j&&j.error)||'error desconocido')+'</span>';
+    }
+  }catch(e){
+    box.innerHTML='<span style="color:var(--rojo)">'+(e.name==='AbortError'?OTRO_LOCAL_NOMBRE+' tardó demasiado en responder.':'Error de conexión con '+OTRO_LOCAL_NOMBRE+'.')+'</span>';
+  }finally{clearTimeout(to); if(btnTodo)btnTodo.disabled=false; if(btnCP)btnCP.disabled=false;}
 }
 // ==== SECCIÓN 2 — UNIDAD: unidad vs. peso (kg) ====
 function fpPaneUnidad(f){

@@ -5136,6 +5136,52 @@ async function accionCrearProducto(env, payload) {
   };
 }
 
+// POST { action:'copiar_producto_externo', payload:{nombre,categoria,barcode,costo,precio,
+//   trackStock,soldByWeight,stockMinimo,modo,responsable} } (portado de Marín 376) — recibe la
+// copia de un producto desde EL OTRO LOCAL (Marín 376 ↔ Argomedo 455, llamado directo desde el
+// navegador — ver botón "Copiar a [otro local]" en Ficha de producto). Empareja por CÓDIGO DE
+// BARRAS: es el único dato que puede coincidir entre dos catálogos de Loyverse independientes —
+// los SKU se generan por separado en cada sistema y nunca van a coincidir entre sí. NUNCA toca
+// stock: un producto nuevo queda en 0 (no se manda stockInicial) y uno existente conserva el que
+// ya tenía. modo:'todo' actualiza nombre/categoría/costo/precio/vendido-por-peso; modo:
+// 'costo_precio' solo toca costo y precio. Si el producto no existe todavía acá, se crea igual
+// en cualquiera de los dos modos — Loyverse exige nombre y categoría para cualquier producto
+// nuevo. Proveedor/Sector (clasificación interna, solo-D1) y la imagen quedan fuera a propósito:
+// son metadata propia de cada local, no del producto en sí.
+async function accionCopiarProductoExterno(env, payload) {
+  payload = payload || {};
+  const barcode = String(payload.barcode || "").trim();
+  if (!barcode) throw new Error("Este producto no tiene código de barras propio — hace falta para saber si ya existe en este local.");
+  const nombre = String(payload.nombre || "").trim();
+  if (!nombre) throw new Error("Falta el nombre del producto");
+  const modo = payload.modo === "costo_precio" ? "costo_precio" : "todo";
+  const responsable = payload.responsable || "Copiado desde el otro local";
+
+  const existente = await get(env, "SELECT sku FROM productos WHERE barcode = ?", barcode);
+
+  if (existente) {
+    const cambios = { sku: existente.sku, precio: payload.precio, costo: payload.costo, responsable };
+    if (modo === "todo") {
+      cambios.nombre = nombre;
+      cambios.categoria = payload.categoria;
+      cambios.soldByWeight = payload.soldByWeight;
+    }
+    const r = await accionEditarProducto(env, cambios);
+    return { ok: true, creado: false, sku: existente.sku, nombre: r.nombre || nombre, modo };
+  }
+
+  const categoriaNombre = String(payload.categoria || "").trim();
+  if (!categoriaNombre) throw new Error("Falta la categoría — no se puede crear el producto en este local sin ella");
+  const cat = await accionCrearCategoria(env, { nombre: categoriaNombre });
+
+  const creado = await accionCrearProducto(env, {
+    nombre, categoryId: cat.categoria.id, categoriaNombre: cat.categoria.name, barcode,
+    precio: payload.precio, coste: payload.costo,
+    trackStock: payload.trackStock !== false, soldByWeight: !!payload.soldByWeight,
+    stockMinimo: payload.stockMinimo, activo: true, responsable
+  });
+  return { ok: true, creado: true, sku: creado.producto.ref, nombre: creado.producto.nombre, modo };
+}
 
 export default {
   async fetch(request, env) {
@@ -5290,6 +5336,15 @@ export default {
       // Loyverse (SKU asignado automáticamente) y lo guarda en D1.
       if (action === "crear_producto") {
         const resultado = await accionCrearProducto(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, ...resultado });
+      }
+
+      // POST { action:'copiar_producto_externo', payload:{nombre,categoria,barcode,costo,
+      //   precio,trackStock,soldByWeight,stockMinimo,modo,responsable} } → recibe la copia de
+      // un producto desde el otro local (Marín 376), empareja por código de barras.
+      if (action === "copiar_producto_externo") {
+        const resultado = await accionCopiarProductoExterno(env, payload);
         await marcarCatalogoActualizado(env);
         return json({ ok: true, ...resultado });
       }
