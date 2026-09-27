@@ -4759,29 +4759,53 @@ async function accionEditarPrecio(env, payload) {
   if (!it) throw new Error("Producto no encontrado: " + sku);
   if (!it.id_loyverse || !it.variant_id) throw new Error("Falta id de Loyverse (vuelve a sincronizar el catálogo)");
 
+  // Precio y costo son independientes entre sí — payload puede traer solo uno de los dos
+  // (ej. Recepción "Guardar cambios" con cantidad 0 cuando cambió el costo de esta compra
+  // pero el precio de venta se deja igual a propósito, o el módulo "Sin costo" que solo
+  // manda costo). ANTES esto exigía payload.precio siempre, así que un costo-only fallaba
+  // con "Precio inválido" sin llegar siquiera a guardar el costo — reportado: Recepción
+  // tiraba ese error al guardar un cambio de costo con el precio vigente sin tocar.
   const precioNuevo = payload.precio != null && payload.precio !== "" ? Number(payload.precio) : null;
-  if (precioNuevo == null || isNaN(precioNuevo) || precioNuevo < 0) throw new Error("Precio inválido");
-  if (precioNuevo === it.precio) return { sku, nombre: it.nombre, ok: true, precio: it.precio, sinCambios: true };
+  const costoNuevo = payload.costo != null && payload.costo !== "" ? Number(payload.costo) : null;
+  if (precioNuevo != null && (isNaN(precioNuevo) || precioNuevo < 0)) throw new Error("Precio inválido");
+  if (costoNuevo != null && (isNaN(costoNuevo) || costoNuevo < 0)) throw new Error("Costo inválido");
+  if (precioNuevo == null && costoNuevo == null) throw new Error("Indica un precio o costo nuevo");
+
+  const precioCambia = precioNuevo != null && precioNuevo !== it.precio;
+  const costoCambia = costoNuevo != null && costoNuevo !== it.costo;
+  if (!precioCambia && !costoCambia) {
+    return { sku, nombre: it.nombre, ok: true, precio: it.precio, costo: it.costo, sinCambios: true };
+  }
 
   await run(env,
     `INSERT INTO historial_precios (sku, fecha, precio_antes, precio_despues, costo_antes, costo_despues, responsable)
      VALUES (?,?,?,?,?,?,?)`,
-    sku, fechaHoraDDMMAAAA(), it.precio, precioNuevo, it.costo, it.costo, payload.responsable || "");
+    sku, fechaHoraDDMMAAAA(), it.precio, precioNuevo != null ? precioNuevo : it.precio,
+    it.costo, costoNuevo != null ? costoNuevo : it.costo, payload.responsable || "");
 
-  await actualizarPrecioCostoLoyverse(env, it.id_loyverse, it.variant_id, precioNuevo, null);
-  await run(env, "UPDATE productos SET precio = ? WHERE sku = ?", precioNuevo, sku);
+  await actualizarPrecioCostoLoyverse(env, it.id_loyverse, it.variant_id, precioNuevo, costoNuevo);
+  const sets = [], vals = [];
+  if (precioNuevo != null) { sets.push("precio = ?"); vals.push(precioNuevo); }
+  if (costoNuevo != null) { sets.push("costo = ?"); vals.push(costoNuevo); }
+  vals.push(sku);
+  await run(env, "UPDATE productos SET " + sets.join(", ") + " WHERE sku = ?", ...vals);
 
-  const advertencia = (it.costo != null && Number(it.costo) > precioNuevo)
+  const precioFinal = precioNuevo != null ? precioNuevo : it.precio;
+  const costoFinal = costoNuevo != null ? costoNuevo : it.costo;
+  const advertencia = (costoFinal != null && Number(costoFinal) > precioFinal)
     ? "⚠️ El costo queda por encima del precio de venta — revisa si es intencional (venta a pérdida)."
     : "";
 
+  const detalle = [];
+  if (precioCambia) detalle.push("Precio: $" + it.precio + " → $" + precioNuevo);
+  if (costoCambia) detalle.push("Costo: $" + it.costo + " → $" + costoNuevo);
   await run(env,
     `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
      VALUES (?,?,?,?,?,?,?,?,?)`,
     fechaHoraDDMMAAAA(), "editar_precio", sku, it.nombre, it.categoria, it.id_loyverse, it.stock,
-    "Precio: $" + it.precio + " → $" + precioNuevo, payload.responsable || "");
+    detalle.join(" · "), payload.responsable || "");
 
-  return { sku, nombre: it.nombre, ok: true, precio: precioNuevo, advertencia };
+  return { sku, nombre: it.nombre, ok: true, precio: precioFinal, costo: costoFinal, advertencia };
 }
 
 // Redondeo comercial "terminación 50/90": dentro de cada centena, un precio con resto
