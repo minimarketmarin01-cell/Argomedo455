@@ -375,7 +375,13 @@ html.carrito-fijo #rc-ov .mm-sections{
    reservan 44px de padding-right, no los 104px que asume el .mm-x genérico de arriba. Con el
    offset genérico (right:84px) el botón "×" quedaba flotando sobre la zona de texto tipeable
    en vez de después de ella, interceptando toques ahí — mismo tipo de bug que #prov-x/.cam-btn. */
-#gp-prod-x,#gp-x,#pl-x{right:6px}
+#gp-x,#pl-x{right:6px}
+/* #gp-prod-search SÍ tiene botón de escaneo (a diferencia de #gp-x/#pl-x de arriba) — el "×"
+   se corre un cajón hacia la izquierda para dejarle su lugar al escáner, que pasa a ocupar la
+   posición más cercana al borde (mismo criterio que el resto de los buscadores de la app: el
+   escáner siempre al filo, luego el resto de los botones hacia adentro). */
+#gp-prod-x{right:44px}
+#gp-prod-search{padding-right:84px!important}
 /* Botón de cámara/escáner reutilizable en TODOS los buscadores de la app: mismo alto, color e
    ícono que ya tenían — solo más ancho para que sea fácil de presionar con el dedo (antes 24px
    o 19px según el buscador). El mic y el botón de limpiar se corrieron para dejarle espacio,
@@ -3051,8 +3057,9 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
       </div>
       <div class="mm-body">
         <div class="mm-search" style="margin:0 0 10px">
-          <input id="gp-prod-search" placeholder="Buscar en estos productos…" autocomplete="off" style="padding-right:44px">
+          <input id="gp-prod-search" placeholder="Buscar en estos productos…" autocomplete="off" style="padding-right:84px">
           <button class="mm-x" id="gp-prod-x" type="button" aria-label="Limpiar" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          <button class="mm-scan cam-btn" id="gp-prod-scan" type="button" aria-label="Escanear código"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13.5" r="3.2"/></svg></button>
         </div>
         <div id="gp-prod-lista"></div>
       </div>
@@ -4436,7 +4443,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-09-27.2';
+const APP_VERSION='2026-09-27.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -8106,6 +8113,27 @@ document.getElementById('gp-prod-x').onclick=()=>{
   document.getElementById('gp-prod-search').value='';
   document.getElementById('gp-prod-x').style.display='none';
   gpRenderProductos(_gpProdListaCompleta);
+};
+// Escanear acá busca SOLO dentro de los productos YA asociados a este proveedor
+// (_gpProdListaCompleta), no en todo el catálogo — tiene sentido: esta pantalla existe para
+// revisar/gestionar lo que ya tiene asignado, no para descubrir productos de otros proveedores.
+// barcodesCoinciden() tolera la ambigüedad UPC-A (12 dígitos) / EAN-13 (13, con 0 al inicio),
+// mismo refuerzo ya aplicado al resto de los escáneres de la app.
+document.getElementById('gp-prod-scan').onclick=()=>{
+  const reopen=()=>{abrirModal('gp-ov');};
+  cerrarModal('gp-ov');
+  openScanner(code=>{
+    reopen();
+    const codeNorm=String(code||'').trim();
+    const encontrados=_gpProdListaCompleta.filter(it=>barcodesCoinciden(it.barcode,codeNorm));
+    document.getElementById('gp-prod-search').value=codeNorm;
+    document.getElementById('gp-prod-x').style.display='flex';
+    if(encontrados.length){
+      gpRenderProductos(encontrados);
+    }else{
+      document.getElementById('gp-prod-lista').innerHTML='<div class="vc-empty">Código '+codeNorm+' no encontrado entre los productos de este proveedor.</div>';
+    }
+  },reopen);
 };
 async function gpEliminar(prov){
   if(!confirm('¿Eliminar el proveedor "'+prov.nombre+'"?'))return;
@@ -12757,6 +12785,63 @@ document.getElementById('rc-descartar').onclick=rcDescartar;
     // estilo fijo que hubiera quedado de una ejecución previa.
     window.addEventListener('resize',function(){if(rcOvAbierto())restaurar();});
   }
+})();
+// ===================== Modales "hoja inferior": no quedar tapados por el teclado =====================
+// La mayoría de los modales (.mm-ov) NO son a pantalla completa — su .mm-card usa
+// max-height:92vh y queda pegada abajo (align-items:flex-end), un tamaño/posición fijos del
+// layout viewport que el teclado NO reduce en Android moderno (mismo fenómeno que el fix de
+// arriba para #rc-footer, con la misma causa). Al enfocar un buscador dentro de uno de estos
+// modales (reportado: "Buscar en estos productos…" de Gestionar proveedores) el teclado tapa
+// la parte de abajo de la tarjeta —justo donde aparecen los resultados— porque ésta sigue
+// "creyendo" que tiene toda esa altura disponible y sigue pegada al fondo real de la pantalla,
+// detrás del teclado.
+// Se corrige igual que el footer de Recepción: mientras el teclado está abierto, la .mm-card
+// del modal actualmente visible se saca del flujo (position:fixed) y se reubica pegada justo
+// encima del teclado, con su alto recortado al espacio real visible — como .mm-body es
+// flex:1 y overflow-y:auto, se encoge con ella y su scroll interno vuelve a alcanzar todo el
+// contenido (incluidos los resultados del buscador). Se restaura apenas el teclado se cierra.
+// Los modales a pantalla completa (height:100%, ver la regla de arriba: #rc-ov/#vc-ov/#mas-ov/
+// #fp-ov) quedan afuera a propósito — #rc-ov ya tiene su propio fix dedicado para el footer, y
+// los demás no tienen evidencia de este bug — así que no se tocan para no arriesgar una
+// regresión sin poder probarla en un dispositivo real.
+(function(){
+  var vv=window.visualViewport;
+  var cardAjustada=null,rafId=null;
+  var SELECTOR_FULLHEIGHT='#rc-ov,#vc-ov,#mas-ov,#fp-ov';
+  function restaurar(){
+    if(cardAjustada){
+      cardAjustada.style.position='';cardAjustada.style.left='';cardAjustada.style.right='';
+      cardAjustada.style.margin='';cardAjustada.style.bottom='';cardAjustada.style.maxHeight='';
+      cardAjustada=null;
+    }
+  }
+  function ajustar(){
+    rafId=null;
+    var ov=document.querySelector('.mm-ov:not(.hidden)');
+    if(!ov||ov.matches(SELECTOR_FULLHEIGHT)){restaurar();return;}
+    var card=ov.querySelector('.mm-card');
+    if(!card){restaurar();return;}
+    var solape=vv?Math.max(0,Math.round(window.innerHeight-(vv.height+vv.offsetTop))):0;
+    if(solape>150){ // mismo umbral que el fix de #rc-footer: ignora la barra de URL/nav, solo reacciona al teclado
+      if(cardAjustada&&cardAjustada!==card)restaurar(); // cambió el modal visible sin pasar por acá (raro, pero por las dudas)
+      cardAjustada=card;
+      card.style.position='fixed';card.style.left='0';card.style.right='0';card.style.margin='0 auto';
+      card.style.bottom=solape+'px';
+      card.style.maxHeight=(vv.height-8)+'px';
+    } else {
+      restaurar();
+    }
+  }
+  function programarAjuste(){
+    if(rafId)return;
+    rafId=requestAnimationFrame(ajustar);
+  }
+  if(vv){
+    vv.addEventListener('resize',programarAjuste);
+    vv.addEventListener('scroll',programarAjuste);
+  }
+  // Sin visualViewport: el propio window ya se achica con el teclado, así que el max-height:92vh
+  // original ya funciona bien ahí — nada que hacer (mismo razonamiento que el fix de #rc-footer).
 })();
 // Restaura costo/cantidad/fecha que el usuario ya había escrito en Recepción antes de irse
 // a crear el producto — se usa tanto si cancela como si guarda con éxito.
