@@ -3569,7 +3569,16 @@ function avisoYaPedidoEnOtroProveedor(it,nombreProveedorActual){
   return p.proveedor?('Ya pedido a '+p.proveedor):'Ya pedido';
 }
 // Normaliza texto para comparar sin tildes/mayúsculas ("Pingüino"≈"pinguino")
-function normTxt(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+// Algunos WebView de equipos POS de bajo costo (ej. tablets con Android BlissOS) traen ICU
+// incompleto y String.prototype.normalize() puede lanzar una excepci\u00f3n en vez de funcionar
+// \u2014 eso romp\u00eda currentItems() entero (la b\u00fasqueda quedaba en "Sin resultados" para cualquier
+// texto, sin ning\u00fan error visible). Se degrada a comparar sin sacar tildes en vez de romper
+// toda la b\u00fasqueda cuando eso pasa (mismo fix ya aplicado en Mar\u00edn 376).
+function normTxt(s){
+  s=String(s||'').toLowerCase();
+  try{return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+  catch(e){return s;}
+}
 function currentItems(){
   let base;
   if(state.search){const words=normTxt(state.search).trim().split(/\s+/).filter(Boolean);base=DB.items.filter(i=>{
@@ -3752,7 +3761,7 @@ function pickProv(target){
   state.search='';const sx=document.getElementById('prov-x');if(sx)sx.classList.remove('on');const menu=document.getElementById('prov-menu');if(menu)menu.classList.add('hidden');const sel=document.getElementById('prov-all');if(sel)sel.blur();setProvInputValue();
   render();persistUI();
 }
-function commitProv(val){const key=(val||'').trim().toLowerCase();if(!key)return false;if(key.indexOf('todos')===0){pickProv('__ALL__');return true;}let hit=(DB.provsReal||[]).find(p=>p.prov.toLowerCase()===key);if(!hit&&key.length>=2)hit=(DB.provsReal||[]).find(p=>p.prov.toLowerCase().indexOf(key)>-1);if(hit){pickProv(hit.prov);return true;}return false;}
+function commitProv(val){const key=normTxt(val).trim();if(!key)return false;if(key.indexOf('todos')===0){pickProv('__ALL__');return true;}let hit=(DB.provsReal||[]).find(p=>normTxt(p.prov)===key);if(!hit&&key.length>=2)hit=(DB.provsReal||[]).find(p=>normTxt(p.prov).indexOf(key)>-1);if(hit){pickProv(hit.prov);return true;}return false;}
 function updGlob(){let q=0;DB.items.forEach(it=>{if(it.track&&it.stock!=null&&it.stock<=0&&it.u30>0)q++;});document.getElementById('glob-quiebre').textContent='● '+q+' en quiebre';
   document.getElementById('updlabel').innerHTML=`Datos: <b>${DB.meta.min} → ${DB.meta.max}</b> · ${DB.meta.nitems} productos · ${SRC}`;}
 
@@ -4443,7 +4452,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-09-27.3';
+const APP_VERSION='2026-09-27.4';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -9655,11 +9664,11 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 const mmState={motivo:null,resp:null};
 let mmCart=[]; // {ref,nombre,prov,peso,coste,cantidad,costoManual,origen,lote,vencFilaIndex}
 function mmFindItems(q){
-  q=(q||'').toLowerCase().trim();
+  q=normTxt(q).trim();
   if(!q)return [];
   const words=q.split(/\s+/).filter(Boolean);
   return (DB.items||[]).filter(i=>{
-    const hay=(i.nombre||'').toLowerCase();const ref=String(i.ref||'');const bc=i.barcode?String(i.barcode):'';
+    const hay=normTxt(i.nombre||'');const ref=String(i.ref||'');const bc=i.barcode?String(i.barcode):'';
     return words.every(w=>hay.includes(w)||ref.includes(w)||bc.includes(w));
   }).slice(0,25);
 }
@@ -10007,11 +10016,11 @@ const ET_TEXTO_PRESETS={
 };
 const etState={item:null,fechaCargando:false};
 function etFindItems(q){
-  q=(q||'').toLowerCase().trim();
+  q=normTxt(q).trim();
   if(!q)return [];
   const words=q.split(/\s+/).filter(Boolean);
   return (DB.items||[]).filter(i=>{
-    const hay=(i.nombre||'').toLowerCase();const ref=String(i.ref||'');const bc=i.barcode?String(i.barcode):'';
+    const hay=normTxt(i.nombre||'');const ref=String(i.ref||'');const bc=i.barcode?String(i.barcode):'';
     return words.every(w=>hay.includes(w)||ref.includes(w)||bc.includes(w));
   }).slice(0,25);
 }
@@ -10273,9 +10282,7 @@ function vcRecalcularProgTotal(){
   _vcProgTotal=base.length;
 }
 function vcAplicarFiltro(){
-  // vcBuscarCatalogo compara contra un haystack solo con .toLowerCase() (sin sacar acentos),
-  // así que acá se normaliza igual que antes (no con normTxt) para no cambiar qué encuentra.
-  const q=(_vcLFiltro.search||'').toLowerCase().trim();
+  const q=normTxt(_vcLFiltro.search).trim();
   const provFiltro=_vcLFiltro.prov;
   if(!q){
     // FIX: un lote "Retirado" ya se movió a la pestaña Pendientes — no debe seguir viéndose
@@ -10325,9 +10332,9 @@ document.querySelectorAll('#in2-venc-card .in2-venc-mini').forEach(mini=>{
 // una tarjeta "Sin fecha de vencimiento" con acceso directo a registrar un lote.
 function vcBuscarCatalogo(q,provFiltro){
   const box=document.getElementById('vc-list');
-  const words=q.split(/\s+/).filter(Boolean);
+  const words=normTxt(q).split(/\s+/).filter(Boolean);
   let prods=(DB.items||[]).filter(it=>{
-    const s=((it.nombre||'')+' '+(it.ref||'')+' '+(it.barcode||'')).toLowerCase();
+    const s=normTxt((it.nombre||'')+' '+(it.ref||'')+' '+(it.barcode||''));
     return words.every(w=>s.includes(w));
   });
   if(provFiltro)prods=prods.filter(it=>it.prov===provFiltro); // it.prov = proveedor real de la WebApp, mismo campo que vcProveedorDe usa como primera opción
@@ -11779,12 +11786,12 @@ function hmPintar(items){
 }
 function hmAplicarFiltro(){
   const inp=document.getElementById('hm-lsearch');
-  const q=(inp?inp.value:'').toLowerCase().trim();
+  const q=normTxt(inp?inp.value:'').trim();
   const x=document.getElementById('hm-lx'); if(x)x.style.display=q?'block':'none';
   if(!q){hmPintar(_hmTodos);return;}
   const words=q.split(/\s+/).filter(Boolean);
   const filt=_hmTodos.filter(it=>{
-    const s=((it.nombre||'')+' '+(it.categoria||'')+' '+(it.responsable||'')+' '+(it.motivo||'')).toLowerCase();
+    const s=normTxt((it.nombre||'')+' '+(it.categoria||'')+' '+(it.responsable||'')+' '+(it.motivo||''));
     return words.every(w=>s.includes(w));
   });
   hmPintar(filt);
