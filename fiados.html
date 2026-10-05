@@ -222,7 +222,9 @@ h1,h2,h3{font-family:'Manrope',system-ui,sans-serif}
   <div id="fd-recon-ov" class="hidden" style="position:fixed;inset:0;background:rgba(11,26,51,.55);z-index:250;display:flex;align-items:center;justify-content:center;padding:20px">
     <div style="background:var(--card);width:100%;max-width:380px;border-radius:var(--radius-card);padding:20px;max-height:90vh;overflow-y:auto">
       <h3 style="font-size:17px;margin-bottom:12px">Asignar cliente</h3>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:14px" id="fd-recon-info"></div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px" id="fd-recon-info"></div>
+      <button type="button" id="fd-recon-detalle-toggle" class="hidden" style="background:none;border:none;color:var(--azul);font-weight:700;font-size:12.5px;padding:0;margin-bottom:12px;cursor:pointer;display:flex;align-items:center;gap:4px">Ver detalle del ticket <span id="fd-recon-detalle-caret">▾</span></button>
+      <div id="fd-recon-detalle" class="hidden" style="background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:-4px 0 14px"></div>
       <div class="mm-field">
         <label>Buscar cliente</label>
         <div class="mm-search">
@@ -280,6 +282,33 @@ function fechaChileLegible(isoUtc){
   return get('day')+'/'+get('month')+'/'+get('year')+' '+get('hour')+':'+get('minute')+' '+ampm;
 }
 function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');const dur=m.length>60?4600:2600;clearTimeout(window._toastT);window._toastT=setTimeout(()=>t.classList.remove('show'),dur);}
+// Sonido corto de confirmación al guardar/cobrar — mismo mecanismo que index.html (Web Audio
+// generado en código, sin archivos externos, funciona sin conexión). Solo en la rama de éxito
+// real, nunca en errores. Ver comentario completo en index.html.
+let _audioCtx=null;
+function _getAudioCtx(){
+  if(!_audioCtx){try{_audioCtx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){return null;}}
+  return _audioCtx;
+}
+document.addEventListener('pointerdown',()=>{const ctx=_getAudioCtx();if(ctx&&ctx.state==='suspended')ctx.resume().catch(()=>{});},{once:true});
+function sonidoGuardado(){
+  try{
+    const ctx=_getAudioCtx();
+    if(!ctx)return;
+    if(ctx.state==='suspended')ctx.resume().catch(()=>{});
+    const ahora=ctx.currentTime;
+    [[880,0,0.09],[1318.51,0.08,0.13]].forEach(([freq,retraso,dur])=>{
+      const inicio=ahora+retraso;
+      const osc=ctx.createOscillator(),gain=ctx.createGain();
+      osc.type='sine';osc.frequency.value=freq;
+      gain.gain.setValueAtTime(0.0001,inicio);
+      gain.gain.exponentialRampToValueAtTime(0.25,inicio+0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001,inicio+dur);
+      osc.connect(gain);gain.connect(ctx.destination);
+      osc.start(inicio);osc.stop(inicio+dur+0.02);
+    });
+  }catch(e){/* sin audio disponible — nunca debe interrumpir el guardado */}
+}
 // El backend guarda monto_total del fiado tal cual lo entrega Loyverse (r.total_money), que ya
 // viene neto de cualquier descuento del ticket (de línea o del total) — el saldo/lo que se
 // cobra SIEMPRE es correcto, sin importar el descuento. Lo único que no reconciliaba a simple
@@ -408,7 +437,7 @@ async function fdCargarSinCliente(){
 }
 document.getElementById('fd-sincliente-box').onclick=function(){
   const f=(fdState.sinCliente||[])[0];
-  if(f)fdAbrirReconciliar(f.id,f.receipt_id_loyverse,f.monto_total);
+  if(f)fdAbrirReconciliar(f.id,f.receipt_id_loyverse,f.monto_total,f.lineas,f.fecha_hora);
 };
 
 // ---- Buscador de clientes (Vista A) — debounce propio ----
@@ -533,6 +562,7 @@ async function fdEjecutarFusion(origenId,destinoId){
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'fiados_fusionar_clientes',payload:{cliente_origen_id:origenId,cliente_destino_id:destinoId}})});
     const j=await res.json();
     if(j&&j.ok){
+      sonidoGuardado();
       showToast('Clientes fusionados: ahora todo está bajo "'+nombreDestino+'"');
       fdCargarListaFiados();
     }else{showToast('Error: '+((j&&j.error)||'no se pudo fusionar'));}
@@ -752,6 +782,7 @@ async function fdConfirmarEliminarLinea(row){
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'fiados_eliminar_linea',payload:{linea_id:lineaId}})});
     const j=await res.json();
     if(j&&j.ok){
+      sonidoGuardado();
       showToast(j.avisoStock?('Línea eliminada. '+j.avisoStock):'Línea eliminada, stock devuelto');
       fdAbrirDetalle(fdState.clienteId,fdState.clienteNombre);
     }else{
@@ -881,6 +912,7 @@ async function fdConfirmarCobro(){
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'fiados_cobrar',payload:{cliente_id:fdState.clienteId,monto,metodo_pago:fdState.metodoPago}})});
     const j=await res.json();
     if(j&&j.ok){
+      sonidoGuardado();
       fdState.ultimoCobro=Object.assign({},j,{monto,metodoPago:fdState.metodoPago,vuelto:fdState.metodoPago==='efectivo'?Math.max(0,recibido-monto):0,clienteNombre:fdState.clienteNombre});
       fdRenderComprobante(fdState.ultimoCobro);
       // El cobro ya se registró — deja de estar "abierto para cobrar", así que un refresco
@@ -943,13 +975,37 @@ function fdImprimir(contenidoHtml){
 }
 
 // ---- Reconciliar fiado sin cliente asignado (modal fd-recon-ov) ----
-function fdAbrirReconciliar(fiadoId,receiptId,montoTotal){
-  document.getElementById('fd-recon-info').textContent='Fiado #'+fiadoId+' · '+peso(montoTotal)+(receiptId?' · boleta '+receiptId:'');
+// El monto y la boleta solos no alcanzan para identificar a quién pertenece un fiado huérfano
+// — "lineas" (sku/producto_nombre/cantidad/precio_unitario, ya la trae fiados_sin_cliente) deja
+// ver qué se compró, plegado por defecto para no saturar el modal cuando el monto ya es claro.
+// También se muestra fecha+hora del fiado (fechaChileLegible), antes ausente del modal.
+function fdAbrirReconciliar(fiadoId,receiptId,montoTotal,lineas,fechaHora){
+  document.getElementById('fd-recon-info').textContent='Fiado #'+fiadoId+' · '+peso(montoTotal)+(receiptId?' · boleta '+receiptId:'')+(fechaHora?' · '+fechaChileLegible(fechaHora):'');
   document.getElementById('fd-recon-buscar').value='';
   document.getElementById('fd-recon-results').innerHTML='';
   document.getElementById('fd-recon-ov').dataset.fiadoId=fiadoId;
+  const toggle=document.getElementById('fd-recon-detalle-toggle');
+  const detalle=document.getElementById('fd-recon-detalle');
+  const lista=lineas||[];
+  detalle.classList.add('hidden');
+  document.getElementById('fd-recon-detalle-caret').textContent='▾';
+  if(lista.length){
+    toggle.classList.remove('hidden');
+    toggle.firstChild.textContent='Ver detalle del ticket ('+lista.length+' producto'+(lista.length===1?'':'s')+') ';
+    detalle.innerHTML=lista.map(l=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:4px 0"><span>${l.cantidad} × ${l.producto_nombre||l.sku}</span><span style="color:var(--muted);white-space:nowrap">${peso(l.cantidad*l.precio_unitario)}</span></div>`).join('');
+  }else{
+    toggle.classList.add('hidden');
+    detalle.innerHTML='';
+  }
   fdPush({recon:true});
 }
+document.getElementById('fd-recon-detalle-toggle').onclick=()=>{
+  const detalle=document.getElementById('fd-recon-detalle');
+  const caret=document.getElementById('fd-recon-detalle-caret');
+  const abrir=detalle.classList.contains('hidden');
+  detalle.classList.toggle('hidden',!abrir);
+  caret.textContent=abrir?'▴':'▾';
+};
 document.getElementById('fd-recon-cancelar').onclick=()=>history.back();
 document.getElementById('fd-recon-buscar').addEventListener('input',ev=>{
   const q=ev.target.value.trim();
@@ -971,6 +1027,7 @@ async function fdAsignarCliente(fiadoId,clienteId){
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'fiados_asignar_cliente',payload:{fiado_id:Number(fiadoId),cliente_id:clienteId}})});
     const j=await res.json();
     if(j&&j.ok){
+      sonidoGuardado();
       showToast('Cliente asignado correctamente');
       history.back();
       fdCargarSinCliente();
