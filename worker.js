@@ -2326,6 +2326,19 @@ async function repFiadosHistorialCliente(env, clienteId) {
 async function repFiadosSinCliente(env) {
   const { results: filas } = await env.DB.prepare(
     "SELECT id, receipt_id_loyverse, monto_total, fecha_hora FROM fiados WHERE cliente_id IS NULL AND estado = 'abierto' ORDER BY fecha_hora ASC").all();
+  if (!filas.length) return { fiados: filas };
+  // El monto y la boleta solos no alcanzan para identificar a quién pertenece un fiado
+  // huérfano — se agregan sus líneas (qué se compró) para que el frontend pueda mostrarlas al
+  // reconciliar. Una sola consulta extra con IN(...), agrupada en JS — la lista de fiados sin
+  // cliente es chica por naturaleza (son excepciones, no el flujo normal).
+  const ids = filas.map(f => f.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const { results: lineas } = await env.DB.prepare(
+    `SELECT fiado_id, sku, producto_nombre, cantidad, precio_unitario FROM fiados_lineas WHERE fiado_id IN (${placeholders})`
+  ).bind(...ids).all();
+  const lineasPorFiado = {};
+  lineas.forEach(l => { (lineasPorFiado[l.fiado_id] = lineasPorFiado[l.fiado_id] || []).push(l); });
+  filas.forEach(f => { f.lineas = lineasPorFiado[f.id] || []; });
   return { fiados: filas };
 }
 
