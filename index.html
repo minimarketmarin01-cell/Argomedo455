@@ -4490,7 +4490,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-06.1';
+const APP_VERSION='2026-10-06.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -10151,6 +10151,27 @@ function etPick(ref){
   etState.fechaCargando=true;
   etValidar();
   etImportarFechaVencimiento(it.ref);
+  etRefrescarCodigoDesdeServidor(it);
+}
+// El código de barras en DB.items puede estar desactualizado si el producto se editó (ej. se
+// generó un código interno nuevo desde Ficha de producto) sin que todavía haya corrido un resync
+// completo del catálogo — reportado: la vista previa de una etiqueta mostraba un código distinto
+// al que el producto realmente tiene guardado en el servidor. Se confirma contra el servidor
+// (mismo endpoint que ya usa Ficha de producto, ficha_producto) sin bloquear la vista previa
+// inicial, que ya se pintó con el dato local — si difiere, se corrige y se repinta.
+async function etRefrescarCodigoDesdeServidor(it){
+  try{
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=ficha_producto&sku='+encodeURIComponent(it.ref));
+    const j=await res.json();
+    if(!j||!j.ok||!j.ficha||!j.ficha.producto)return;
+    const real=j.ficha.producto;
+    if(etState.item!==it)return; // el usuario ya cambió de producto mientras esperábamos
+    if((real.barcode||'')!==(it.barcode||'')){
+      it.barcode=real.barcode||'';
+      document.getElementById('et-cat').textContent=(it.prov||'')+(it.barcode?' · '+it.barcode:'');
+      etRenderPreview();
+    }
+  }catch(e){/* mejor esfuerzo — si falla, se queda con el dato local ya pintado */}
 }
 // Código a imprimir/dibujar: el código de barras escaneado si existe, si no la REF/SKU interna
 // — mismo fallback que ya usan otras pantallas de la app (barcode||ref).
