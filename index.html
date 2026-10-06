@@ -2838,7 +2838,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
               <input id="cp-barcode" placeholder="Escanea o escribe" autocomplete="off" style="padding-right:58px">
               <button class="mm-scan cam-btn" id="cp-scan" type="button" aria-label="Escanear"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13.5" r="3.2"/></svg></button>
             </div>
-            <div style="font-size:11px;color:var(--muted);margin-top:5px">Si el código se reconoce, el nombre se completa solo.</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:5px">Si el código se reconoce, el nombre se completa solo. <button type="button" id="cp-generar-codigo" style="background:none;border:none;color:var(--azul);font-weight:700;cursor:pointer;padding:0;font-size:11px;text-decoration:underline">¿No tiene código de barras? Generar uno</button></div>
           </div>
           <div style="font-size:11.5px;color:var(--muted);margin:2px 0 10px">El código interno (SKU) se genera <b>automáticamente</b> y es único — no se edita a mano.</div>
         </section>
@@ -4490,7 +4490,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-05.1';
+const APP_VERSION='2026-10-06.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -6024,13 +6024,22 @@ function fpPaneUnidad(f){
     '</div>'+
     fpCampo('Código de barras (opcional)',
       '<div class="mm-search"><input id="fp-g-barcode" value="'+(p.barcode||'').replace(/"/g,'&quot;')+'" placeholder="Escanea o escribe" autocomplete="off" style="padding-right:58px">'+
-      '<button class="mm-scan cam-btn" id="fp-g-scan" type="button" aria-label="Escanear"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13.5" r="3.2"/></svg></button></div>');
+      '<button class="mm-scan cam-btn" id="fp-g-scan" type="button" aria-label="Escanear"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13.5" r="3.2"/></svg></button></div>',
+      '<button type="button" id="fp-g-generar-codigo" style="background:none;border:none;color:var(--azul);font-weight:700;cursor:pointer;padding:0;font-size:11px;text-decoration:underline">¿No tiene código de barras? Generar uno</button>');
   document.querySelectorAll('#fp-g-barcode').forEach(el=>el&&el.addEventListener('input',fpGuardarBorrador));
   const fpBarcodeInp=document.getElementById('fp-g-barcode');
   document.getElementById('fp-g-scan').onclick=()=>{
     const reopen=()=>{document.getElementById('fp-ov').classList.remove('hidden');_sincronizarNav();};
     document.getElementById('fp-ov').classList.add('hidden');
     openScanner(code=>{reopen();fpBarcodeInp.value=code;},reopen);
+  };
+  document.getElementById('fp-g-generar-codigo').onclick=()=>{
+    if((fpBarcodeInp.value||'').trim()&&!confirm('Ya hay un código escrito ("'+fpBarcodeInp.value.trim()+'"). ¿Reemplazarlo por uno generado?'))return;
+    const codigo=generarCodigoBarrasInterno();
+    if(!codigo){showToast('No se pudo generar un código único — intenta de nuevo');return;}
+    fpBarcodeInp.value=codigo;
+    fpGuardarBorrador();
+    showToast('Código interno generado: '+codigo+' — toca "Guardar cambios" y luego imprime la etiqueta');
   };
   const fpPintarTipoVenta=()=>{
     const bU=document.getElementById('fp-g-tipo-unidad'),bP=document.getElementById('fp-g-tipo-peso');
@@ -9484,6 +9493,15 @@ document.getElementById('cp-scan').onclick=()=>{
   document.getElementById('cp-ov').classList.add('hidden');
   openScanner(code=>{reopen();document.getElementById('cp-barcode').value=code;cpAutocompletarPorCodigo(code);},reopen);
 };
+document.getElementById('cp-generar-codigo').onclick=()=>{
+  const inp=document.getElementById('cp-barcode');
+  if((inp.value||'').trim()&&!confirm('Ya hay un código escrito ("'+inp.value.trim()+'"). ¿Reemplazarlo por uno generado?'))return;
+  const codigo=generarCodigoBarrasInterno();
+  if(!codigo){showToast('No se pudo generar un código único — intenta de nuevo');return;}
+  inp.value=codigo;
+  cpValidar();
+  showToast('Código interno generado: '+codigo+' — imprime la etiqueta para poder escanearlo en caja');
+};
 // Wrapper fino sobre PriceCalc para el guardado real — Loyverse siempre guarda el costo POR
 // UNIDAD, nunca el de la caja/display: si cpPState.modo es 'caja', costoBruto ya divide por
 // "Unidades por caja" internamente (mismo mecanismo que Ficha/Recepción).
@@ -9916,7 +9934,7 @@ const Barcode39=(function(){
       }
       if(i<secuencia.length-1)x+=1; // espacio entre caracteres (1 unidad angosta)
     });
-    return `<svg viewBox="0 0 ${x.toFixed(2)} ${alto}" preserveAspectRatio="none" style="width:100%;height:100%;display:block">${barras.join('')}</svg>`;
+    return `<svg viewBox="0 0 ${x.toFixed(2)} ${alto}" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:100%;height:100%;display:block">${barras.join('')}</svg>`;
   }
   return {svg,sanear};
 })();
@@ -9982,10 +10000,37 @@ const EAN13=(function(){
         barras.push(`<rect x="${x}" y="0" width="1" height="${h}"/>`);
       }
     }
-    return `<svg viewBox="0 0 ${modulos.length} ${alto}" preserveAspectRatio="none" style="width:100%;height:100%;display:block">${barras.join('')}</svg>`;
+    return `<svg viewBox="0 0 ${modulos.length} ${alto}" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:100%;height:100%;display:block">${barras.join('')}</svg>`;
   }
   return {svg,esValido};
 })();
+
+// Genera un código de barras interno EAN-13 válido para productos que no vienen con código de
+// fábrica (verduras sueltas, productos elaborados en el local, etc.). Usa el prefijo "04", parte
+// del rango 040-049 que GS1 reserva para uso interno de cada comercio (nunca puede colisionar con
+// un código real de fábrica de otro producto) — a propósito NO se usa el rango "20-29": Loyverse
+// (y varios sistemas de punto de venta/balanzas) interpretan CUALQUIER código que empiece con "20"
+// como un "código con peso embebido" (formato 20+SKU 5 dígitos+peso en gramos 5 dígitos+dígito de
+// control, ver help.loyverse.com/help/barcodes-with-embedded-weight) — así que un código nuestro
+// con ese prefijo se parsea mal (saca un "SKU" de 5 dígitos inventado de en medio del código, no
+// el código completo) y Loyverse tira "Artículo no encontrado" en vez de reconocer el producto,
+// aunque el código en sí sea perfectamente válido y legible (portado del mismo fix en Marín 376,
+// descubierto ahí con este mismo síntoma exacto). Se valida contra TODOS los códigos de barras ya
+// usados en el catálogo cargado (DB.items) para garantizar unicidad. Usado tanto en Crear producto
+// como en Ficha de producto (botón "Generar uno" junto al campo).
+function generarCodigoBarrasInterno(){
+  const existentes=new Set((DB.items||[]).map(it=>String(it.barcode||'').trim()).filter(Boolean));
+  for(let intento=0;intento<200;intento++){
+    let cuerpo='04';
+    for(let i=0;i<10;i++)cuerpo+=Math.floor(Math.random()*10);
+    let suma=0;
+    for(let i=0;i<12;i++){const d=Number(cuerpo[i]);suma+=(i%2===0)?d:d*3;}
+    const control=String((10-(suma%10))%10);
+    const codigo=cuerpo+control;
+    if(!existentes.has(codigo))return codigo;
+  }
+  return null; // prácticamente imposible (10^10 combinaciones) — si pasa, se avisa en vez de arriesgar un duplicado
+}
 
 // Code 128 (subconjunto B) — se usa SOLO para el caso puntual que ni el ancho de módulos ni la
 // altura de guardas de EAN-13 pueden resolver: un código guardado con 13 dígitos y el primero en
@@ -10047,7 +10092,7 @@ const Code128=(function(){
     for(let x=0;x<modulos.length;x++){
       if(modulos[x]==='1')barras.push(`<rect x="${x}" y="0" width="1" height="${alto}"/>`);
     }
-    return `<svg viewBox="0 0 ${modulos.length} ${alto}" preserveAspectRatio="none" style="width:100%;height:100%;display:block">${barras.join('')}</svg>`;
+    return `<svg viewBox="0 0 ${modulos.length} ${alto}" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:100%;height:100%;display:block">${barras.join('')}</svg>`;
   }
   return {svg};
 })();
@@ -10156,14 +10201,18 @@ function etCargarTamano(){
     if(raw){const d=JSON.parse(raw);if(d&&d.ancho&&d.alto)return {ancho:d.ancho,alto:d.alto,texto:ET_TEXTO_PRESETS[d.texto]?d.texto:'normal'};}
   }catch(e){}
   // ancho: 58mm, el ancho físico real del rollo autoadhesivo de la tiquetera (no cambia). alto:
-  // 22mm por defecto — con texto al doble (ET_TEXTO_PRESETS) no entraba en los 15mm originales
-  // sin volver a apretar el código de barras; como se imprime de un rollo continuo no hay límite
-  // físico real en el alto, solo rinden menos etiquetas por metro de rollo. Sigue siendo editable.
-  return {ancho:58,alto:22,texto:'normal'};
+  // 32mm por defecto — con 22mm el código de barras quedaba con solo ~7mm de alto real (una vez
+  // descontado nombre/precio/código/fecha), muy por debajo de los ~15-23mm de un código de fábrica
+  // normal: un lector láser de mostrador necesita barrer una franja más alta para enganchar el
+  // código de forma confiable (portado del mismo fix en Marín 376, mismo síntoma reportado: el
+  // celular sí leía el código por foto, pero el lector de caja no). Con 32mm el código queda con
+  // ~17mm de alto real. Como se imprime de un rollo continuo no hay límite físico real en el
+  // alto, solo rinden menos etiquetas por metro de rollo. Editable igual.
+  return {ancho:58,alto:32,texto:'normal'};
 }
 function etGuardarTamano(){
   const ancho=Number(document.getElementById('et-ancho').value)||58;
-  const alto=Number(document.getElementById('et-alto').value)||15;
+  const alto=Number(document.getElementById('et-alto').value)||32;
   const selBtn=document.querySelector('#et-texto button.sel');
   const texto=(selBtn&&ET_TEXTO_PRESETS[selBtn.dataset.t])?selBtn.dataset.t:'normal';
   try{localStorage.setItem(ET_TAMANO_LS_KEY,JSON.stringify({ancho,alto,texto}));}catch(e){}
@@ -10173,7 +10222,7 @@ function etGuardarTamano(){
 function etRenderPreview(){
   const it=etState.item;
   const ancho=Number(document.getElementById('et-ancho').value)||58;
-  const alto=Number(document.getElementById('et-alto').value)||15;
+  const alto=Number(document.getElementById('et-alto').value)||32;
   const mmPx=3.6; // conversión aproximada mm→px solo para que la vista previa se vea a escala
   const label=document.getElementById('et-preview-label');
   label.style.width=(ancho*mmPx)+'px';
@@ -10234,7 +10283,7 @@ function etImprimir(){
   if(!it)return;
   const cantidad=Math.max(1,Math.min(50,Number(document.getElementById('et-cantidad').value)||1));
   const ancho=Number(document.getElementById('et-ancho').value)||58;
-  const alto=Number(document.getElementById('et-alto').value)||15;
+  const alto=Number(document.getElementById('et-alto').value)||32;
   const codigo=etCodigoDe(it);
   const dd=document.getElementById('et-fecha-dd').value,mm=document.getElementById('et-fecha-mm').value,aa=document.getElementById('et-fecha-aaaa').value;
   const fechaTxt=(dd.length===2&&mm.length===2&&aa.length===2)?('Vence: '+dd+'/'+mm+'/20'+aa):'';
