@@ -4490,7 +4490,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-07.1';
+const APP_VERSION='2026-10-07.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -13371,6 +13371,22 @@ document.getElementById('rc-guardar').onclick=async()=>{
   const uCaja=Number(document.getElementById('rc-unidades-caja').value)||0;
   const cantidad=(rcState.modo==='caja'&&uCaja>0)?(cantIngresada*uCaja):cantIngresada;
   if(cantidad<0){showToast('Cantidad inválida');return;}
+  const fecha=fmtDateInputToDDMMAAAA(document.getElementById('rc-fecha').value);
+  // Requisito (portado de Marín 376): los proveedores que manejan vencimiento (misma lista
+  // CATEGORIAS_CAMBIO que ya usa Vencimientos/San Jorge/Ideal/Pan Castaño) no pueden quedar sin
+  // fecha cargada — reportado un caso real: un producto de San Jorge se recibió sin fecha y se
+  // venció en el local sin que nadie lo viera, porque un lote sin fecha nunca entra a la pantalla
+  // de Vencimientos (no hay nada que revisar sin saber cuándo vence). Solo aplica si realmente se
+  // va a sumar stock (cantidad>0).
+  if(cantidad>0){
+    if(!CATEGORIAS_CAMBIO.length)await cargarConfigCambio();
+    if(esCategoriaCambio(it.prov)&&!fecha){
+      showToast('"'+it.prov+'" maneja vencimiento — carga la fecha para poder guardar');
+      const campoFecha=document.getElementById('rc-fecha-dd');
+      if(campoFecha){campoFecha.focus();campoFecha.scrollIntoView({block:'center',behavior:'smooth'});}
+      return;
+    }
+  }
   // Confirmación de seguridad: este botón queda al final de la pantalla y se reportaron toques
   // accidentales (doble tap sin querer) que sumaban stock de más. Solo se pregunta cuando
   // realmente va a sumar stock (cantidad>0) — guardar solo precio/costo/proveedor/sector
@@ -13388,7 +13404,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
   // proveedor/sector con cantidad 0, sigue el flujo normal de abajo — lote_nuevo ya acepta
   // cantidad 0 cuando trae algún cambio de proveedor/sector/costo/precio.
   if(cantidad===0&&!provCambio&&!sectCambio){await rcGuardarSoloPrecio(it);return;}
-  const fecha=fmtDateInputToDDMMAAAA(document.getElementById('rc-fecha').value);
+  // (fecha ya calculada arriba, antes del confirm — no se recalcula)
   // Lo que se guarda en Loyverse es el costo BRUTO (Loyverse usa costo con IVA) — el mismo
   // valor que sirvió de base para calcular el precio de venta arriba. rcCostoNeto() es alias
   // de rcCostoBruto(); si la compra fue por caja, ya viene dividido por las unidades.
