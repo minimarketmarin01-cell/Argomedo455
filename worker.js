@@ -5193,6 +5193,17 @@ async function accionCopiarProductoExterno(env, payload) {
   if (!nombre) throw new Error("Falta el nombre del producto");
   const modo = payload.modo === "costo_precio" ? "costo_precio" : "todo";
   const responsable = payload.responsable || "Copiado desde el otro local";
+  // Imagen: viaja como URL pública (la que ya sirve el Loyverse del local de origen) — se
+  // descarga server-to-server y se sube al Loyverse de ESTE local recién al final, una vez que
+  // el producto ya existe acá (hace falta su id_loyverse). No fatal: si falla, el resto de la
+  // copia ya se hizo igual — se avisa en avisoImagen en vez de hacer fallar toda la copia.
+  const imagenUrl = String(payload.imagen || "").trim();
+  let avisoImagen = null;
+  async function copiarImagenSiCorresponde(sku) {
+    if (!imagenUrl) return;
+    try { await accionSubirImagenProducto(env, { sku, image_url: imagenUrl }); }
+    catch (e) { avisoImagen = "La imagen no se pudo copiar: " + e.message; }
+  }
 
   const existente = await get(env, "SELECT sku FROM productos WHERE barcode = ?", barcode);
 
@@ -5204,7 +5215,8 @@ async function accionCopiarProductoExterno(env, payload) {
       cambios.soldByWeight = payload.soldByWeight;
     }
     const r = await accionEditarProducto(env, cambios);
-    return { ok: true, creado: false, sku: existente.sku, nombre: r.nombre || nombre, modo };
+    await copiarImagenSiCorresponde(existente.sku);
+    return { ok: true, creado: false, sku: existente.sku, nombre: r.nombre || nombre, modo, avisoImagen };
   }
 
   const categoriaNombre = String(payload.categoria || "").trim();
@@ -5217,7 +5229,8 @@ async function accionCopiarProductoExterno(env, payload) {
     trackStock: payload.trackStock !== false, soldByWeight: !!payload.soldByWeight,
     stockMinimo: payload.stockMinimo, activo: true, responsable
   });
-  return { ok: true, creado: true, sku: creado.producto.ref, nombre: creado.producto.nombre, modo };
+  await copiarImagenSiCorresponde(creado.producto.ref);
+  return { ok: true, creado: true, sku: creado.producto.ref, nombre: creado.producto.nombre, modo, avisoImagen };
 }
 
 export default {
