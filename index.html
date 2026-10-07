@@ -4490,7 +4490,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-06.2';
+const APP_VERSION='2026-10-07.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5984,23 +5984,26 @@ async function fpCopiarAOtroLocal(p,modo){
   if(!box)return;
   if(!p.barcode){showToast('Este producto no tiene código de barras');return;}
   const confirmMsg=modo==='todo'
-    ?('¿Copiar "'+p.nombre+'" completo a '+OTRO_LOCAL_NOMBRE+'?\n\nSi ya existe allá (mismo código de barras), se actualiza. Si no existe, se crea. El stock NUNCA se copia.')
+    ?('¿Copiar "'+p.nombre+'" completo a '+OTRO_LOCAL_NOMBRE+'?\n\nSi ya existe allá (mismo código de barras), se actualiza. Si no existe, se crea. Se copia también la imagen (si tiene). El stock NUNCA se copia.')
     :('¿Copiar solo costo y precio de "'+p.nombre+'" a '+OTRO_LOCAL_NOMBRE+'?');
   if(!confirm(confirmMsg))return;
   box.classList.remove('hidden');
   box.innerHTML='<span class="cat">Enviando a '+OTRO_LOCAL_NOMBRE+'…</span>';
   if(btnTodo)btnTodo.disabled=true; if(btnCP)btnCP.disabled=true;
   const ctrl=new AbortController();
-  const to=setTimeout(()=>ctrl.abort(),20000);
+  const to=setTimeout(()=>ctrl.abort(),30000); // 30s (no 20s): copiar la imagen implica que el otro
+  // local la descargue y la vuelva a subir a su propio Loyverse, más lento que solo texto/números.
   try{
     const res=await fetch(OTRO_LOCAL_URL,{method:'POST',signal:ctrl.signal,body:JSON.stringify({action:'copiar_producto_externo',payload:{
       nombre:p.nombre,categoria:p.categoria,barcode:p.barcode,costo:p.costo,precio:p.precio,
       trackStock:!!p.trackStock,soldByWeight:!!p.soldByWeight,stockMinimo:p.stockMinimo,
+      imagen:modo==='todo'?(p.imagen||''):'', // solo en modo 'todo' — en 'costo_precio' no se toca nada más que precio/costo
       modo:modo,responsable:'Copiado desde Argomedo 455'
     }})});
     const j=await res.json();
     if(j&&j.ok){
-      box.innerHTML='<span style="color:var(--verde);font-weight:700">✅ '+(j.creado?'Creado':'Actualizado')+' en '+OTRO_LOCAL_NOMBRE+'.</span>';
+      box.innerHTML='<span style="color:var(--verde);font-weight:700">✅ '+(j.creado?'Creado':'Actualizado')+' en '+OTRO_LOCAL_NOMBRE+'.</span>'+
+        (j.avisoImagen?'<br><span style="color:var(--ambar);font-size:12px">⚠️ '+j.avisoImagen+'</span>':'');
       sonidoGuardado();
       showToast((j.creado?'Creado en ':'Actualizado en ')+OTRO_LOCAL_NOMBRE);
     }else{
