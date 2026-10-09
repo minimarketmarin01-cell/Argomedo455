@@ -506,6 +506,11 @@ let fdTotalRevelado=false;
 // el mismo cliente real quedó duplicado con 2 registros distintos en Loyverse. Se limpia cada
 // vez que se recarga la lista.
 const fdSeleccionadosFusion=new Set();
+// fdListaFiadosVisible: true apenas la lista se mostró una vez por elección explícita del
+// cajero (tocando "Ver clientes con fiado abierto") — sirve para que el refresco automático de
+// más abajo (fdRefrescarSiCorresponde) sepa si tiene que volver a pedirla o no, SIN pisar la
+// privacidad por defecto (nunca la carga sola si nadie la pidió primero).
+let fdListaFiadosVisible=false;
 async function fdCargarListaFiados(){
   const btn=document.getElementById('fd-mostrar-todos');
   btn.disabled=true;btn.textContent='Cargando…';
@@ -516,10 +521,29 @@ async function fdCargarListaFiados(){
     fdListaFiados=(j&&j.ok)?(j.clientes||[]):[];
     fdMontosRevelados.clear();fdTotalRevelado=false;fdSeleccionadosFusion.clear();
     fdRenderListaFiados();
+    fdListaFiadosVisible=true;
   }catch(e){showToast('Error de conexión al listar clientes con fiado');}
   btn.disabled=false;btn.textContent='Ver clientes con fiado abierto';
 }
 document.getElementById('fd-mostrar-todos').onclick=fdCargarListaFiados;
+// ---- Refresco automático al volver a la app ----
+// Reportado: un cobro con "Otros" en Loyverse (el cajero cierra la venta ahí, no acá) tarda en
+// "aparecer" en Fiados — en realidad el webhook ya lo procesa en el servidor en el momento, pero
+// esta página NUNCA se refrescaba sola: si el cajero vuelve de Loyverse a una pantalla de Fiados
+// que ya tenía abierta, seguía mostrando los datos viejos hasta cerrarla y reabrirla a mano.
+// Se refresca sola al recuperar foco (volver de otra app) o visibilidad (volver de segundo
+// plano) — pero SOLO en Vista A (lista) y SOLO lo que ya estaba visible: nunca interrumpe un
+// cobro a medio escribir en Vista B, ni fuerza a destapar la lista de clientes con fiado si el
+// cajero no la había pedido antes (privacidad por defecto, ver fdListaFiadosVisible arriba).
+function fdRefrescarSiCorresponde(){
+  if(document.visibilityState!=='visible')return;
+  if(fdEstadoActual().vista!=='lista')return;
+  fdCargarSinCliente();
+  if(fdListaFiadosVisible)fdCargarListaFiados();
+}
+document.addEventListener('visibilitychange',fdRefrescarSiCorresponde);
+window.addEventListener('pageshow',fdRefrescarSiCorresponde);
+window.addEventListener('focus',fdRefrescarSiCorresponde);
 function fdRenderListaFiados(){
   const box=document.getElementById('fd-buscar-results');
   fdActualizarBannerFusion();
