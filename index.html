@@ -4556,7 +4556,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-09.1';
+const APP_VERSION='2026-10-09.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -6253,6 +6253,10 @@ const PcWidget=(function(){
           '<input type="checkbox" id="'+pfx+'-ila"> Aplica ILA +18% '+
           '<span title="Impuesto Adicional a los Alcoholes: 18% sobre el costo neto, además del 19% de IVA — ambos se calculan sobre el mismo neto, no se componen." style="cursor:help">ⓘ</span>'+
         '</label>'+
+        '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400;text-transform:none;margin-top:6px">'+
+          '<input type="checkbox" id="'+pfx+'-ila10"> Aplica impuesto adicional +10% '+
+          '<span title="Impuesto adicional de 10% que algunas facturas traen aparte (línea \'10% Impto.\'): se calcula sobre el costo neto, además del 19% de IVA — ambos sobre el mismo neto, no se componen. No se combina con el ILA de 18%." style="cursor:help">ⓘ</span>'+
+        '</label>'+
       '</div>'+
       '<div class="mm-field" style="margin:8px 0 0"><label>Margen objetivo (%)</label>'+
         '<input id="'+pfx+'-margen-obj" type="number" inputmode="decimal" value="'+(cfg.margen!=null?cfg.margen:30)+'" placeholder="Ej: 30" class="pc-input">'+
@@ -6280,6 +6284,7 @@ const PcWidget=(function(){
     const $=id=>document.getElementById(pfx+'-'+id);
     const state=cfg.state; // objeto mutable del llamador: {modo,ivaModo,ilaAplica,precioTocado}
     function ilaMarcado(){const el=$('ila');return !!(el&&el.checked);}
+    function ila10Marcado(){const el=$('ila10');return !!(el&&el.checked);}
     function costoBruto(){
       const uCaja=$('unidades-caja')?$('unidades-caja').value:null;
       // cantidadCajasGetter: SOLO Recepción lo pasa (ver rcMontarPrecio) — ahí "Costo" en modo
@@ -6287,7 +6292,7 @@ const PcWidget=(function(){
       // producto/Ficha no lo pasan, así que siguen tratando "Costo" como el de una caja, igual
       // que siempre.
       const cantidadCajas=cfg.cantidadCajasGetter?cfg.cantidadCajasGetter():1;
-      return PriceCalc.costoBruto($('costo').value,state.modo||'unidad',uCaja,state.ivaModo,cantidadCajas,ilaMarcado());
+      return PriceCalc.costoBruto($('costo').value,state.modo||'unidad',uCaja,state.ivaModo,cantidadCajas,ilaMarcado(),ila10Marcado());
     }
     function precioCalculado(){
       return PriceCalc.precioDesdeMargen(costoBruto(),$('margen-obj').value);
@@ -6386,13 +6391,18 @@ const PcWidget=(function(){
         ?'Este valor incluye IVA.'
         :(ilaMarcado()
           ?'Se le sumarán 18% de ILA + 19% de IVA automáticamente (ambos sobre este costo neto).'
-          :'Se le sumará 19% de IVA automáticamente.');
+          :(ila10Marcado()
+            ?'Se le sumarán 10% de impuesto adicional + 19% de IVA automáticamente (ambos sobre este costo neto).'
+            :'Se le sumará 19% de IVA automáticamente.'));
       recalcularTodo();
     }
     $('iva-con').onclick=()=>setIva('con');
     $('iva-sin').onclick=()=>setIva('sin');
     $('ila').checked=!!state.ilaAplica;
-    $('ila').addEventListener('change',()=>{state.ilaAplica=ilaMarcado();setIva(state.ivaModo);});
+    $('ila10').checked=!!state.ila10Aplica;
+    // ILA 18% e impuesto adicional 10% son excluyentes: marcar uno desmarca el otro.
+    $('ila').addEventListener('change',()=>{if(ilaMarcado()){$('ila10').checked=false;state.ila10Aplica=false;}state.ilaAplica=ilaMarcado();setIva(state.ivaModo);});
+    $('ila10').addEventListener('change',()=>{if(ila10Marcado()){$('ila').checked=false;state.ilaAplica=false;}state.ila10Aplica=ila10Marcado();setIva(state.ivaModo);});
     setIva(state.ivaModo||'con');
     // Un cambio real de Costo o Margen objetivo "desbloquea" el autocompletado aunque el precio
     // ya estuviera fijado antes (ej. Recepción/Ficha muestran el precio vigente al abrir, con
@@ -8797,7 +8807,7 @@ function cpReset(){
   try{cpToggleStock();}catch(e){}
   try{cpValidar();}catch(e){}
   cpState.ivaModo='con';cpState.modo='unidad';cpState.precioTocado=false;
-  cpPState.ivaModo='con';cpPState.modo='unidad';cpPState.precioTocado=false;cpPState.ilaAplica=false;
+  cpPState.ivaModo='con';cpPState.modo='unidad';cpPState.precioTocado=false;cpPState.ilaAplica=false;cpPState.ila10Aplica=false;
   try{cpMontarPrecio();}catch(e){}
   try{cpSetModoCantidad('unidad');}catch(e){}
   try{cpRenderResumen();}catch(e){}
@@ -9174,6 +9184,7 @@ function cpToggleStock(){
 const PriceCalc=(function(){
   const IVA=0.19;
   const ILA=0.18; // Impuesto Adicional a los Alcoholes — solo aplica si el usuario lo marca.
+  const ILA10=0.10; // Impuesto adicional del 10% (facturas que lo traen aparte, ej. algunas bebidas) — mismo método que ILA, excluyentes entre sí.
   // Costo por unidad real a partir de lo que el usuario escribió: si compró "por caja", el
   // costo ingresado es el de TODAS las cajas de esta compra (cantidadCajas, por defecto 1 — así
   // Crear producto/Ficha, que no tienen ese concepto, siguen tratándolo como "costo de una
@@ -9192,10 +9203,10 @@ const PriceCalc=(function(){
   //   ivaModo 'sin' -> lo escrito es el neto. Se le suma 19% de IVA siempre, y si ilaAplica
   //   además 18% de ILA — AMBOS se calculan sobre el mismo neto original y se suman, no se
   //   componen (no hay IVA sobre ILA).
-  function costoBruto(costoIngresado,modo,unidadesCaja,ivaModo,cantidadCajas,ilaAplica){
+  function costoBruto(costoIngresado,modo,unidadesCaja,ivaModo,cantidadCajas,ilaAplica,ila10Aplica){
     const unit=costoUnitario(costoIngresado,modo,unidadesCaja,cantidadCajas);
     if(ivaModo!=='sin')return unit;
-    return unit+(ilaAplica?unit*ILA:0)+unit*IVA;
+    return unit+(ilaAplica?unit*ILA:0)+(ila10Aplica?unit*ILA10:0)+unit*IVA;
   }
   // Precio de venta a partir del costo bruto y el margen objetivo (margen SOBRE VENTA, no
   // sobre costo): Precio = Costo / (1 - Margen). Devuelve null si no hay datos suficientes
@@ -9227,7 +9238,7 @@ const PriceCalc=(function(){
     // como si el cambio de presentación no hubiera hecho nada.
     return uCaja>0?costoUnitarioVal*uCaja*cCajas:0;
   }
-  return {IVA,ILA,costoUnitario,costoBruto,costoEnPresentacion,precioDesdeMargen,margenDesdePrecio};
+  return {IVA,ILA,ILA10,costoUnitario,costoBruto,costoEnPresentacion,precioDesdeMargen,margenDesdePrecio};
 })();
 
 
@@ -9577,7 +9588,7 @@ document.getElementById('cp-generar-codigo').onclick=()=>{
 // UNIDAD, nunca el de la caja/display: si cpPState.modo es 'caja', costoBruto ya divide por
 // "Unidades por caja" internamente (mismo mecanismo que Ficha/Recepción).
 function cpCostoBruto(){
-  return PriceCalc.costoBruto(document.getElementById('cp-pr-costo').value,cpPState.modo,document.getElementById('cp-pr-unidades-caja').value,cpPState.ivaModo,1,cpPState.ilaAplica);
+  return PriceCalc.costoBruto(document.getElementById('cp-pr-costo').value,cpPState.modo,document.getElementById('cp-pr-unidades-caja').value,cpPState.ivaModo,1,cpPState.ilaAplica,cpPState.ila10Aplica);
 }
 document.getElementById('cp-guardar').onclick=async()=>{
   const btn=document.getElementById('cp-guardar');
@@ -12636,7 +12647,7 @@ function rcGuardarBorrador(){
         costo:document.getElementById('rc-costo').value,
         precio:document.getElementById('rc-precio').value,
         fecha:document.getElementById('rc-fecha').value,
-        modo:rcState.modo,ivaModo:rcState.ivaModo,ilaAplica:rcState.ilaAplica,
+        modo:rcState.modo,ivaModo:rcState.ivaModo,ilaAplica:rcState.ilaAplica,ila10Aplica:rcState.ila10Aplica,
         margenObj:document.getElementById('rc-margen-obj').value,
         unidadesCaja:document.getElementById('rc-unidades-caja').value,
         precioTocado:rcState.precioTocado,margenTocado:rcState.margenTocado
@@ -12662,6 +12673,10 @@ function rcAplicarBorrador(d){
   }
   if(d.ilaAplica){
     const chk=document.getElementById('rc-ila');
+    if(chk){chk.checked=true;chk.dispatchEvent(new Event('change',{bubbles:true}));}
+  }
+  if(d.ila10Aplica){
+    const chk=document.getElementById('rc-ila10');
     if(chk){chk.checked=true;chk.dispatchEvent(new Event('change',{bubbles:true}));}
   }
   if(d.ref)rcPick(d.ref);
@@ -12737,6 +12752,7 @@ function rcShowPicked(it){
   const _esProveedorConIva=/\bccu\b/.test(_provNorm)||_provNorm.includes('coca cola')||_provNorm.includes('cocacola')||/\bboom\b/.test(_provNorm);
   rcState.ivaModo=_esProveedorConIva?'con':'sin';
   rcState.ilaAplica=false; // elegir un producto nuevo no debe heredar el ILA del anterior
+  rcState.ila10Aplica=false;
   rcState.margenTocado=false;
   rcState.modo='unidad';
   document.getElementById('rc-unidades-caja').value='';
@@ -13043,7 +13059,7 @@ function rcReset(){
   { const rsi=document.getElementById('rc-sect-input'); if(rsi)rsi.value=''; }
   { const rps=document.getElementById('rc-proveedor'); if(rps)rps.value=''; }
   { const rss=document.getElementById('rc-sector'); if(rss)rss.value=''; }
-  rcState.ivaModo='sin';rcState.modo='unidad';rcState.ilaAplica=false;
+  rcState.ivaModo='sin';rcState.modo='unidad';rcState.ilaAplica=false;rcState.ila10Aplica=false;
   rcMontarPrecio();
   rcSetModo('unidad');
   document.getElementById('rc-guardar').disabled=true;
@@ -13500,6 +13516,7 @@ function rcMontarPrecio(margenInicial){
   document.getElementById('rc-iva-con').addEventListener('click',()=>{rcConvertirCostoIva('con');rcActualizarCostoUnitarioHint();});
   document.getElementById('rc-iva-sin').addEventListener('click',()=>{rcConvertirCostoIva('sin');rcActualizarCostoUnitarioHint();});
   document.getElementById('rc-ila').addEventListener('change',rcActualizarCostoUnitarioHint);
+  document.getElementById('rc-ila10').addEventListener('change',rcActualizarCostoUnitarioHint);
   // Cada vez que el usuario edita "Costo" a mano, se recalcula el costo por unidad "de fábrica"
   // (con el modo/cantidad/unidades actuales), para poder reconstruir el valor correcto si
   // después cambia de presentación, cantidad de cajas o unidades por caja sin volver a escribir.
@@ -13589,7 +13606,7 @@ function rcConvertirCostoIva(modoNuevo){
 // el modo es "caja", igual que hacía antes rcCostoBruto().
 function rcCostoBrutoReal(){
   const cantidadCajas=rcState.modo==='caja'?(Number(document.getElementById('rc-cantidad').value)||1):1;
-  return PriceCalc.costoBruto(document.getElementById('rc-costo').value,rcState.modo,document.getElementById('rc-unidades-caja').value,rcState.ivaModo,cantidadCajas,rcState.ilaAplica);
+  return PriceCalc.costoBruto(document.getElementById('rc-costo').value,rcState.modo,document.getElementById('rc-unidades-caja').value,rcState.ivaModo,cantidadCajas,rcState.ilaAplica,rcState.ila10Aplica);
 }
 // Alias por compatibilidad con el resto del módulo (Ficha, historial, etc. pueden llamarla).
 function rcCostoNeto(){
