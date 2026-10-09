@@ -1947,17 +1947,21 @@ async function accionFiadosCobrar(env, payload) {
 
   // Primera pasada: calcular hasta dónde alcanza el monto SIN escribir nada todavía — así se
   // puede rechazar de entrada un monto que supera la deuda total sin dejar cambios a medias.
+  // Los saldos de cada fiado abierto son independientes entre sí — se piden todos en paralelo
+  // (antes era un await por fiado, uno tras otro: con varios fiados abiertos eso sumaba latencia
+  // innecesaria a un cobro que debe sentirse instantáneo) y recién después se arma el FIFO.
+  const saldos = await Promise.all(fiadosAbiertos.map(f => saldoDeFiado(env, f)));
   let restante = monto, deudaTotal = 0;
   const aplicaciones = [];
-  for (const f of fiadosAbiertos) {
-    const saldo = await saldoDeFiado(env, f);
-    if (saldo <= 0) continue;
+  fiadosAbiertos.forEach((f, i) => {
+    const saldo = saldos[i];
+    if (saldo <= 0) return;
     deudaTotal += saldo;
-    if (restante <= 0) continue;
+    if (restante <= 0) return;
     const aplicado = Math.min(restante, saldo);
     aplicaciones.push({ fiado: f, saldo, aplicado, cierraFiado: aplicado >= saldo });
     restante -= aplicado;
-  }
+  });
   deudaTotal = Math.round(deudaTotal * 100) / 100;
   if (monto > deudaTotal) {
     throw new Error("El monto ($" + monto + ") supera la deuda total del cliente ($" + deudaTotal + ")");
@@ -1965,19 +1969,23 @@ async function accionFiadosCobrar(env, payload) {
 
   // Resolver el variant_id del ítem "Abono Fiado" (ya sincronizado como cualquier producto vía
   // items.update) y el payment_type_id del método elegido (guardado una vez con
-  // fiados_configurar — nunca se adivina el nombre exacto configurado en la cuenta).
-  const skuAbono = await configFiadosGet(env, "sku_abono");
+  // fiados_configurar — nunca se adivina el nombre exacto configurado en la cuenta). sku_abono,
+  // payment_type_id y store_id no dependen entre sí — se piden en paralelo, no uno tras otro.
+  const [skuAbono, paymentTypeId, storeInfo] = await Promise.all([
+    configFiadosGet(env, "sku_abono"),
+    configFiadosGet(env, "payment_type_id_" + metodoPago),
+    obtenerStoreId(env)
+  ]);
   if (!skuAbono) throw new Error("Fiados no configurado: falta fiados_sku_abono (correr ?action=fiados_configurar)");
   const itemAbono = await get(env, "SELECT variant_id FROM productos WHERE sku = ?", skuAbono);
   if (!itemAbono || !itemAbono.variant_id) {
     throw new Error("No se encontró el ítem 'Abono Fiado' (SKU " + skuAbono + ") en el catálogo — créalo en Loyverse con ese SKU exacto y sincroniza");
   }
-  const paymentTypeId = await configFiadosGet(env, "payment_type_id_" + metodoPago);
   if (!paymentTypeId) {
     throw new Error("Falta configurar payment_type_id_" + metodoPago + " (correr ?action=fiados_diagnostico_payment_types y luego ?action=fiados_configurar)");
   }
 
-  const { storeId } = await obtenerStoreId(env);
+  const { storeId } = storeInfo;
   const creado = await loyversePost(env, "/receipts", {
     store_id: storeId,
     customer_id: clienteId,
@@ -2409,8 +2417,15 @@ async function manejarWebhookLoyverse(request, env, url) {
     } else if (tipo === "items.update" && evento.items) {
       resultado.procesados = await aplicarCambiosItems(env, evento.items);
     } else if (tipo === "receipts.update" && evento.receipts) {
-      resultado.procesados = await aplicarVentas(env, evento.receipts);
-      await procesarFiadosDeReceipts(env, evento.receipts);
+      // aplicarVentas (tabla ventas) y procesarFiadosDeReceipts (tablas fiados/fiados_lineas)
+      // son independientes entre sí — solo LEEN evento.receipts, cada una escribe en sus propias
+      // tablas — así que corren en paralelo en vez de una tras otra. Pedido explícito: que un
+      // cobro con "Otros" en Loyverse aparezca lo antes posible en la webapp de Fiados.
+      const [procesados] = await Promise.all([
+        aplicarVentas(env, evento.receipts),
+        procesarFiadosDeReceipts(env, evento.receipts)
+      ]);
+      resultado.procesados = procesados;
     } else {
       resultado.noManejado = true; // tipo recibido pero sin handler todavía (se registra igual)
     }

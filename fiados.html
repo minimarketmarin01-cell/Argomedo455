@@ -261,11 +261,33 @@ function fdNum(input){
 }
 // Formatea un input de monto en vivo como moneda chilena (separador de miles, sin decimales)
 // mientras se escribe — mismo criterio que ya usa peso() en el resto de la página.
+// "Monto a abonar" arranca prellenado con la deuda TOTAL (ej. $1.800) — el caso más común es
+// reemplazarlo entero por un abono parcial (ej. $500), así que: 1) un toque selecciona todo el
+// valor, para que escribir encima lo reemplace de una — sin esto había que borrar dígito por
+// dígito; 2) si aun así el cajero edita en medio del número en vez de reemplazarlo, se preserva
+// la posición del cursor CONTANDO DÍGITOS antes de él (no un índice fijo, porque el separador de
+// miles agrega/saca caracteres al reformatear) — mismo criterio que forzarMayusculaInput en
+// index.html, adaptado porque acá el largo del texto sí cambia. Sin esto, el cursor saltaba al
+// final en cada tecla y era casi imposible abonar un monto menor al prellenado.
 function fdFormatearInputMoneda(input){
   if(!input)return;
+  input.addEventListener('focus',()=>{try{input.select();}catch(e){}});
   input.addEventListener('input',()=>{
+    const posOriginal=input.selectionStart;
+    const digitosAntes=posOriginal!=null?input.value.slice(0,posOriginal).replace(/\D/g,'').length:null;
     const n=fdNum(input);
     input.value=n?peso(n):'';
+    if(digitosAntes!=null){
+      let vistos=0,nuevaPos=input.value.length;
+      for(let i=0;i<input.value.length;i++){
+        if(/\d/.test(input.value[i])){
+          vistos++;
+          if(vistos===digitosAntes){nuevaPos=i+1;break;}
+        }
+      }
+      if(digitosAntes===0)nuevaPos=0;
+      try{input.setSelectionRange(nuevaPos,nuevaPos);}catch(e){}
+    }
   });
 }
 // Los timestamps que manda el backend (fechaHora, fiadoMasAntiguo) son la fecha ISO cruda tal
