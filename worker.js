@@ -1829,8 +1829,17 @@ async function registrarFiadoDesdeReceipt(env, r, numero) {
     (r.payments || []).map(p => JSON.stringify((p && p.name) || null)).join(", ") +
     "] · configurado=" + JSON.stringify(nombrePago) + " · coincide=" + (!!pago));
   if (!pago) return;
-  const yaExiste = await get(env, "SELECT id FROM fiados WHERE receipt_id_loyverse = ?", numero);
-  if (yaExiste) return;
+  const yaExiste = await get(env, "SELECT id, cliente_id FROM fiados WHERE receipt_id_loyverse = ?", numero);
+  if (yaExiste) {
+    // Si el fiado se registró SIN cliente (el recibo llegó antes de que Loyverse le asignara el
+    // cliente) y ahora el mismo recibo ya trae uno, se completa — antes quedaba "sin cliente"
+    // para siempre aunque en Loyverse sí tuviera su nombre.
+    if (!yaExiste.cliente_id && r.customer_id) {
+      await run(env, "UPDATE fiados SET cliente_id = ? WHERE id = ?", r.customer_id, yaExiste.id);
+      await logMsg(env, "👤 Fiado " + numero + ": cliente asignado desde Loyverse");
+    }
+    return;
+  }
 
   const fechaHora = r.receipt_date || r.created_at || new Date().toISOString();
   const ins = await run(env,
@@ -1851,6 +1860,40 @@ async function registrarFiadoDesdeReceipt(env, r, numero) {
     "Fiado registrado: receipt " + numero + " · $" + (r.total_money || 0) + (r.customer_id ? "" : " · SIN CLIENTE ASIGNADO en Loyverse"), "");
   await logMsg(env, "🧾 Fiado registrado: receipt " + numero + " · $" + (r.total_money || 0) +
     (r.customer_id ? "" : " · SIN CLIENTE ASIGNADO en Loyverse"));
+}
+
+// Respaldo del webhook: trae de Loyverse los recibos de las últimas horas y registra los fiados
+// (método de pago configurado, "OTROS") que el webhook todavía no hubiera entregado. Se llama al
+// abrir/refrescar la pantalla de Fiados, así un cobro "Otros" hecho en Loyverse aparece al
+// instante aunque el webhook llegue tarde. Es idempotente (registrarFiadoDesdeReceipt ignora los
+// ya registrados y receipt_id_loyverse es UNIQUE), no revierte nada (anulaciones/reembolsos
+// siguen por webhook) y se limita a una pasada cada 10 s por instancia.
+let _fiadosSyncUltimo = 0;
+async function fiadosSincronizarRecientes(env) {
+  const ahora = Date.now();
+  if (ahora - _fiadosSyncUltimo < 10000) return;
+  _fiadosSyncUltimo = ahora;
+  try {
+    const nombrePago = await configFiadosGet(env, "payment_type_nombre");
+    if (!nombrePago) return;
+    const objetivo = String(nombrePago).trim().toLowerCase();
+    const desde = new Date(ahora - 3 * 3600 * 1000).toISOString();
+    const recibos = await loyverseGetAll(env, "/receipts", "receipts", { created_at_min: desde });
+    for (const r of recibos) {
+      if (r.cancelled_at || r.receipt_type === "REFUND") continue;
+      const numero = r.receipt_number || r.id;
+      if (!numero) continue;
+      if (!(r.payments || []).some(p => String((p && p.name) || "").trim().toLowerCase() === objetivo)) continue;
+      try { await registrarFiadoDesdeReceipt(env, r, numero); }
+      catch (e) { await logMsg(env, "⚠️ Respaldo de fiados: receipt " + numero + ": " + e.message); }
+    }
+  } catch (e) {
+    await logMsg(env, "⚠️ Respaldo de fiados (receipts recientes) falló: " + e.message);
+  }
+}
+// Igual que arriba pero sin dejar la pantalla esperando más de 8 s si Loyverse está lento.
+async function fiadosSincronizarRapido(env) {
+  await Promise.race([fiadosSincronizarRecientes(env), new Promise(res => setTimeout(res, 8000))]);
 }
 
 // Reembolso en Loyverse (receipt_type="REFUND", refund_for=<receipt original>) de una venta que
@@ -6243,10 +6286,12 @@ export default {
         return json({ ok: true, ...resultado });
       }
       if (action === "fiados_resumen") {
+        await fiadosSincronizarRapido(env);
         const resultado = await repFiadosResumen(env);
         return json({ ok: true, ...resultado });
       }
       if (action === "fiados_sin_cliente") {
+        await fiadosSincronizarRapido(env);
         const resultado = await repFiadosSinCliente(env);
         return json({ ok: true, ...resultado });
       }
