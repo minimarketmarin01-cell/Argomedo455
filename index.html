@@ -690,6 +690,35 @@ html.carrito-fijo #rc-ov .mm-sections{
 .pc-calc-box .mm-field label{color:var(--gold,#8A7A4E);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;display:block;margin-bottom:5px}
 .pc-titlebar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-weight:800;font-size:13px;color:var(--gold,#8A7A4E)}
 .pc-titlebar-note{font-weight:400;font-size:10.5px;color:var(--muted);text-transform:none}
+.pc-calc-open{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:1.5px solid var(--gold,#8A7A4E);border-radius:9px;background:#fff;color:var(--gold,#8A7A4E);font-weight:800;font-size:12.5px;cursor:pointer}
+.pc-calc-open:active{background:var(--gold-bg,#F3F0E2)}
+/* Calculadora normal (#calc-ov) — se abre desde el botón "Calculadora" de la Calculadora de
+   precio (Ficha de producto, Crear producto, Recepción). NO usa .mm-ov a propósito: abrirModal
+   escondería la pantalla de abajo (y se perdería lo que se estaba escribiendo); esta flota
+   encima y al cerrarla se vuelve exactamente a donde se estaba. Estilo inspirado en una
+   calculadora de escritorio de 12 dígitos: pantalla tipo LCD, teclas grises, números negros, y
+   "ON/AC" y "+" en verde azulado. */
+.calc-ov{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:10px;overflow:auto}
+.calc-ov.hidden{display:none}
+.calc-body{width:min(100%,380px);background:#2b2b2b;border-radius:22px 22px 18px 18px;padding:12px 12px 16px;box-shadow:0 10px 40px rgba(0,0,0,.5);color:#fff;font-family:'Inter',Arial,sans-serif}
+.calc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px;font-weight:700;color:#cfcfcf}
+.calc-top button{background:#4a4a4a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer}
+.calc-lcd{background:#b8bf9a;border:3px solid #1a1a1a;border-radius:6px;padding:6px 10px 8px;color:#1d2314;box-shadow:inset 0 2px 6px rgba(0,0,0,.35)}
+.calc-ind{display:flex;gap:10px;min-height:14px;font-size:11px;font-weight:800;letter-spacing:.04em;color:#1d2314}
+.calc-ind span{visibility:hidden}
+.calc-ind span.on{visibility:visible}
+.calc-disp{font-family:'JetBrains Mono','Courier New',monospace;font-weight:700;font-size:34px;line-height:1.1;text-align:right;overflow:hidden;white-space:nowrap;min-height:38px}
+.calc-brand{display:flex;align-items:center;gap:10px;margin:10px 2px 8px;font-size:11px;font-weight:800;letter-spacing:.03em;color:#e6e6e6}
+.calc-brand small{display:block;font-weight:600;font-size:9.5px;color:#bdbdbd}
+.calc-solar{flex:none;width:64px;height:24px;border:2px solid #111;border-radius:3px;background:linear-gradient(90deg,#4a2f26 0 25%,#3d2720 25% 50%,#4a2f26 50% 75%,#3d2720 75%)}
+.calc-brand .ck{margin-left:auto;width:78px;height:36px;font-size:13px}
+.calc-keys{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.ck{height:58px;border:none;border-radius:12px;font-size:22px;font-weight:600;cursor:pointer;color:#fff;background:#1c1c1c;box-shadow:0 2px 0 #000;-webkit-tap-highlight-color:transparent;user-select:none;touch-action:manipulation}
+.ck:active{transform:translateY(2px);box-shadow:none;filter:brightness(1.25)}
+.ck-g{background:#8d8d8d;color:#fff;font-size:18px}
+.ck-t{background:#16a394;color:#fff}
+.ck-w{background:#8d8d8d}
+@media (max-height:640px){.ck{height:48px;font-size:20px}.calc-disp{font-size:28px;min-height:32px}}
 .pc-input{width:100%;padding:11px 14px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;font-family:'JetBrains Mono';box-sizing:border-box;background:#fff}
 .pc-input-lg{font-size:17px;font-weight:800}
 .pc-hint{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.3;min-height:13px}
@@ -1912,6 +1941,43 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
 
         <button class="mm-save" id="et-imprimir" disabled>Imprimir etiquetas</button>
         <button class="loadbtn" id="et-cancelar" style="width:100%;margin-top:8px">Cancelar</button>
+        </div>
+      </div>
+    </div>
+    <div class="calc-ov hidden" id="calc-ov" role="dialog" aria-label="Calculadora">
+      <div class="calc-body">
+        <div class="calc-top"><span>Calculadora</span><button type="button" id="calc-cerrar">Cerrar</button></div>
+        <div class="calc-lcd">
+          <div class="calc-ind"><span id="calc-i-m">M</span><span id="calc-i-g">GT</span><span id="calc-i-e">E</span><span id="calc-i-op"></span></div>
+          <div class="calc-disp" id="calc-disp">0</div>
+        </div>
+        <div class="calc-brand"><div class="calc-solar"></div><div>MARÍN 376<small>12-DIGIT ELECTRONIC CALCULATOR</small></div><button type="button" class="ck ck-t" data-k="ac">ON/AC</button></div>
+        <div class="calc-keys" id="calc-keys">
+          <button type="button" class="ck ck-g" data-k="m+">M+</button>
+          <button type="button" class="ck ck-g" data-k="m-">M−</button>
+          <button type="button" class="ck ck-g" data-k="mrc">MRC</button>
+          <button type="button" class="ck ck-g" data-k="gt">GT</button>
+          <button type="button" class="ck ck-g" data-k="off">OFF</button>
+          <button type="button" class="ck" data-k="7">7</button>
+          <button type="button" class="ck" data-k="8">8</button>
+          <button type="button" class="ck" data-k="9">9</button>
+          <button type="button" class="ck ck-g" data-k="/">÷</button>
+          <button type="button" class="ck ck-g" data-k="back" aria-label="Borrar último dígito">▶</button>
+          <button type="button" class="ck" data-k="4">4</button>
+          <button type="button" class="ck" data-k="5">5</button>
+          <button type="button" class="ck" data-k="6">6</button>
+          <button type="button" class="ck ck-g" data-k="*">×</button>
+          <button type="button" class="ck ck-g" data-k="%">%</button>
+          <button type="button" class="ck" data-k="1">1</button>
+          <button type="button" class="ck" data-k="2">2</button>
+          <button type="button" class="ck" data-k="3">3</button>
+          <button type="button" class="ck ck-g" data-k="-">−</button>
+          <button type="button" class="ck ck-g" data-k="mu" title="Mark-up: costo × % MU = costo con recargo sobre el costo">MU</button>
+          <button type="button" class="ck" data-k="0">0</button>
+          <button type="button" class="ck" data-k="00">00</button>
+          <button type="button" class="ck" data-k=".">•</button>
+          <button type="button" class="ck ck-t" data-k="+">+</button>
+          <button type="button" class="ck ck-w" data-k="=">=</button>
         </div>
       </div>
     </div>
@@ -4490,7 +4556,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-07.2';
+const APP_VERSION='2026-10-09.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5300,6 +5366,8 @@ let _salirArmado=false,_salirT=null;
 function _reponerTrampa(){history.pushState({marin:'nav'},'');}
 history.pushState({marin:'nav'},'');   // trampa inicial: le da algo que consumir al primer "Atrás"
 window.addEventListener('popstate',function(ev){
+  // Calculadora normal abierta encima de otra pantalla: "Atrás" cierra solo la calculadora.
+  if(typeof calcAbierta==='function'&&calcAbierta()){calcCerrar();_reponerTrampa();return;}
   // Estados reales de Gestionar proveedores (ver gpAbrir/gpAbrirProductos/fpAbrir) — se leen
   // directamente de event.state, la fuente de verdad real del navegador, en vez de inferir el
   // nivel desde una variable global (_gpNivel) que podía desincronizarse del historial real
@@ -6152,7 +6220,7 @@ const PcWidget=(function(){
     const costoLabel=cfg.costoLabel||'Costo';
     return ''+
     '<div class="pc-calc-box">'+
-      '<div class="pc-titlebar"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Costo y precio</span><span class="pc-titlebar-note">Los cálculos se actualizan automáticamente</span></div>'+
+      '<div class="pc-titlebar"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Costo y precio</span><button type="button" class="pc-calc-open" aria-label="Abrir calculadora"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><rect x="8" y="5" width="8" height="4" rx="1"/><line x1="8" y1="13" x2="8.01" y2="13"/><line x1="12" y1="13" x2="12.01" y2="13"/><line x1="16" y1="13" x2="16.01" y2="13"/><line x1="8" y1="17" x2="8.01" y2="17"/><line x1="12" y1="17" x2="12.01" y2="17"/><line x1="16" y1="17" x2="16.01" y2="17"/></svg> Calculadora</button><span class="pc-titlebar-note">Los cálculos se actualizan automáticamente</span></div>'+
       (cfg.mostrarUnidadCaja?(
         '<div class="mm-field" style="margin-bottom:8px">'+
           '<div style="display:flex;gap:6px">'+
@@ -10625,6 +10693,212 @@ function wireFechaSegmentada(ddId,mmId,yyId,hiddenId,calId){
 wireFechaSegmentada('rc-fecha-dd','rc-fecha-mm','rc-fecha-aaaa','rc-fecha','rc-fecha-cal');
 wireFechaSegmentada('vc-fecha-dd','vc-fecha-mm','vc-fecha-aaaa','vc-fecha','vc-fecha-cal');
 wireFechaSegmentada('cp-fecha-dd','cp-fecha-mm','cp-fecha-aaaa','cp-fecha','cp-fecha-cal');
+/* ===== Calculadora normal (#calc-ov) =====
+   Calculadora de escritorio de 12 dígitos (M+ M− MRC GT MU % ▶ ON/AC OFF), accesible desde el
+   botón "Calculadora" de la Calculadora de precio (PcWidget: Ficha de producto, Crear producto y
+   Recepción). Lógica propia e independiente: no toca ningún cálculo de precios. Flota encima de
+   la pantalla actual (no usa abrirModal, que esconde las demás), así al cerrarla se vuelve
+   exactamente a lo que se estaba haciendo. */
+const Calc=(function(){
+  const MAXD=12;
+  let s;
+  function nuevoEstado(conservarMem){
+    const mem=conservarMem&&s?s.mem:0;
+    s={ent:'0',acc:null,op:null,nuevo:true,last:null,err:false,off:false,gt:0,mem,showGt:false,lastKey:'',disp:'0'};
+  }
+  nuevoEstado(false);
+  const el=id=>document.getElementById(id);
+  function r12(n){return Number(Number(n).toPrecision(12));}
+  // Número → texto crudo de hasta 12 dígitos (sin separadores); null si no cabe (desborde).
+  function crudo(n){
+    if(!isFinite(n))return null;
+    n=r12(n);
+    const neg=n<0,a=Math.abs(n);
+    if(a>=1e12)return null;
+    const ent=Math.floor(a).toString().length;
+    let t=a.toFixed(Math.max(0,MAXD-(a<1?1:ent)));
+    if(t.indexOf('.')>=0)t=t.replace(/0+$/,'').replace(/\.$/,'');
+    return (neg&&Number(t)!==0?'-':'')+t;
+  }
+  // Texto crudo → texto de pantalla: miles con "." y decimales con "," (formato chileno).
+  function mostrar(t){
+    if(t==null)return 'E';
+    const neg=t[0]==='-';if(neg)t=t.slice(1);
+    const p=t.split('.');
+    const e=p[0].replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+    return (neg?'-':'')+e+(p.length>1?','+p[1]:'');
+  }
+  function pintar(){
+    const d=el('calc-disp');if(!d)return;
+    d.textContent=s.off?'':(s.err?'E':mostrar(s.disp));
+    el('calc-i-m').classList.toggle('on',!s.off&&s.mem!==0);
+    el('calc-i-g').classList.toggle('on',!s.off&&s.showGt);
+    el('calc-i-e').classList.toggle('on',!s.off&&s.err);
+    const sym={'+':'+','-':'−','*':'×','/':'÷'};
+    el('calc-i-op').textContent=(!s.off&&s.op)?sym[s.op]:'';
+    el('calc-i-op').classList.toggle('on',!s.off&&!!s.op);
+  }
+  function actual(){return Number(s.ent);}
+  function aplicar(a,op,b){
+    if(op==='+')return a+b;
+    if(op==='-')return a-b;
+    if(op==='*')return a*b;
+    if(op==='/')return b===0?NaN:a/b;
+    return b;
+  }
+  function error(){s.err=true;s.op=null;s.acc=null;s.nuevo=true;}
+  // Muestra un resultado: lo deja como valor actual (se puede seguir operando con él).
+  function resultado(n,sumaGt){
+    const t=crudo(n);
+    if(t==null){error();return;}
+    s.ent=t;s.disp=t;s.nuevo=true;s.acc=Number(t);
+    if(sumaGt)s.gt=r12(s.gt+Number(t));
+  }
+  function digito(d){
+    if(s.err||s.off)return;
+    if(s.lastKey==='=' || s.lastKey==='%' || s.lastKey==='mu'){s.acc=null;s.op=null;s.last=null;s.nuevo=true;}
+    if(s.nuevo){s.ent='0';s.nuevo=false;}
+    s.showGt=false;
+    if(d==='.'){if(s.ent.indexOf('.')>=0)return;s.ent+='.';}
+    else if(s.ent==='0'){if(d==='00')return;s.ent=d;}
+    else{
+      const n=s.ent.replace('-','').replace('.','').length;
+      if(n+d.length>MAXD)return;
+      s.ent+=d;
+    }
+    s.disp=s.ent;
+  }
+  function operador(o){
+    if(s.err||s.off)return;
+    s.showGt=false;
+    if(s.op&&!s.nuevo){
+      const r=aplicar(s.acc,s.op,actual());
+      if(!isFinite(r)){error();return;}
+      resultado(r,false);
+    }else if(s.acc==null||s.lastKey==='='||s.lastKey==='%'||s.lastKey==='mu'){
+      s.acc=actual();
+    }
+    s.op=o;s.nuevo=true;s.last=null;
+  }
+  function igual(){
+    if(s.err||s.off)return;
+    s.showGt=false;
+    if(s.op){
+      const b=(s.nuevo&&s.lastKey!=='=')?s.acc:actual();   // "5 + =" repite el 5 (→ 10)
+      const r=aplicar(s.acc,s.op,b);
+      if(!isFinite(r)){error();return;}
+      s.last={op:s.op,b};
+      s.op=null;
+      resultado(r,true);
+    }else if(s.last){
+      const r=aplicar(actual(),s.last.op,s.last.b);   // "=" repetido repite la última operación
+      if(!isFinite(r)){error();return;}
+      resultado(r,true);
+    }
+  }
+  function porcentaje(){
+    if(s.err||s.off)return;
+    s.showGt=false;
+    const b=actual();
+    if(s.op){
+      let r;
+      if(s.op==='*')r=s.acc*b/100;
+      else if(s.op==='/')r=b===0?NaN:s.acc/b*100;
+      else if(s.op==='+')r=s.acc+s.acc*b/100;
+      else r=s.acc-s.acc*b/100;
+      if(!isFinite(r)){error();return;}
+      s.op=null;s.last=null;
+      resultado(r,true);
+    }else{
+      resultado(b/100,false);
+    }
+  }
+  // Mark-up: "costo × % MU" → costo con ese recargo sobre el costo.
+  function markup(){
+    if(s.err||s.off)return;
+    s.showGt=false;
+    if(s.op==='*'){
+      const r=s.acc*(1+actual()/100);
+      if(!isFinite(r)){error();return;}
+      s.op=null;s.last=null;
+      resultado(r,true);
+    }
+  }
+  function memoria(k){
+    if(s.err||s.off)return;
+    if(k==='mrc'){
+      if(s.lastKey==='mrc'){s.mem=0;}
+      else{
+        const t=crudo(s.mem);
+        s.ent=t==null?'0':t;s.disp=s.ent;s.nuevo=true;
+        if(s.op==null)s.acc=null;
+      }
+      return;
+    }
+    if(s.op)igual();
+    if(s.err)return;
+    const v=actual();
+    s.mem=r12(s.mem+(k==='m+'?v:-v));
+    s.nuevo=true;s.last=null;
+  }
+  function gt(){
+    if(s.err||s.off)return;
+    const t=crudo(s.gt);
+    s.ent=t==null?'0':t;s.disp=s.ent;s.nuevo=true;s.acc=null;s.op=null;s.last=null;s.showGt=true;
+  }
+  function atras(){
+    if(s.err||s.off||s.nuevo)return;
+    s.ent=s.ent.length>1?s.ent.slice(0,-1):'0';
+    if(s.ent==='-')s.ent='0';
+    s.disp=s.ent;
+  }
+  function tecla(k){
+    if(s.off&&k!=='ac')return;
+    if(s.err&&k!=='ac'&&k!=='off')return;
+    if(/^\d$|^00$|^\.$/.test(k))digito(k);
+    else if(k==='+'||k==='-'||k==='*'||k==='/')operador(k);
+    else if(k==='=')igual();
+    else if(k==='%')porcentaje();
+    else if(k==='mu')markup();
+    else if(k==='m+'||k==='m-'||k==='mrc')memoria(k);
+    else if(k==='gt')gt();
+    else if(k==='back')atras();
+    else if(k==='ac'){nuevoEstado(true);}
+    else if(k==='off'){nuevoEstado(true);s.off=true;}
+    s.lastKey=k==='00'?'0':k;
+    pintar();
+  }
+  function abierta(){const o=el('calc-ov');return !!o&&!o.classList.contains('hidden');}
+  function abrir(){const o=el('calc-ov');if(!o)return;nuevoEstado(true);o.classList.remove('hidden');pintar();}
+  function cerrar(){const o=el('calc-ov');if(o)o.classList.add('hidden');}
+  // Estado visible para pruebas.
+  function estado(){return {disp:el('calc-disp').textContent,err:s.err,off:s.off,mem:s.mem,gt:s.gt};}
+  return {tecla,abrir,cerrar,abierta,estado};
+})();
+function calcAbierta(){return Calc.abierta();}
+function calcCerrar(){Calc.cerrar();}
+document.addEventListener('click',e=>{
+  const ab=e.target.closest('.pc-calc-open');
+  if(ab){e.preventDefault();Calc.abrir();return;}
+  const ov=document.getElementById('calc-ov');
+  if(!ov||ov.classList.contains('hidden'))return;
+  if(e.target===ov||e.target.closest('#calc-cerrar')){Calc.cerrar();return;}
+  const k=e.target.closest('[data-k]');
+  if(k&&ov.contains(k))Calc.tecla(k.dataset.k);
+});
+document.addEventListener('keydown',e=>{
+  if(!Calc.abierta())return;
+  const k=e.key;
+  if(k==='Escape'){Calc.cerrar();e.preventDefault();return;}
+  let t=null;
+  if(/^[0-9]$/.test(k))t=k;
+  else if(k==='.'||k===',')t='.';
+  else if(k==='+'||k==='-'||k==='*'||k==='/'||k==='%')t=k;
+  else if(k==='Enter'||k==='=')t='=';
+  else if(k==='Backspace')t='back';
+  else if(k==='Delete'||k==='c'||k==='C')t='ac';
+  if(t){Calc.tecla(t);e.preventDefault();}
+});
 async function vcLoad(){
   const box=document.getElementById('vc-list');
   box.innerHTML='<div class="vc-empty">Cargando…</div>';
