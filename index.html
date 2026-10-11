@@ -899,6 +899,13 @@ input[type=number]{width:64px;font-family:'JetBrains Mono';font-weight:500}
 .vi-nom{font-weight:800;font-size:14.5px;line-height:1.2;min-width:0;overflow-wrap:anywhere}
 .vi-chip{flex:none;font-size:11px;font-weight:800;border-radius:20px;padding:3px 9px;background:#EEF0F3;color:#5B6675;white-space:nowrap}
 .vi-chip.vigente{background:#E3F3E8;color:#2E7D4F}.vi-chip.porvencer{background:#FFF1D6;color:#B26A00}.vi-chip.vencido{background:#FBE4E2;color:#B3261E}.vi-chip.sinfecha{background:#E8EEF6;color:#3D5A80}
+.vc-lotes-link{display:block;background:none;border:none;padding:6px 0 2px;margin:0;font-size:12.5px;font-weight:700;color:var(--vc-activo,#16395f);text-decoration:underline;cursor:pointer;text-align:left}
+.vc-lotes-box{margin:6px 0 4px;border:1px solid var(--line);border-radius:10px;background:#FAFBFC;padding:6px 10px}
+.vc-lotes-box .vl-fila{padding:7px 0;border-top:1px solid var(--line2,#EEF0F3);font-size:12.5px;line-height:1.35}
+.vc-lotes-box .vl-fila:first-child{border-top:none}
+.vc-lotes-box .vl-fila.actual{background:#FFF8E1;margin:0 -10px;padding:7px 10px}
+.vc-lotes-box .vl-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700}
+.vc-lotes-box .vl-sub{color:var(--muted)}
 .vi-sub{font-size:12.5px;color:var(--ink2,#444);margin-top:3px}.vi-sub.muted{color:var(--muted)}
 /* Los filtros de días van como recuadros sueltos separados, no como segmentos pegados */
 #vc-diasfilter{border:none;background:transparent;gap:8px;overflow:visible}
@@ -4578,7 +4585,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-11.1';
+const APP_VERSION='2026-10-11.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -11218,6 +11225,8 @@ function vcFilaHtml(l){
       ${metaLinea}
       ${estadoLinea}
       ${notaExtra}
+      <button type="button" class="vc-lotes-link" data-lotes="${l.filaIndex}" data-sku="${l.sku}">Ver lotes de este producto</button>
+      <div class="vc-lotes-box hidden" data-lotesbox="${l.filaIndex}"></div>
       <div class="btns vc-btns-mini">${botones||''}${stockActual!=null?`<button class="vc-mini vc-mini-stock" data-editstock="${l.filaIndex}" data-sku="${l.sku}" data-stock="${stockActual}" title="Ajustar stock"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M7 8V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/></svg><span>Ajustar</span></button>`:''}<button class="vc-mini vc-mini-fecha" data-editf="${l.filaIndex}" data-fv="${l.fechaVencimiento}" title="Editar fecha"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg><span>Fecha</span></button><button class="vc-mini vc-mini-mas" data-mas="${l.filaIndex}" title="Más opciones"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg><span>Más</span></button></div>
       <div class="vc-editbox hidden" data-editbox="${l.filaIndex}">
         <span class="vc-editlbl">Nueva fecha de vencimiento:</span>
@@ -12031,6 +12040,33 @@ document.querySelectorAll('#vi-chips button').forEach(b=>b.onclick=()=>{
   viState.filtro=b.dataset.f;
   document.querySelectorAll('#vi-chips button').forEach(x=>x.classList.toggle('active',x===b));
   viCargar(true);
+});
+
+
+// "Ver lotes de este producto": en cada tarjeta de Revisión de vencimientos, despliega TODOS los
+// lotes que se han ingresado de ese mismo producto (el actual resaltado), con su cantidad, fecha
+// de vencimiento y estado — para comparar contra los anteriores mientras se revisa una fecha.
+// Solo lectura; pide ?action=lotes_ingresados&q=<código> al abrir y filtra por código exacto.
+document.getElementById('vc-ov').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-lotes]');
+  if(!b)return;
+  const idx=b.dataset.lotes,box=document.querySelector('[data-lotesbox="'+idx+'"]');
+  if(!box)return;
+  if(!box.classList.contains('hidden')){box.classList.add('hidden');b.textContent='Ver lotes de este producto';return;}
+  box.classList.remove('hidden');
+  b.textContent='Ocultar lotes del producto';
+  box.innerHTML='<div class="vl-sub">Cargando…</div>';
+  try{
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=lotes_ingresados&limit=100&q='+encodeURIComponent(b.dataset.sku));
+    const j=await res.json();
+    if(!j||!j.ok)throw new Error('x');
+    const lotes=j.lotes.filter(l=>String(l.sku)===String(b.dataset.sku));
+    box.innerHTML=lotes.length?lotes.map(l=>{
+      const cant=(l.cantidad!=null?l.cantidad:'')+' '+(l.unidad||'un');
+      const vence=l.fechaVencimiento?'Vence '+viFecha(l.fechaVencimiento):'Sin fecha de vencimiento';
+      return '<div class="vl-fila'+(String(l.id)===String(idx)?' actual':'')+'"><div class="vl-top"><span>Ingresó '+viEsc(viFecha(l.fechaIngreso)||'—')+' · '+viEsc(cant)+'</span>'+viEstadoChip(l)+'</div><div class="vl-sub">'+viEsc(vence)+(String(l.id)===String(idx)?' · este lote':'')+'</div></div>';
+    }).join(''):'<div class="vl-sub">No hay otros lotes registrados de este producto.</div>';
+  }catch(err){box.innerHTML='<div class="vl-sub">No se pudo cargar. Revisa tu conexión.</div>';}
 });
 
 
