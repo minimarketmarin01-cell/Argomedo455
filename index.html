@@ -893,6 +893,25 @@ input[type=number]{width:64px;font-family:'JetBrains Mono';font-weight:500}
 #vc-viewseg{position:sticky;top:-12px;z-index:7;background:var(--card,#fff);box-shadow:0 10px 0 var(--card,#fff)}
 #vc-ov .vc-sticky-h{position:sticky;top:calc(var(--vc-seg-h,62px) - 12px);z-index:6;background:var(--card,#fff);padding-top:2px}
 #vc-ov .vc-sticky-h.prov-combo{position:sticky}
+/* Vista compacta de Revisión de vencimientos: tarjetas más bajas para ver más lotes a la vez (sin quitar datos ni botones). */
+#vc-ov .vc-sticky-h{padding-bottom:2px;box-shadow:0 12px 0 var(--card,#fff)}
+#vc-ov .vc-sticky-h .prov-combo{margin-bottom:6px!important}
+#vc-ov .vc-sticky-h #vc-diasfilter{margin-bottom:6px!important}
+#vc-ov #vc-diasfilter button{padding:8px 8px}
+#vc-ov .gon-progress{gap:2px;margin-bottom:6px}
+#vc-ov .gon-progress-title{font-size:14px}
+#vc-ov .gon-cat{margin-bottom:8px}
+#vc-ov .gon-cat-head{padding-bottom:5px;margin-bottom:7px}
+#vc-ov .gon-cat-head .cat-nom{font-size:15px}
+#vc-ov .vc-row{padding:8px 11px;margin-bottom:7px;border-radius:12px}
+#vc-ov .vc-row .nom{font-size:14.5px;line-height:1.22;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#vc-ov .vc-meta{margin-top:3px;gap:10px}
+#vc-ov .vc-meta-it{font-size:12px}
+#vc-ov .vc-estado-linea{margin-top:4px;gap:7px}
+#vc-ov .vc-accion-tx{font-size:12px}
+#vc-ov .vc-lotes-link{padding:3px 0 0;font-size:12px}
+#vc-ov .vc-btns-mini{margin-top:6px;padding-top:6px}
+#vc-ov .vc-mini{padding:0 2px;min-height:40px}
 .vi-chip{flex:none;font-size:11px;font-weight:800;border-radius:20px;padding:3px 9px;background:#EEF0F3;color:#5B6675;white-space:nowrap}
 .vi-chip.vigente{background:#E3F3E8;color:#2E7D4F}.vi-chip.porvencer{background:#FFF1D6;color:#B26A00}.vi-chip.vencido{background:#FBE4E2;color:#B3261E}.vi-chip.sinfecha{background:#E8EEF6;color:#3D5A80}
 .vc-lotes-link{display:block;background:none;border:none;padding:6px 0 2px;margin:0;font-size:12.5px;font-weight:700;color:var(--vc-activo,#16395f);text-decoration:underline;cursor:pointer;text-align:left}
@@ -2060,7 +2079,6 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
             <button type="button" data-dias="30" style="flex:1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>≤ 30 días</button>
             <button type="button" data-dias="0" class="active" style="flex:1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none"/></svg>Todos</button>
           </div>
-          </div>
           <!-- Barra de progreso de revisión — antes solo vivía en "Por góndola"; ahora es la
                única vista, así que la barra cubre siempre todo lo visible según los filtros
                activos (días + proveedor), no una categoría suelta. -->
@@ -2068,6 +2086,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
             <span class="gon-progress-title">Revisión de lotes</span>
             <div class="gon-progress-row"><span id="vc-prog-count">0/0 revisados</span><span id="vc-prog-pct">0%</span></div>
             <div class="gon-bar"><div id="vc-prog-fill"></div></div>
+          </div>
           </div>
           <div id="vc-list"><div class="vc-empty">Cargando…</div></div>
           </div>
@@ -4565,7 +4584,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-11.5';
+const APP_VERSION='2026-10-11.6';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
