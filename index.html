@@ -888,6 +888,11 @@ input[type=number]{width:64px;font-family:'JetBrains Mono';font-weight:500}
 #vc-viewseg,#vc-diasfilter{border-radius:12px}
 #vc-viewseg button,#vc-diasfilter button{display:inline-flex;align-items:center;justify-content:center;gap:7px;font-family:'Inter';font-size:13px;font-weight:600;padding:12px 8px;color:#5B6675}
 #vc-viewseg button.active,#vc-diasfilter button.active{background:var(--vc-activo);color:#fff}
+/* Encabezados fijos de Revisión de vencimientos: las pestañas (Lista/Pendientes/Descuentos) quedan arriba y,
+   justo debajo, el buscador (y los filtros de días en Lista) mientras se desplaza la lista. */
+#vc-viewseg{position:sticky;top:-12px;z-index:7;background:var(--card,#fff);box-shadow:0 10px 0 var(--card,#fff)}
+#vc-ov .vc-sticky-h{position:sticky;top:calc(var(--vc-seg-h,62px) - 12px);z-index:6;background:var(--card,#fff);padding-top:2px}
+#vc-ov .vc-sticky-h.prov-combo{position:sticky}
 .vi-chip{flex:none;font-size:11px;font-weight:800;border-radius:20px;padding:3px 9px;background:#EEF0F3;color:#5B6675;white-space:nowrap}
 .vi-chip.vigente{background:#E3F3E8;color:#2E7D4F}.vi-chip.porvencer{background:#FFF1D6;color:#B26A00}.vi-chip.vencido{background:#FBE4E2;color:#B3261E}.vi-chip.sinfecha{background:#E8EEF6;color:#3D5A80}
 .vc-lotes-link{display:block;background:none;border:none;padding:6px 0 2px;margin:0;font-size:12.5px;font-weight:700;color:var(--vc-activo,#16395f);text-decoration:underline;cursor:pointer;text-align:left}
@@ -2038,6 +2043,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
             <button type="button" data-view="descuentos" style="flex:1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M20.59 13.41 13 21l-9-9 7.59-7.59A2 2 0 0 1 13 4h6a2 2 0 0 1 2 2v6a2 2 0 0 1-.41 1.41Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg> Descuentos<span id="vc-desc-badge"></span></button>
           </div>
           <div id="vc-view-lista">
+          <div class="vc-sticky-h">
           <div class="prov-combo" id="vc-l-combo" style="margin-bottom:8px">
             <span class="prov-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13.5 13.5 20a1.5 1.5 0 0 1-2.1 0L4 12.6V4h8.6l7.4 7.4a1.5 1.5 0 0 1 0 2.1Z"/><circle cx="8.3" cy="8.3" r="1.3"/></svg></span>
             <input class="prov-all" id="vc-l-search" placeholder="Producto, código o proveedor…" autocomplete="off" inputmode="text">
@@ -2054,6 +2060,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
             <button type="button" data-dias="30" style="flex:1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>≤ 30 días</button>
             <button type="button" data-dias="0" class="active" style="flex:1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none"/></svg>Todos</button>
           </div>
+          </div>
           <!-- Barra de progreso de revisión — antes solo vivía en "Por góndola"; ahora es la
                única vista, así que la barra cubre siempre todo lo visible según los filtros
                activos (días + proveedor), no una categoría suelta. -->
@@ -2065,7 +2072,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
           <div id="vc-list"><div class="vc-empty">Cargando…</div></div>
           </div>
           <div id="vc-view-pendientes" class="hidden">
-            <div class="prov-combo" id="vc-pend-combo" style="margin-bottom:10px">
+            <div class="prov-combo vc-sticky-h" id="vc-pend-combo" style="margin-bottom:10px">
               <span class="prov-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13.5 13.5 20a1.5 1.5 0 0 1-2.1 0L4 12.6V4h8.6l7.4 7.4a1.5 1.5 0 0 1 0 2.1Z"/><circle cx="8.3" cy="8.3" r="1.3"/></svg></span>
               <input class="prov-all" id="vc-pend-search" placeholder="Producto, código o proveedor…" autocomplete="off" inputmode="text">
               <button class="prov-mic" id="vc-pend-mic" type="button" tabindex="-1" aria-label="Buscar por voz"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
@@ -2077,7 +2084,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
             <div id="vc-pend-list"></div>
           </div>
           <div id="vc-view-descuentos" class="hidden">
-            <div class="prov-combo" id="da-combo" style="margin-bottom:10px">
+            <div class="prov-combo vc-sticky-h" id="da-combo" style="margin-bottom:10px">
               <span class="prov-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13.5 13.5 20a1.5 1.5 0 0 1-2.1 0L4 12.6V4h8.6l7.4 7.4a1.5 1.5 0 0 1 0 2.1Z"/><circle cx="8.3" cy="8.3" r="1.3"/></svg></span>
               <input class="prov-all" id="da-search" placeholder="Producto, código o proveedor…" autocomplete="off" inputmode="text">
               <button class="prov-mic" id="da-mic" type="button" tabindex="-1" aria-label="Buscar por voz"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
@@ -4558,7 +4565,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-11.4';
+const APP_VERSION='2026-10-11.5';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -11988,6 +11995,14 @@ document.getElementById('vc-ov').addEventListener('click',async e=>{
 });
 
 
+(function(){
+  const seg=document.getElementById('vc-viewseg'),ov=document.getElementById('vc-ov');
+  if(!seg||!ov)return;
+  const aj=()=>{const h=seg.offsetHeight;if(h)ov.style.setProperty('--vc-seg-h',(h+10)+'px');};
+  if(window.ResizeObserver)new ResizeObserver(aj).observe(seg);
+  window.addEventListener('resize',aj);
+  aj();
+})();
 document.getElementById('btn-venc').onclick=openVenc;
 document.getElementById('vc-cerrar').onclick=closeVenc;
 document.getElementById('vc-add-btn').onclick=vcShowForm;
