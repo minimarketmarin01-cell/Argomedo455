@@ -888,6 +888,10 @@ input[type=number]{width:64px;font-family:'JetBrains Mono';font-weight:500}
 #vc-viewseg,#vc-diasfilter{border-radius:12px}
 #vc-viewseg button,#vc-diasfilter button{display:inline-flex;align-items:center;justify-content:center;gap:7px;font-family:'Inter';font-size:13px;font-weight:600;padding:12px 8px;color:#5B6675}
 #vc-viewseg button.active,#vc-diasfilter button.active{background:var(--vc-activo);color:#fff}
+/* Banner del local en Recepción: siempre visible bajo el título, con color propio de cada local. */
+.rc-local-banner{flex:none;margin:0 16px 8px;padding:9px 12px;border-radius:10px;color:#fff;font-size:14px;font-weight:800;letter-spacing:.02em;text-align:center}
+.rc-local-banner.marin{background:#16395F}
+.rc-local-banner.argomedo{background:#C2410C}
 /* Encabezados fijos de Revisión de vencimientos: las pestañas (Lista/Pendientes/Descuentos) quedan arriba y,
    justo debajo, el buscador (y los filtros de días en Lista) mientras se desplaza la lista. */
 #vc-viewseg{position:sticky;top:-12px;z-index:7;background:var(--card,#fff);box-shadow:0 10px 0 var(--card,#fff)}
@@ -2318,6 +2322,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
     <div class="mm-ov hidden" id="rc-ov">
       <div class="mm-card">
         <div class="mm-head"><h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mm-head-ic"><rect x="1" y="6" width="14" height="10" rx="1"/><path d="M15 9h4l3 3.5V16h-7z"/><circle cx="6" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span id="rc-titulo">Recibir mercadería</span></h3><button class="loadbtn" type="button" id="rc-descartar" style="padding:6px 12px;font-size:12.5px;white-space:nowrap;flex:none">Descartar</button></div>
+        <div class="rc-local-banner argomedo" id="rc-local-banner">📍 Recibiendo en: ARGOMEDO 455</div>
         <div class="mm-body" style="padding-bottom:8px">
 
         <div class="seg" id="rc-modo-seg" style="width:100%;margin-bottom:10px">
@@ -4593,7 +4598,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-11.7';
+const APP_VERSION='2026-10-11.8';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -4641,6 +4646,7 @@ const SYNC_MAX_AGE=3600000; // 1 hora en ms
 // independientes, cada uno con su propia cuenta de Loyverse y su propio Worker/D1. Se copia
 // llamando DIRECTO al Worker del otro local desde el navegador (ambos ya aceptan cualquier
 // origen — Access-Control-Allow-Origin: *), sin pasar por este backend.
+const LOCAL_NOMBRE='Argomedo 455';   // nombre de ESTE local (se muestra en Recepción para no equivocarse de local)
 const OTRO_LOCAL_NOMBRE='Marín 376';
 const OTRO_LOCAL_URL='https://marin376-api.minimarketmarin01.workers.dev';
 
@@ -13783,7 +13789,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
   // accidentales (doble tap sin querer) que sumaban stock de más. Solo se pregunta cuando
   // realmente va a sumar stock (cantidad>0) — guardar solo precio/costo/proveedor/sector
   // (cantidad=0, ver más abajo) no toca stock y no tiene ese riesgo.
-  if(cantidad>0&&!confirm('¿Confirmar recepción de '+fmt1(cantidad)+' '+(it.peso?'kg':'u')+' de "'+it.nombre+'"?\n\nEl stock quedará en '+fmt1((Number(it.stock)||0)+cantidad)+'.'))return;
+  if(cantidad>0&&!confirm('¿Confirmar recepción en '+LOCAL_NOMBRE+' de '+fmt1(cantidad)+' '+(it.peso?'kg':'u')+' de "'+it.nombre+'"?\n\nEl stock quedará en '+fmt1((Number(it.stock)||0)+cantidad)+'.'))return;
   const provInput=(document.getElementById('rc-prov-input').value||'').trim().toUpperCase();
   const provActual=(it.prov&&it.prov!=='SIN PROVEEDOR')?it.prov:'';
   const provCambio=provInput!==provActual;
