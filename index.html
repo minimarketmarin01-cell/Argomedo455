@@ -4585,7 +4585,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-11.2';
+const APP_VERSION='2026-10-11.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -11171,14 +11171,12 @@ function vcFilaHtml(l){
        <button class="vc-mini vc-mini-retirar" data-act="retirar" data-i="${l.filaIndex}" data-cant="${l.cantidad}" title="Retirar de la góndola (sin eliminar el lote)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><line x1="12" y1="13" x2="12" y2="21"/></svg><span>Retirar</span></button>`;
   }else{
     botones=`<button class="vc-mini vc-mini-vencido" data-act="ok" data-i="${l.filaIndex}" title="Vendido"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Vendido</span></button>
-       <button class="vc-mini vc-mini-retirar" data-act="retirar" data-i="${l.filaIndex}" data-cant="${l.cantidad}" title="Retirar de la góndola (sin eliminar el lote)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><line x1="12" y1="13" x2="12" y2="21"/></svg><span>Retirar</span></button>`;
+       <button class="vc-mini vc-mini-rojo" data-act="merma" data-i="${l.filaIndex}" data-sku="${l.sku}" data-cant="${l.cantidad}" data-lote="${l.lote||''}" title="Merma"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg><span>Merma</span></button>`;
   }
-  // "Merma" no es una acción esperada en categorías "cambio con proveedor" (no aplica: se
-  // gestiona como cambio, no como pérdida propia) — solo se ofrece, dentro de "Más", en las
-  // categorías normales, igual que antes.
-  const mermaBtn=!esCambio
-    ?`<button class="vc-mini vc-mini-rojo" data-act="merma" data-i="${l.filaIndex}" data-sku="${l.sku}" data-cant="${l.cantidad}" data-lote="${l.lote||''}" title="Merma"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg><span>Merma</span></button>`
-    :'';
+  // En categorías normales (no Ideal/Castaño/San Jorge) el botón principal ya es "Merma" (arriba, en
+  // reemplazo de "Retirar": retirar a Pendientes solo aplica a las de cambio con proveedor), así
+  // que dentro de "Más" no se repite.
+  const mermaBtn='';
   // Contraparte de "Merma" para categorías "cambio con proveedor": ahí Merma no se ofrece
   // (arriba), pero a veces el negocio prefiere consumir el producto vencido internamente en vez
   // de esperar el cambio/descuento del proveedor. Reutiliza EXACTO el mismo modal y acción
