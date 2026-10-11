@@ -4134,6 +4134,68 @@ async function accionSyncVentas(env, dias) {
   return { recibos: receipts.length, lineasGuardadas: procesados, dias: diasBack };
 }
 
+// ---- Respaldo de los webhooks: ventas y stock al día aunque el aviso de Loyverse llegue tarde ----
+// El webhook (receipts.update / inventory_levels.update) normalmente llega en ~10 s, pero hay días
+// en que Loyverse lo atrasa 30-40 min (se vio con los fiados). Mientras la app está abierta, cada
+// consulta del dashboard (cada pocos segundos) dispara en SEGUNDO PLANO (ctx.waitUntil, sin hacer
+// esperar la respuesta) un repaso contra la API de Loyverse:
+//  - Ventas/fiados: recibos de las últimas 3 h que todavía no están en `ventas` (y con más de 15 s,
+//    para no pisarse con el webhook que viene en camino) se procesan con los MISMOS handlers del
+//    webhook (aplicarVentas es upsert por receipt+sku; procesarFiadosDeReceipts es idempotente).
+//  - Stock: se baja el inventario y solo las filas que difieren de D1 pasan por
+//    aplicarCambiosInventario (mismo handler del webhook, incluida la detección de "Recién llegado").
+// Cada parte tiene su propio throttle y nunca corre dos veces a la vez en la misma instancia.
+let _respVentasUlt = 0, _respStockUlt = 0, _respEnCurso = false;
+const _respVistos = new Set();
+async function respaldoLoyverseSegundoPlano(env) {
+  if (_respEnCurso) return;
+  _respEnCurso = true;
+  try {
+    const ahora = Date.now();
+    if (ahora - _respVentasUlt >= 30000) {
+      _respVentasUlt = ahora;
+      try {
+        const { storeId } = await obtenerStoreId(env);
+        const recibos = await loyverseGetAll(env, "/receipts", "receipts", {
+          store_id: storeId, created_at_min: new Date(ahora - 3 * 3600 * 1000).toISOString()
+        });
+        const viejos = recibos.filter(r => (r.receipt_number || r.id) && !_respVistos.has(String(r.receipt_number || r.id)) &&
+          Date.parse(r.created_at || r.receipt_date || 0) <= ahora - 15000);
+        if (viejos.length) {
+          const desdeDia = fechaISO(new Date(ahora - 2 * 86400000));
+          const { results } = await env.DB.prepare("SELECT DISTINCT receipt_id FROM ventas WHERE fecha_venta >= ?").bind(desdeDia).all();
+          const enD1 = new Set((results || []).map(x => String(x.receipt_id)));
+          const faltan = viejos.filter(r => !enD1.has(String(r.receipt_number || r.id)));
+          viejos.forEach(r => _respVistos.add(String(r.receipt_number || r.id)));
+          if (_respVistos.size > 5000) _respVistos.clear();
+          if (faltan.length) {
+            await Promise.all([aplicarVentas(env, faltan), procesarFiadosDeReceipts(env, faltan)]);
+            await marcarCatalogoActualizado(env);
+            await logMsg(env, "🛟 Respaldo de ventas: " + faltan.length + " recibo(s) que el webhook no había entregado");
+          }
+        }
+      } catch (e) { await logMsg(env, "⚠️ Respaldo de ventas falló: " + e.message); }
+    }
+    if (Date.now() - _respStockUlt >= 60000) {
+      _respStockUlt = Date.now();
+      try {
+        const { storeId } = await obtenerStoreId(env);
+        const inv = await loyverseGetAll(env, "/inventory", "inventory_levels", { store_id: storeId });
+        const { results } = await env.DB.prepare("SELECT variant_id, stock FROM productos WHERE variant_id IS NOT NULL").all();
+        const actual = {};
+        (results || []).forEach(f => { actual[f.variant_id] = f.stock; });
+        const distintos = inv.filter(x => x.variant_id && x.in_stock != null && (x.variant_id in actual) &&
+          Number(actual[x.variant_id]) !== Number(x.in_stock));
+        if (distintos.length) {
+          await aplicarCambiosInventario(env, distintos);
+          await marcarCatalogoActualizado(env);
+          await logMsg(env, "🛟 Respaldo de stock: " + distintos.length + " producto(s) corregidos desde Loyverse");
+        }
+      } catch (e) { await logMsg(env, "⚠️ Respaldo de stock falló: " + e.message); }
+    }
+  } finally { _respEnCurso = false; }
+}
+
 // Ventas de los últimos N días por sku — usado para armar el mapa v7/v14 que se
 // suma al catálogo compacto. Lee solo D1 (rápido, no toca la API de Loyverse).
 async function ventasPorSku(env, dias) {
@@ -5292,7 +5354,7 @@ async function accionCopiarProductoExterno(env, payload) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: CORS_HEADERS });
     }
@@ -6344,6 +6406,9 @@ export default {
       // ver plan "FASE 1"). Antes de esto no había equivalente: un GET sin action solo
       // devolvía el mensaje de bienvenida de más abajo.
       if (request.method === "GET" && !action) {
+        // Además de responder con lo que hay en D1, repasa en segundo plano ventas y stock
+        // contra Loyverse (ver respaldoLoyverseSegundoPlano).
+        if (ctx && ctx.waitUntil) ctx.waitUntil(respaldoLoyverseSegundoPlano(env).catch(() => {}));
         const resultado = await payloadDashboard(env, false, "");
         return json(resultado);
       }
