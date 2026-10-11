@@ -4119,6 +4119,38 @@ async function chequearYRevertirDescuentosVencidos(env) {
 //  hueco puntual — se dispara a mano con el botón "Actualizar
 //  ventas", nunca de forma automática/periódica.
 // ============================================================
+// Historial de TODOS los lotes ingresados (más recientes primero), con cualquier estado — a
+// diferencia de la lista de vencimientos activos, que solo trae lo que sigue por revisar.
+// Paginado y con búsqueda simple por producto/código/proveedor (cada palabra debe aparecer).
+// Filtros: todos, con_fecha, sin_fecha, activos (no cerrados), cerrados (Revisado/Retirado).
+async function repLotesIngresados(env, qtxt, filtro, limite, desplazamiento) {
+  limite = Math.max(1, Math.min(100, Number(limite) || 50));
+  desplazamiento = Math.max(0, Number(desplazamiento) || 0);
+  const cond = [], params = [];
+  String(qtxt || "").toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6).forEach(w => {
+    cond.push("(LOWER(COALESCE(producto,'')) LIKE ? OR LOWER(COALESCE(sku,'')) LIKE ? OR LOWER(COALESCE(categoria,'')) LIKE ?)");
+    const pat = "%" + w.replace(/[%_]/g, "") + "%";
+    params.push(pat, pat, pat);
+  });
+  if (filtro === "con_fecha") cond.push("COALESCE(fecha_vencimiento,'') <> ''");
+  else if (filtro === "sin_fecha") cond.push("COALESCE(fecha_vencimiento,'') = ''");
+  else if (filtro === "cerrados") cond.push("estado IN ('Revisado','Retirado')");
+  else if (filtro === "activos") cond.push("COALESCE(estado,'') NOT IN ('Revisado','Retirado')");
+  const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
+  const total = (await get(env, "SELECT COUNT(*) AS n FROM vencimientos " + where, ...params)).n;
+  const { results: filas } = await env.DB.prepare(
+    "SELECT id, fecha_ingreso, sku, producto, categoria, unidad, cantidad, fecha_vencimiento, estado, motivo_cierre FROM vencimientos " +
+    where + " ORDER BY id DESC LIMIT ? OFFSET ?").bind(...params, limite, desplazamiento).all();
+  return {
+    total, hayMas: desplazamiento + filas.length < total,
+    lotes: filas.map(f => ({
+      id: f.id, fechaIngreso: f.fecha_ingreso || "", sku: f.sku, producto: f.producto || "", categoria: f.categoria || "",
+      unidad: f.unidad || "un", cantidad: f.cantidad, fechaVencimiento: f.fecha_vencimiento || "", estado: f.estado || "",
+      motivoCierre: f.motivo_cierre || ""
+    }))
+  };
+}
+
 async function accionSyncVentas(env, dias) {
   const diasBack = Number(dias) || 14;
   const { storeId } = await obtenerStoreId(env);
@@ -5596,6 +5628,11 @@ export default {
 
       // GET /?action=vencimientos[&estado=Pendiente|Revisado|todos][&sku=XXXX]
       // → lotes con fecha de vencimiento, con días restantes y urgencia calculados.
+      if (action === "lotes_ingresados") {
+        await asegurarTablas(env);
+        const resultado = await repLotesIngresados(env, url.searchParams.get("q"), url.searchParams.get("filtro"), url.searchParams.get("limit"), url.searchParams.get("offset"));
+        return json({ ok: true, ...resultado });
+      }
       if (action === "vencimientos") {
         const estado = url.searchParams.get("estado") || "";
         const sku = url.searchParams.get("sku") || "";
