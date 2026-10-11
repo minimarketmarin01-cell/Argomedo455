@@ -888,10 +888,10 @@ input[type=number]{width:64px;font-family:'JetBrains Mono';font-weight:500}
 #vc-viewseg,#vc-diasfilter{border-radius:12px}
 #vc-viewseg button,#vc-diasfilter button{display:inline-flex;align-items:center;justify-content:center;gap:7px;font-family:'Inter';font-size:13px;font-weight:600;padding:12px 8px;color:#5B6675}
 #vc-viewseg button.active,#vc-diasfilter button.active{background:var(--vc-activo);color:#fff}
-/* Banner del local en Recepción: siempre visible bajo el título, con color propio de cada local. */
-.rc-local-banner{flex:none;margin:0 16px 8px;padding:9px 12px;border-radius:10px;color:#fff;font-size:14px;font-weight:800;letter-spacing:.02em;text-align:center}
-.rc-local-banner.marin{background:#16395F}
-.rc-local-banner.argomedo{background:#C2410C}
+/* Nombre del local junto al título de Recepción (color propio de cada local) para no equivocarse de local. */
+.rc-local-chip{display:inline-block;margin-left:8px;padding:3px 9px;border-radius:12px;color:#fff;font-size:12px;font-weight:800;letter-spacing:.02em;vertical-align:middle;white-space:nowrap}
+.rc-local-chip.marin{background:#16395F}
+.rc-local-chip.argomedo{background:#C2410C}
 /* Encabezados fijos de Revisión de vencimientos: las pestañas (Lista/Pendientes/Descuentos) quedan arriba y,
    justo debajo, el buscador (y los filtros de días en Lista) mientras se desplaza la lista. */
 #vc-viewseg{position:sticky;top:-12px;z-index:7;background:var(--card,#fff);box-shadow:0 10px 0 var(--card,#fff)}
@@ -2321,8 +2321,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
     </div>
     <div class="mm-ov hidden" id="rc-ov">
       <div class="mm-card">
-        <div class="mm-head"><h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mm-head-ic"><rect x="1" y="6" width="14" height="10" rx="1"/><path d="M15 9h4l3 3.5V16h-7z"/><circle cx="6" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span id="rc-titulo">Recibir mercadería</span></h3><button class="loadbtn" type="button" id="rc-descartar" style="padding:6px 12px;font-size:12.5px;white-space:nowrap;flex:none">Descartar</button></div>
-        <div class="rc-local-banner argomedo" id="rc-local-banner">📍 Recibiendo en: ARGOMEDO 455</div>
+        <div class="mm-head"><h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mm-head-ic"><rect x="1" y="6" width="14" height="10" rx="1"/><path d="M15 9h4l3 3.5V16h-7z"/><circle cx="6" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span id="rc-titulo">Recibir mercadería</span><span class="rc-local-chip argomedo">Argomedo 455</span></h3><button class="loadbtn" type="button" id="rc-descartar" style="padding:6px 12px;font-size:12.5px;white-space:nowrap;flex:none">Descartar</button></div>
         <div class="mm-body" style="padding-bottom:8px">
 
         <div class="seg" id="rc-modo-seg" style="width:100%;margin-bottom:10px">
@@ -4598,7 +4597,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-11.8';
+const APP_VERSION='2026-10-11.9';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
