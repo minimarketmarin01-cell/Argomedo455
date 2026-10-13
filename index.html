@@ -3074,9 +3074,8 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
           <div class="mm-field">
             <label class="cp-toggle">IVA 19% <input type="checkbox" id="cp-iva" checked></label>
           </div>
-          <div class="mm-field">
-            <label class="cp-toggle">Producto activo (a la venta) <input type="checkbox" id="cp-activo" checked></label>
-          </div>
+          <!-- Todo producto creado queda disponible para la venta: ya no se ofrece desactivarlo. -->
+          <input type="checkbox" id="cp-activo" checked style="display:none">
           <div class="mm-field">
             <label>Imagen (opcional)</label>
             <div style="display:flex;gap:8px">
@@ -4596,7 +4595,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-11.11';
+const APP_VERSION='2026-10-11.12';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
