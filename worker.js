@@ -4151,6 +4151,51 @@ async function repLotesIngresados(env, qtxt, filtro, limite, desplazamiento) {
   };
 }
 
+// Revisa TODO el catálogo de Loyverse y deja disponibles para la venta (en esta tienda) los productos
+// que están marcados como NO disponibles — no aparecen en el buscador de la caja. Solo toca los que
+// tienen una entrada de tienda con available_for_sale=false (los que no tienen entrada para la tienda
+// se informan aparte y no se modifican). Sin `aplicar` solo informa; con `aplicar` arregla de a
+// `limite` productos por llamada (para no pasarse del límite de llamadas del Worker) y devuelve
+// cuántos faltan, así la app repite hasta terminar. Nunca reenvía el stock del producto.
+async function accionDisponibilidadMasiva(env, payload) {
+  payload = payload || {};
+  const aplicar = !!payload.aplicar;
+  const limite = Math.max(1, Math.min(30, Number(payload.limite) || 25));
+  const STOREID = (await obtenerStoreId(env)).storeId;
+  const items = await loyverseGetAll(env, "/items", "items");
+  const malos = [];
+  let sinTienda = 0;
+  items.forEach(it => {
+    let malo = false;
+    (it.variants || []).forEach(v => {
+      const t = (v.stores || []).find(s => s.store_id === STOREID);
+      if (!t) sinTienda++;
+      else if (t.available_for_sale === false) malo = true;
+    });
+    if (malo) malos.push(it);
+  });
+  const lista = malos.map(it => ({ sku: (it.variants && it.variants[0] && it.variants[0].sku) || "", nombre: it.item_name || "" }));
+  if (!aplicar) return { total: items.length, noDisponibles: malos.length, sinTienda, productos: lista.slice(0, 200) };
+  const lote = malos.slice(0, limite);
+  const reparados = [], fallidos = [];
+  for (const it of lote) {
+    try {
+      (it.variants || []).forEach(v => {
+        delete v.in_stock;
+        (v.stores || []).forEach(st => {
+          delete st.in_stock;
+          if (st.store_id === STOREID) st.available_for_sale = true;
+        });
+      });
+      await loyversePost(env, "/items", it);
+      reparados.push(it.item_name || "");
+    } catch (e) { fallidos.push((it.item_name || "") + ": " + e.message); }
+  }
+  await logMsg(env, "🛠️ Disponibilidad masiva: " + reparados.length + " producto(s) dejados disponibles para la venta" +
+    (fallidos.length ? " · " + fallidos.length + " con error" : "") + " · quedan " + Math.max(0, malos.length - reparados.length - fallidos.length));
+  return { total: items.length, noDisponibles: malos.length, reparados: reparados.length, fallidos, restantes: Math.max(0, malos.length - lote.length) };
+}
+
 async function accionSyncVentas(env, dias) {
   const diasBack = Number(dias) || 14;
   const { storeId } = await obtenerStoreId(env);
@@ -6434,6 +6479,10 @@ export default {
       }
       // POST { action:'fiados_deshacer_cobro', payload:{receipt_id_loyverse_abono} } → deshace
       // un cobro entero por error del cajero (reembolso real en Loyverse cuando es posible).
+      if (action === "disponibilidad_masiva") {
+        const resultado = await accionDisponibilidadMasiva(env, payload);
+        return json({ ok: true, ...resultado });
+      }
       if (action === "fiados_deshacer_cobro") {
         const resultado = await accionFiadosDeshacerCobro(env, payload);
         return json(resultado);
