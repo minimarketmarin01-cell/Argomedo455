@@ -5173,7 +5173,7 @@ async function accionCrearProducto(env, payload) {
   const costo = costoRaw != null && costoRaw !== "" ? Number(costoRaw) : 0;
   const trackStock = payload.trackStock !== false; // por defecto SÍ sigue inventario
   const soldByWeight = !!payload.soldByWeight;
-  const activo = payload.activo !== false; // por defecto SÍ está a la venta (disponible en POS)
+  const activo = true; // todo producto creado queda disponible para la venta en el POS (siempre)
   const quiereIva = payload.activarIva !== false; // por defecto SÍ intenta activar IVA (desmarcable para productos exentos)
   const stockMinimo = (payload.stockMinimo != null && payload.stockMinimo !== "") ? Number(payload.stockMinimo) : null;
   // El formulario de Crear producto manda proveedor_id (select de "Gestionar
