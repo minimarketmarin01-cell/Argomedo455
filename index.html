@@ -4602,7 +4602,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-11.13';
+const APP_VERSION='2026-10-14.90';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5052,6 +5052,10 @@ let _ultimaActividad=0;
 function usuarioActivo(){return (Date.now()-_ultimaActividad)<1500;}
 
 async function autoSyncIfStale(){
+  // Primero la lectura rápida de D1 (sin Loyverse): el catálogo queda al día al instante aunque
+  // el sync completo contra Loyverse tarde o falle (antes, si fallaba en silencio, la app se
+  // quedaba con la copia vieja del teléfono hasta el siguiente cambio).
+  await pollFondo();
   await cloudSync(true,true);
   iniciarPollingTiempoReal();
 }
@@ -5130,9 +5134,9 @@ function iniciarPollingTiempoReal(){
 async function pollFondo(){
   try{
     const res=await fetch(SYNC_URL,{method:'GET'});
-    if(!res.ok)return;
-    let j;try{j=await res.json();}catch(e){return;}
-    if(!j||!j.ok)return;
+    if(!res.ok){_ultimaActualizacionConocida='reintentar';return;}
+    let j;try{j=await res.json();}catch(e){_ultimaActualizacionConocida='reintentar';return;}
+    if(!j||!j.ok){_ultimaActualizacionConocida='reintentar';return;}
     _ultimoPollOk=Date.now();
     actualizarIndicadorEnVivo();
 
@@ -5156,7 +5160,7 @@ async function pollFondo(){
     if(usuarioActivo()){_repintadoPendiente=true;return;} // se aplicará solo cuando se detenga
 
     aplicarRepintadoDiferido();
-  }catch(e){}
+  }catch(e){_ultimaActualizacionConocida='reintentar';}
 }
 
 let _repintadoPendiente=false;
