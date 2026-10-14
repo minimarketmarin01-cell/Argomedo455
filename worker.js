@@ -1813,6 +1813,48 @@ async function saldoDeFiado(env, fiado) {
   return Math.round((fiado.monto_total - (fila ? fila.total : 0)) * 100) / 100;
 }
 
+// Sentencias para guardar líneas de un recibo en un fiado (se ejecutan juntas con env.DB.batch).
+function sentenciasLineasFiado(env, fiadoId, lineas) {
+  const stmts = [];
+  for (const li of lineas) {
+    const sku = li.sku ? String(li.sku) : "__SIN_SKU__";
+    stmts.push(env.DB.prepare(
+      "INSERT INTO fiados_lineas (fiado_id, sku, producto_nombre, cantidad, precio_unitario, receipt_line_item_id) VALUES (?,?,?,?,?,?)"
+    ).bind(fiadoId, sku, li.item_name || null, li.quantity || 0, li.price || 0, li.id || null));
+  }
+  return stmts;
+}
+
+// Un fiado se guardó con MENOS líneas que el recibo de Loyverse (la petición se cortó a mitad de
+// la inserción antigua, una línea por vez): agrega las que faltan. Solo toca fiados sin
+// reembolsos ni líneas eliminadas a mano (si no, volvería a agregar lo que se quitó a propósito).
+async function completarLineasFiado(env, fiadoId, r) {
+  const lineas = r.line_items || [];
+  if (!lineas.length) return 0;
+  const existentes = (await env.DB.prepare(
+    "SELECT sku, cantidad, receipt_line_item_id FROM fiados_lineas WHERE fiado_id = ?").bind(fiadoId).all()).results || [];
+  if (existentes.length >= lineas.length) return 0;
+  let tocado = null;
+  try {
+    tocado = await get(env, "SELECT 1 AS x FROM pagos_fiado WHERE fiado_id = ? AND metodo_pago = 'reembolso' LIMIT 1", fiadoId)
+      || await get(env, "SELECT 1 AS x FROM fiados_refunds_linea_manual WHERE fiado_id = ? LIMIT 1", fiadoId);
+  } catch (e) { /* tabla aún no creada: no hay reembolsos manuales */ }
+  if (tocado) return 0;
+  const ids = new Set(existentes.map(e => e.receipt_line_item_id).filter(Boolean));
+  const usadas = new Set();
+  const faltan = lineas.filter(li => {
+    if (li.id && ids.has(li.id)) return false;
+    const k = existentes.findIndex((e, i) => !usadas.has(i) && !e.receipt_line_item_id &&
+      String(e.sku) === (li.sku ? String(li.sku) : "__SIN_SKU__") && Number(e.cantidad) === Number(li.quantity || 0));
+    if (k >= 0) { usadas.add(k); return false; }
+    return true;
+  });
+  if (!faltan.length) return 0;
+  await env.DB.batch(sentenciasLineasFiado(env, fiadoId, faltan));
+  await logMsg(env, "🧾 Fiado " + (r.receipt_number || fiadoId) + ": se completaron " + faltan.length + " línea(s) que faltaban del recibo");
+  return faltan.length;
+}
+
 // Detecta si un receipt se cerró con el método de pago de fiados y, si es así, crea el fiado +
 // sus líneas + un registro de auditoría (el stock físico YA bajó solo, vía el webhook de
 // inventario que Los Cumpas ya maneja — esto es solo un registro, no toca productos.stock).
@@ -1838,6 +1880,7 @@ async function registrarFiadoDesdeReceipt(env, r, numero) {
       await run(env, "UPDATE fiados SET cliente_id = ? WHERE id = ?", r.customer_id, yaExiste.id);
       await logMsg(env, "👤 Fiado " + numero + ": cliente asignado desde Loyverse");
     }
+    await completarLineasFiado(env, yaExiste.id, r);
     return;
   }
 
@@ -1847,12 +1890,9 @@ async function registrarFiadoDesdeReceipt(env, r, numero) {
     r.customer_id || null, numero, r.total_money || 0, "abierto", fechaHora);
   const fiadoId = ins.meta.last_row_id;
 
-  for (const li of (r.line_items || [])) {
-    const sku = li.sku ? String(li.sku) : "__SIN_SKU__";
-    await run(env,
-      "INSERT INTO fiados_lineas (fiado_id, sku, producto_nombre, cantidad, precio_unitario, receipt_line_item_id) VALUES (?,?,?,?,?,?)",
-      fiadoId, sku, li.item_name || null, li.quantity || 0, li.price || 0, li.id || null);
-  }
+  // Todas las líneas van en UN solo batch (antes un INSERT por línea): si la petición que disparó
+  // el respaldo terminaba a mitad de camino, el fiado quedaba con solo las primeras líneas.
+  await env.DB.batch(sentenciasLineasFiado(env, fiadoId, r.line_items || []));
   await run(env,
     `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
      VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -1891,9 +1931,30 @@ async function fiadosSincronizarRecientes(env) {
     await logMsg(env, "⚠️ Respaldo de fiados (receipts recientes) falló: " + e.message);
   }
 }
+// Repara fiados ya guardados con menos líneas que su recibo: detecta los que la suma de líneas no
+// alcanza el total (últimos 3 días) y vuelve a leer ese recibo de Loyverse para completarlos.
+let _fiadosReparoUltimo = 0;
+async function fiadosCompletarIncompletos(env) {
+  const ahora = Date.now();
+  if (ahora - _fiadosReparoUltimo < 300000) return;
+  _fiadosReparoUltimo = ahora;
+  try {
+    const desde = new Date(ahora - 3 * 86400000).toISOString();
+    const { results } = await env.DB.prepare(
+      `SELECT f.id, f.receipt_id_loyverse AS numero FROM fiados f
+       WHERE f.fecha_hora >= ? AND f.monto_total - COALESCE((SELECT SUM(l.cantidad * l.precio_unitario) FROM fiados_lineas l WHERE l.fiado_id = f.id), 0) > 5
+       ORDER BY f.id DESC LIMIT 5`).bind(desde).all();
+    for (const f of (results || [])) {
+      try {
+        const r = await loyverseGet(env, "/receipts/" + encodeURIComponent(f.numero), {});
+        if (r && !r.cancelled_at) await completarLineasFiado(env, f.id, r);
+      } catch (e) { /* recibo no encontrado o Loyverse lento: se reintenta en la próxima pasada */ }
+    }
+  } catch (e) { /* silencioso: es solo una reparación oportunista */ }
+}
 // Igual que arriba pero sin dejar la pantalla esperando más de 8 s si Loyverse está lento.
 async function fiadosSincronizarRapido(env) {
-  await Promise.race([fiadosSincronizarRecientes(env), new Promise(res => setTimeout(res, 8000))]);
+  await Promise.race([fiadosSincronizarRecientes(env).then(() => fiadosCompletarIncompletos(env)), new Promise(res => setTimeout(res, 8000))]);
 }
 
 // Reembolso en Loyverse (receipt_type="REFUND", refund_for=<receipt original>) de una venta que
