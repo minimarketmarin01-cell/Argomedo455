@@ -1804,6 +1804,15 @@ html .card-stats .cstat-stock,html .fila-col{font-weight:600}
 .cart-extras .scale-body.collapsed{border-width:0}
 .cart-extras .scale-body:not(.collapsed){max-height:38vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
 #scalecard.hidden + #cg-card #cg-head{grid-column:1/-1}
+/* Sin columna "Pedir": un toque en la fila agrega; aquí solo se ve lo pedido, lo sugerido y el cambio. */
+.fila-pedir .qcell,.card-stepper .qcell{display:none !important}
+.pedido-info{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:5px}
+.pedido-chip{display:none;background:#DDEBD6;color:var(--ink);border-radius:12px;padding:5px 11px;font-weight:700;font-size:14px;white-space:nowrap}
+.pedido-chip.on{display:inline-block}
+.sug-btn{border:1.5px solid var(--line);background:var(--card);border-radius:12px;padding:7px 11px;font-size:13px;font-weight:600;color:var(--ink2);cursor:pointer;white-space:nowrap}
+.card-stepper{min-width:96px}
+html.modo-bliss .fila-row{grid-template-columns:52px minmax(0,1fr) 100px 64px 66px 132px !important}
+html.modo-bliss .ptable-head>*:nth-child(5){flex:0 0 132px}
 </style>
 </head>
 <body>
@@ -3805,7 +3814,25 @@ function onQty(inp){const ref=inp.dataset.ref,fmt=+inp.dataset.fmt;let b=Math.ma
     const pend=pendienteDe(it);
     if(pend){state.pendWarned[ref]=true;showToast('Ojo: ya se pidió a '+(pend.proveedor||'otro proveedor')+' el '+(pend.fecha||'')+' · '+(pend.cantidad||0)+' u — revisa antes de repetir');}
   }
-  renderOrder();renderScale();persistUI();}
+  renderOrder();renderScale();persistUI();refrescarChipsPedido();}
+// Sin columna Pedir: el pedido se arma con un toque en la fila; "Sugerido: N" agrega la cantidad sugerida.
+function sugAgregar(ref){
+  const it=DB.items.find(i=>i.ref===ref);if(!it)return;
+  const a=analyze(it);
+  const inp=document.querySelector('.card-cell[data-ref="'+CSS.escape(ref)+'"] .qty-in');
+  if(!inp)return;
+  inp.value=Math.max(1,packsOf(it,a.sug));
+  onQty(inp);
+}
+function refrescarChipsPedido(){
+  document.querySelectorAll('#ptbody .pedido-chip').forEach(ch=>{
+    const ref=ch.dataset.chip,it=DB.items.find(i=>i.ref===ref);if(!it)return;
+    const b=Math.max(0,Math.round((state.edits[ref]||0)/(it.fmt||1)));
+    ch.textContent=b>0?b+' '+(it.fmt>1?plural(it.word,b):'u'):'';
+    ch.classList.toggle('on',b>0);
+    const row=ch.closest('.card-cell');if(row)row.classList.toggle('row-en-carrito',b>0);
+  });
+}
 function stepQty(btn){const cell=btn.closest('.qcell');const inp=cell.querySelector('.qty-in');const st=+inp.dataset.step||1;inp.value=Math.max(0,(parseInt(inp.value)||0)+(+btn.dataset.d)*st);onQty(inp);}
 function ccuMixedPacks(){let p=0;itemsForCategoria('CCU').forEach(it=>{if(it.scale==='ccu_ret'){const a=analyze(it);p+=Math.ceil(qOf(it,a)/it.fmt);}});return p;}
 function ccuTierIdx(packs){const b=SCALES.ccu_ret.breaks;let idx=0;for(let i=0;i<b.length;i++)if(packs>=b[i])idx=i;return idx;}
@@ -4241,6 +4268,9 @@ function rowHTML(it,a,f){const cant=qOf(it,a);
   const pendBadge=pend?`<span class="pend-badge" title="Pedido a ${pendProv||'otro proveedor'} el ${pend.fecha||''} · ${fmt.format(pend.cantidad||0)} u"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg> Ya pedido a ${pendProv||'?'}</span>`:'';
   // El carrito ya no se autocompleta con el sugerido (ver qOf) — este hint mantiene visible
   // la recomendación aunque el stepper esté en 0, para no perder esa información de un vistazo.
+  const bChip=Math.max(0,Math.round(cant/(it.fmt||1)));
+  const sugBtn=(a.sug>0&&cant===0)?`<button type="button" class="sug-btn" onclick="event.stopPropagation();sugAgregar('${it.ref}')">Sugerido: ${fmt.format(a.sug)}</button>`:'';
+  const pedidoInfo=`<div class="pedido-info">${cambioLine}<span class="pedido-chip${bChip>0?' on':''}" data-chip="${it.ref}">${bChip>0?bChip+' '+(it.fmt>1?plural(it.word,bChip):'u'):''}</span>${sugBtn}</div>`;
   const sugHint=(a.sug>0&&cant===0)?`<span class="sug-hint">Sugerido: ${fmt.format(a.sug)}</span>`:'';
   // Aviso de "también se puede pedir a otro proveedor" — SOLO cuenta el Proveedor real de
   // la WebApp (it.proveedorIdsExtra, ids), nunca la categoría de Loyverse (it.prov). Antes
@@ -4257,7 +4287,7 @@ function rowHTML(it,a,f){const cant=qOf(it,a);
   if(document.documentElement.classList.contains('vista-filas')){
     // Pantallas grandes (BlissOS/monitor táctil): formato de fila tipo planilla — mismos
     // datos que la tarjeta (arriba), reutilizados tal cual, solo en otro maquetado.
-    const stepper=`<div class="qcell">${cambioLine}${sugHint}<div class="qstep ${cant>0?'has':''}"><button class="qbtn" data-d="-1">−</button><input class="qty-in" inputmode="numeric" pattern="[0-9]*" value="${bundles}" data-ref="${it.ref}" data-fmt="${it.fmt}" data-step="${inStep(it)}"><button class="qbtn" data-d="1">+</button></div><span class="qword ${(it.fmt>1||multOf(it)>1)?'gold':''}">${labelFor(it,bundles)}</span></div>`;
+    const stepper=`<div class="qcell"><div class="qstep ${cant>0?'has':''}"><button class="qbtn" data-d="-1">−</button><input class="qty-in" inputmode="numeric" pattern="[0-9]*" value="${bundles}" data-ref="${it.ref}" data-fmt="${it.fmt}" data-step="${inStep(it)}"><button class="qbtn" data-d="1">+</button></div><span class="qword ${(it.fmt>1||multOf(it)>1)?'gold':''}">${labelFor(it,bundles)}</span></div>`;
     return `<div data-ref="${it.ref}" class="card-cell ${rowEstadoCls(a)}${qOf(it,a)>0?' row-en-carrito':''}" title="${tooltip}">`+
       `<div class="fila-row">`+
         `<div class="fila-thumb">${thumb}</div>`+
@@ -4270,7 +4300,7 @@ function rowHTML(it,a,f){const cant=qOf(it,a);
         `<div class="fila-col"><span class="fila-lbl">STK</span><span class="stk-val" onclick="event.stopPropagation();stkToque('${it.ref}')">${statStock}</span></div>`+
         `<div class="fila-col"><span class="fila-lbl">VTA</span><span><span class="trend ${a.trend.k}">${a.trend.t}</span> ${fmt.format(ventasPeriodo)}</span></div>`+
         `<div class="fila-col" style="color:${covColor(a)}"><span class="fila-lbl">COB</span><span>${covTxt}</span></div>`+
-        `<div class="fila-pedir">${stepper}</div>`+
+        `<div class="fila-pedir">${pedidoInfo}${stepper}</div>`+
       `</div>`+
     `</div>`;
   }
@@ -4287,7 +4317,7 @@ function rowHTML(it,a,f){const cant=qOf(it,a);
           `<span class="cstat cstat-cov" style="color:${covColor(a)}"><span class="cstat-label" style="color:inherit">COB</span> ${covTxt}</span>`+
         `</div>`+
       `</div>`+
-      `<div class="card-stepper"><div class="qcell">${cambioLine}${sugHint}<div class="qstep ${cant>0?'has':''}"><button class="qbtn" data-d="-1">−</button><input class="qty-in" inputmode="numeric" pattern="[0-9]*" value="${bundles}" data-ref="${it.ref}" data-fmt="${it.fmt}" data-step="${inStep(it)}"><button class="qbtn" data-d="1">+</button></div><span class="qword ${(it.fmt>1||multOf(it)>1)?'gold':''}">${labelFor(it,bundles)}</span></div></div>`+
+      `<div class="card-stepper">${pedidoInfo}<div class="qcell"><div class="qstep ${cant>0?'has':''}"><button class="qbtn" data-d="-1">−</button><input class="qty-in" inputmode="numeric" pattern="[0-9]*" value="${bundles}" data-ref="${it.ref}" data-fmt="${it.fmt}" data-step="${inStep(it)}"><button class="qbtn" data-d="1">+</button></div><span class="qword ${(it.fmt>1||multOf(it)>1)?'gold':''}">${labelFor(it,bundles)}</span></div></div>`+
     `</div>`+
   `</div>`;
 }
@@ -4456,6 +4486,7 @@ function cartApplyQty(ref,newPacks){
   cartUpdateTotals();
   persistUI();
   renderScale();
+  refrescarChipsPedido();
 }
 // Color distintivo por proveedor, SOLO para agrupar visualmente el carrito cuando tiene
 // ítems de varios proveedores mezclados — paleta deliberadamente separada de los 5 colores
@@ -4713,7 +4744,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.9';
+const APP_VERSION='2026-10-15.10';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
