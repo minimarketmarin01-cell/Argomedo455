@@ -1826,6 +1826,13 @@ html.modo-bliss .ptable-head>*:nth-child(5){flex:0 0 132px}
 .cp2-dia:disabled{color:var(--line);cursor:default}
 .cp2-dia.hoy{box-shadow:inset 0 0 0 1.5px var(--muted)}
 .cp2-dia.sel{background:var(--verde);color:#fff}
+/* Divisor tabla ↔ carrito: botón grande y visible para ensanchar/achicar el carrito arrastrando */
+html.carrito-fijo .cart-resizer{left:0;width:28px}
+html.carrito-fijo .cart-resizer::after{left:13px;width:3px;background:var(--wa);opacity:.4}
+html.carrito-fijo .cart-resizer .grip{left:14px;width:24px;height:70px;border-radius:14px;background:var(--card);border:2px solid var(--wa);box-shadow:0 2px 10px rgba(0,0,0,.2);opacity:1}
+html.carrito-fijo .cart-resizer .grip::before{content:'\2194';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--wa);line-height:1}
+html.carrito-fijo .cart-resizer:hover .grip,html.carrito-fijo .cart-resizer.dragging .grip{background:var(--wa);box-shadow:0 2px 10px rgba(0,0,0,.25)}
+html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resizer.dragging .grip::before{color:#fff}
 </style>
 </head>
 <body>
@@ -4779,7 +4786,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.15';
+const APP_VERSION='2026-10-15.16';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15916,7 +15923,8 @@ function _cartMaxNeededWidth(){
   if(!maxText)maxText=240; // carrito vacío: ancho por defecto razonable
   const RESERVA=130; // padding del panel + gap + stepper de cantidad (+/- y campo)
   const vpMax=Math.round(window.innerWidth*0.6); // techo de seguridad, nunca tapa la tabla
-  return Math.max(280,Math.min(Math.ceil(maxText+RESERVA),vpMax));
+  // El carrito siempre se puede ensanchar hasta el techo (60% de la pantalla), aunque los nombres sean cortos.
+  return Math.max(280,vpMax);
 }
 function _cartWLimits(){return{min:280,max:_cartMaxNeededWidth()};}
 function _restoreCartW(){
