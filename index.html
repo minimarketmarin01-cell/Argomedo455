@@ -3728,6 +3728,15 @@ async function cargarVencidoParaCambio(){
   await cargarVencidosPendientes();
 }
 function esCategoriaCambio(prov){return CATEGORIAS_CAMBIO.indexOf(prov)>=0;}
+// En Recepción la fecha de vencimiento es OBLIGATORIA para estos proveedores/marcas (además de los de
+// CATEGORIAS_CAMBIO): se compara por palabra completa, sin tildes ni mayúsculas, contra la categoría y
+// el proveedor del producto.
+const VENC_OBLIGATORIO=['nestle','soprole','colun','ideal','castano','san jorge','pf','montina'];
+function rcExigeVencimiento(it){
+  if(!it)return false;
+  const txt=normTxt([it.prov,it.proveedorNombre].concat(it.provsExtra||[]).filter(Boolean).join(' | '));
+  return VENC_OBLIGATORIO.some(k=>new RegExp('(^|[^a-z0-9])'+k+'($|[^a-z0-9])').test(txt));
+}
 function vencidoDe(it){return VENCIDOS_POR_SKU[it.ref]||0;}
 function retiradoDe(it){return RETIRADOS_POR_SKU[it.ref]||0;}
 
@@ -4789,7 +4798,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.17';
+const APP_VERSION='2026-10-15.18';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -13426,7 +13435,7 @@ function rcFaltante(){
     return null;
   }
   const fecha=fmtDateInputToDDMMAAAA(document.getElementById('rc-fecha').value);
-  if(!fecha&&CATEGORIAS_CAMBIO.length&&esCategoriaCambio(it.prov))return{msg:'Falta la fecha de vencimiento ("'+it.prov+'" maneja vencimiento)',campo:'rc-fecha-dd'};
+  if(!fecha&&(esCategoriaCambio(it.prov)||rcExigeVencimiento(it)))return{msg:'Falta la fecha de vencimiento ("'+it.prov+'" la exige)',campo:'rc-fecha-dd'};
   return null;
 }
 function rcAvisarFaltante(f){
@@ -14082,7 +14091,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
   // va a sumar stock (cantidad>0).
   if(cantidad>0){
     if(!CATEGORIAS_CAMBIO.length)await cargarConfigCambio();
-    if(esCategoriaCambio(it.prov)&&!fecha){
+    if((esCategoriaCambio(it.prov)||rcExigeVencimiento(it))&&!fecha){
       showToast('"'+it.prov+'" maneja vencimiento — carga la fecha para poder guardar');
       const campoFecha=document.getElementById('rc-fecha-dd');
       if(campoFecha){campoFecha.focus();campoFecha.scrollIntoView({block:'center',behavior:'smooth'});}
