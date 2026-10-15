@@ -813,8 +813,8 @@ html.carrito-fijo #rc-ov .mm-sections{
 .in-cart-row{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:7px}
 /* POS táctil (vista-filas): un toque en la fila agrega al carrito, un toque en STK corrige el stock y
    la ficha se abre con el botón ⓘ (ver ptbody click delegado). */
-html.vista-filas .card-cell{cursor:pointer;-webkit-tap-highlight-color:rgba(46,125,50,.12)}
-html.vista-filas .stk-val{display:inline-block;min-width:46px;min-height:34px;line-height:26px;padding:3px 8px;border-radius:9px;background:rgba(0,0,0,.05);border:1px dashed var(--line);text-align:center;cursor:pointer}
+html .card-cell{cursor:pointer;-webkit-tap-highlight-color:rgba(46,125,50,.12)}
+html .stk-val{display:inline-block;min-width:46px;min-height:34px;line-height:26px;padding:3px 8px;border-radius:9px;background:rgba(0,0,0,.05);border:1px dashed var(--line);text-align:center;cursor:pointer}
 .fila-info{flex:none;margin-left:auto;width:34px;height:34px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);color:var(--muted);font-size:17px;font-weight:700;font-family:Georgia,serif;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 #stk-ov .stk-big{font-size:30px;font-weight:800;font-family:'JetBrains Mono';text-align:center}
 .in-cart-row .fila-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
@@ -4222,11 +4222,11 @@ function rowHTML(it,a,f){const cant=qOf(it,a);
     `<div class="card-row">`+
       `<div class="card-thumb-wrap">${thumb}</div>`+
       `<div class="card-main">`+
-        `<div class="prod-name-wrap">${favStarHTML(it.ref)}<span class="prod-name">${it.nombre}</span></div>`+
+        `<div class="prod-name-wrap" style="display:flex;align-items:flex-start;gap:4px">${favStarHTML(it.ref)}<span class="prod-name" style="flex:1;min-width:0">${it.nombre}</span><button type="button" class="fila-info" data-info="${it.ref}" aria-label="Abrir ficha del producto">i</button></div>`+
         `<div class="prod-meta">${nombreProveedorVisual(it)}</div>`+pendBadge+extraProvBadge+
         priceLine+
         `<div class="card-stats">`+
-          `<span class="cstat cstat-stock"><span class="cstat-label">STK</span> ${statStock}</span>`+
+          `<span class="cstat cstat-stock"><span class="cstat-label">STK</span> <span class="stk-val" onclick="event.stopPropagation();stkCorregirAbrir('${it.ref}')">${statStock}</span></span>`+
           `<span class="cstat"><span class="trend ${a.trend.k}">${a.trend.t}</span><span class="cstat-label">VTA</span> ${fmt.format(ventasPeriodo)}</span>`+
           `<span class="cstat cstat-cov" style="color:${covColor(a)}"><span class="cstat-label" style="color:inherit">COB</span> ${covTxt}</span>`+
         `</div>`+
@@ -4622,7 +4622,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.2';
+const APP_VERSION='2026-10-15.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -7097,7 +7097,7 @@ async function fpEliminarProducto(f){
 document.getElementById('fp-eliminar-btn').onclick=()=>{if(_fpActual)fpEliminarProducto(_fpActual);};
 
 document.getElementById('ptbody').addEventListener('click',ev=>{
-  const filas=document.documentElement.classList.contains('vista-filas');
+  const filas=true; // modo POS en filas y en tarjetas (celular)
   // POS táctil (vista-filas): el botón ⓘ abre la ficha; un toque en cualquier otra parte de la
   // fila agrega 1 al carrito (igual que Loyverse). Fuera de ese modo, el nombre sigue abriendo la ficha.
   if(filas){
