@@ -4779,7 +4779,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.13';
+const APP_VERSION='2026-10-15.14';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15190,7 +15190,7 @@ function abrirConfirmarPedido({provNombre,lines,fechaSugerida,notaExtra,onConfir
           '<p id="cp2-resumen" style="font-size:13.5px;line-height:1.5;color:var(--ink2);margin:0 0 12px"></p>'+
           '<label style="display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:4px">Fecha estimada de llegada</label>'+
           '<input type="hidden" id="cp2-fecha">'+'<div id="cp2-fecha-txt" style="font-weight:700;font-size:14px;margin-bottom:6px"></div>'+'<div id="cp2-cal" class="cp2-cal"></div>'+
-          '<button class="mm-save" id="cp2-btn-ok" style="width:100%">Sí, ya lo pedí</button>'+
+          '<button class="mm-save" id="cp2-btn-ok" style="width:100%">Confirmar</button>'+
           '<button class="loadbtn" id="cp2-btn-cancel" style="width:100%;margin-top:8px">Cancelar</button>'+
         '</div>'+
       '</div>';
