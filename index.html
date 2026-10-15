@@ -1789,19 +1789,21 @@ html .prod-name,html .fila-nombre,html.modo-bliss .fila-nombre{font-weight:600 !
 html .prod-meta,html .fila-prov{font-weight:400 !important;color:var(--muted);font-size:12.5px}
 html .card-stats .cstat-stock,html .fila-col{font-weight:600}
 
-/* Carrito: "Escala de volumen" y "Carritos guardados" en una sola fila (mitad cada uno), compactos y con
-   fondo claro para no cansar la vista; al abrir uno, ocupa todo el ancho. */
-#order-body .qbtn{width:38px !important;height:40px !important;font-size:19px !important}
-#order-body .qty-in{width:44px !important;height:40px !important;font-size:17px !important}
-.cart-extras{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.cart-extras .scalecard{flex:1 1 0;min-width:0;border-radius:10px}
-.cart-extras .scalecard.abierta{flex:1 1 100%}
-.cart-extras .scale-head{background:#F2F4EC;color:var(--ink);padding:7px 10px;gap:6px;border-bottom:1px solid transparent}
+/* Carrito: "Escala de volumen" y "Carritos guardados" quedan pegados abajo, uno al lado del otro (mitad
+   cada uno). Al tocar uno se despliega su contenido (ancho completo, con scroll) y el otro se cierra;
+   tocar el otro lo cambia. Fondo claro para no cansar la vista. */
+.cart-extras{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;margin-top:10px}
+.cart-extras .scalecard{display:contents}
+.cart-extras .scale-head{min-width:0;background:#F2F4EC;color:var(--ink);padding:7px 10px;gap:6px;border:1px solid var(--line);border-radius:10px}
+.cart-extras .scale-head.open{background:#E8EDDF;border-color:var(--salvia-2,#B9C7A8)}
+.cart-extras .scale-head>div{min-width:0}
 .cart-extras .scale-head .t{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cart-extras .scale-head .s{color:var(--muted);font-size:11px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.cart-extras .scale-head>div{min-width:0}
 .cart-extras .scale-head .accordion-chev{width:15px;height:15px;color:var(--muted)}
-.cart-extras .scale-head.open{border-bottom-color:var(--line)}
+.cart-extras .scale-body{grid-column:1/-1;grid-row:2;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.cart-extras .scale-body.collapsed{border-width:0}
+.cart-extras .scale-body:not(.collapsed){max-height:38vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+#scalecard.hidden + #cg-card #cg-head{grid-column:1/-1}
 </style>
 </head>
 <body>
@@ -4346,11 +4348,18 @@ function toggleAccordion(headEl,bodyEl,openState){
   return open;
 }
 
-// Al abrir "Escala de volumen" o "Carritos guardados" ocupa todo el ancho de la fila; cerrado, comparte la fila.
+// "Escala de volumen" y "Carritos guardados" se abren de a uno: al abrir uno, el otro se cierra.
 (function(){
-  ['scale-head','cg-head'].forEach(id=>{
-    const h=document.getElementById(id);
-    if(h)h.addEventListener('click',()=>setTimeout(()=>{const c=h.closest('.scalecard');if(c)c.classList.toggle('abierta',h.classList.contains('open'));},0));
+  const pares=[['scale-head','scale-body'],['cg-head','cg-body']];
+  pares.forEach(([hid,bid],i)=>{
+    const h=document.getElementById(hid);
+    if(!h)return;
+    h.addEventListener('click',()=>setTimeout(()=>{
+      if(!h.classList.contains('open'))return;
+      const [oh,ob]=pares[1-i];
+      const H=document.getElementById(oh),B=document.getElementById(ob);
+      if(H&&H.classList.contains('open')){H.classList.remove('open');if(B)B.classList.add('collapsed');}
+    },0));
   });
 })();
 
@@ -4704,7 +4713,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.8';
+const APP_VERSION='2026-10-15.9';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
