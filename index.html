@@ -4798,7 +4798,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.18';
+const APP_VERSION='2026-10-15.19';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -9924,6 +9924,19 @@ document.getElementById('cp-guardar').onclick=async()=>{
     const track=document.getElementById('cp-track').checked;
     // Fecha de vencimiento opcional: mismo helper que usan Recepción y Vencimientos
     const fechaVenc=fmtDateInputToDDMMAAAA(document.getElementById('cp-fecha').value);
+    // Con stock inicial, la fecha de vencimiento es obligatoria para los proveedores/marcas que la exigen
+    // (mismos que Recepción: Nestlé, Soprole, Colun, Ideal, Castaño, San Jorge, PF, Montina + los de cambio).
+    if((Number(stockRaw)||0)>0&&!fechaVenc){
+      if(!CATEGORIAS_CAMBIO.length){try{await cargarConfigCambio();}catch(e){}}
+      const catSel=document.getElementById('cp-cat');
+      const catTxt=(catSel&&catSel.value&&catSel.options&&catSel.options[catSel.selectedIndex])?catSel.options[catSel.selectedIndex].text:'';
+      const provSel=document.getElementById('cp-proveedor');
+      const provTxt=(provSel&&provSel.value&&provSel.options[provSel.selectedIndex])?provSel.options[provSel.selectedIndex].text:'';
+      if(esCategoriaCambio(catTxt)||rcExigeVencimiento({prov:catTxt,proveedorNombre:provTxt})){
+        rcAvisarFaltante({msg:'Falta la fecha de vencimiento ("'+(catTxt||provTxt)+'" la exige)',campo:'cp-fecha-dd'});
+        return;
+      }
+    }
     const taxIds=[];
     if(document.getElementById('cp-iva').checked){const iva=_cpImpuestos.find(t=>/iva/i.test(t.name)||t.rate===19);if(iva)taxIds.push(iva.id);}
     const cpProveedorId=document.getElementById('cp-proveedor').value||null;
