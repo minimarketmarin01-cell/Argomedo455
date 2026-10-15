@@ -4779,7 +4779,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.14';
+const APP_VERSION='2026-10-15.15';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15157,7 +15157,7 @@ function cp2MostrarCalendario(inp,alElegir){
   let y=ini[0],m=ini[1]-1;
   const etiqueta=iso=>{const [yy,mm,dd]=iso.split('-').map(Number);const d=new Date(yy,mm-1,dd);return ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'][d.getDay()]+' '+dd+' de '+CP2_MESES[mm-1];};
   function pintar(){
-    txt.textContent='Llegada: '+etiqueta(inp.value);
+    txt.textContent='Fecha sugerida: '+etiqueta(inp.value);
     const primero=new Date(y,m,1),offset=(primero.getDay()+6)%7,dias=new Date(y,m+1,0).getDate();
     let h='<div class="cp2-cal-head"><button type="button" class="cp2-nav" data-nav="-1" aria-label="Mes anterior">‹</button><span>'+CP2_MESES[m].charAt(0).toUpperCase()+CP2_MESES[m].slice(1)+' de '+y+'</span><button type="button" class="cp2-nav" data-nav="1" aria-label="Mes siguiente">›</button></div><div class="cp2-cal-grid">';
     CP2_DIAS.forEach(d=>{h+='<span class="cp2-dow">'+d+'</span>';});
@@ -15188,9 +15188,9 @@ function abrirConfirmarPedido({provNombre,lines,fechaSugerida,notaExtra,onConfir
         '<div class="mm-head"><h3>Confirmar pedido</h3></div>'+
         '<div class="mm-body">'+
           '<p id="cp2-resumen" style="font-size:13.5px;line-height:1.5;color:var(--ink2);margin:0 0 12px"></p>'+
-          '<label style="display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:4px">Fecha estimada de llegada</label>'+
+          '<div style="font-size:14px;font-weight:700;color:var(--verde);margin-bottom:8px">👇 Toca la fecha de llegada para confirmar el pedido</div>'+
           '<input type="hidden" id="cp2-fecha">'+'<div id="cp2-fecha-txt" style="font-weight:700;font-size:14px;margin-bottom:6px"></div>'+'<div id="cp2-cal" class="cp2-cal"></div>'+
-          '<button class="mm-save" id="cp2-btn-ok" style="width:100%">Confirmar</button>'+
+          '<button class="mm-save" id="cp2-btn-ok" style="display:none">Confirmar</button>'+
           '<button class="loadbtn" id="cp2-btn-cancel" style="width:100%;margin-top:8px">Cancelar</button>'+
         '</div>'+
       '</div>';
