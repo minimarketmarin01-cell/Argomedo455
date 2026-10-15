@@ -97,7 +97,14 @@ h1,h2,h3{font-family:'Manrope',system-ui,sans-serif}
 .fd-linea-swipe-fg{position:relative;background:var(--card);display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;transition:transform .18s ease;touch-action:pan-y}
 .fd-linea-swipe-fg.fd-dragging{transition:none}
 .fd-linea-texto{font-size:17px;color:var(--ink);min-width:0}
-.fd-linea-precio{font-size:16px;color:var(--muted);white-space:nowrap;flex:none}
+.fd-linea-precio{font-size:17px;color:var(--ink);white-space:nowrap;flex:none}
+.fd-linea-qty{color:var(--muted)}
+.fd-tk-pie{border-top:1px solid var(--line);padding:4px 14px 12px;font-size:16px;color:var(--ink)}
+.fd-tk-fila{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.fd-tk-fila:last-child{border-bottom:none}
+.fd-tk-fila .m{color:var(--muted)}
+.fd-tk-total{font-weight:700}
+.fd-tk-meta{display:flex;justify-content:space-between;gap:10px;padding-top:9px;font-size:13px;color:var(--muted)}
 .fd-linea-x{background:none;border:none;color:var(--muted);opacity:.5;font-size:20px;line-height:1;padding:4px 8px;cursor:pointer;flex:none;min-width:32px;min-height:32px}
 
 /* ---- Flujo de cobro de un toque (estilo Loyverse): "Monto a abonar" más discreto que el
@@ -655,6 +662,7 @@ function fdRenderDetalle(j,nombre){
     return `<div class="fd-ticket-card">
       <div class="fd-ticket-card-head"><span>${fechaChileLegible(f.fechaHora)}</span><span>${peso(f.saldo)}</span></div>
       <div class="fd-lineas-list">${lineasHtml}</div>
+      ${fdPieTicketHtml(f)}
       ${descuento>1?`<div style="font-size:12.5px;color:var(--verde);font-weight:700;padding:8px 14px">Descuento aplicado: -${peso(descuento)}</div>`:''}
     </div>`;
   }).join('');
@@ -729,12 +737,27 @@ function fdRenderDetalle(j,nombre){
 }
 
 // ---- Línea de producto con gesto swipe-to-delete (estilo Loyverse) ----
+// Cantidad con coma decimal, como la muestra Loyverse (0,025 / 1,4).
+function fdCant(n){return String(Number(n)).replace('.',',');}
+// Pie del ticket igual al de Loyverse: Impuesto (incluido), Total, forma de pago, fecha y N.º de recibo.
+function fdPieTicketHtml(f){
+  const total=Number(f.montoTotal)||0;
+  const iva=Math.round(total-total/1.19);
+  const saldo=Number(f.saldo)||0;
+  return `<div class="fd-tk-pie">
+    <div class="fd-tk-fila"><span>Impuesto <span class="m">(incluido)</span></span><span class="m">IVA 19 % ${peso(iva)}</span></div>
+    <div class="fd-tk-fila fd-tk-total"><span>Total</span><span>${peso(total)}</span></div>
+    <div class="fd-tk-fila"><span>OTROS (fiado)</span><span>${peso(total)}</span></div>
+    ${Math.abs(saldo-total)>1?`<div class="fd-tk-fila"><span>Saldo pendiente</span><span>${peso(saldo)}</span></div>`:''}
+    <div class="fd-tk-meta"><span>${fechaChileLegible(f.fechaHora)}</span><span>${f.recibo?'N.º '+f.recibo:''}</span></div>
+  </div>`;
+}
 function fdLineaSwipeHtml(fiadoId,l){
   const nombreAttr=(l.producto_nombre||'').replace(/"/g,'&quot;');
   return `<div class="fd-linea-swipe" data-linea-id="${l.id}" data-fiado-id="${fiadoId}" data-cantidad="${l.cantidad}" data-nombre="${nombreAttr}" data-open="0">
     <div class="fd-linea-swipe-bg"><button type="button" class="fd-linea-del-btn" data-linea-id="${l.id}" aria-label="Eliminar línea"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></div>
     <div class="fd-linea-swipe-fg">
-      <div class="fd-linea-texto">${l.cantidad} × ${l.producto_nombre}${Number(l.cantidad)!==1?`<span style="display:block;font-size:11px;color:var(--muted)">${l.cantidad} × ${peso(l.precio_unitario)} c/u</span>`:''}</div>
+      <div class="fd-linea-texto">${l.producto_nombre}${Number(l.cantidad)!==1?` <span class="fd-linea-qty">x ${fdCant(l.cantidad)}</span>`:''}</div>
       <div style="display:flex;align-items:center;gap:6px;flex:none">
         <span class="fd-linea-precio">${peso(l.cantidad*l.precio_unitario)}</span>
         <button type="button" class="fd-linea-x" data-linea-id="${l.id}" aria-label="Eliminar línea">×</button>
