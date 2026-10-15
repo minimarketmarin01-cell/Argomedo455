@@ -814,8 +814,11 @@ html.carrito-fijo #rc-ov .mm-sections{
 /* POS táctil (vista-filas): un toque en la fila agrega al carrito, un toque en STK corrige el stock y
    la ficha se abre con el botón ⓘ (ver ptbody click delegado). */
 html .card-cell{cursor:pointer;-webkit-tap-highlight-color:rgba(46,125,50,.12)}
-html .stk-val{display:inline-block;min-width:46px;min-height:34px;line-height:26px;padding:3px 8px;border-radius:9px;background:rgba(0,0,0,.05);border:1px dashed var(--line);text-align:center;cursor:pointer}
-.fila-info{flex:none;margin-left:auto;width:34px;height:34px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);color:var(--muted);font-size:17px;font-weight:700;font-family:Georgia,serif;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+html .stk-val{display:inline-block;min-width:46px;min-height:34px;line-height:30px;padding:2px 6px;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.fila-info{flex:none;margin-left:auto;width:30px;height:30px;border-radius:50%;border:0;background:transparent;color:var(--muted);opacity:.7;font-size:16px;font-weight:700;font-family:Georgia,serif;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+/* Sin franjas de color en el borde izquierdo de las filas (menos ruido visual). */
+.row-urgent,.row-pedir,.row-ok,.row-sobre,html .row-urgent,html .row-pedir,html .row-ok,html .row-sobre{box-shadow:none !important}
+html.modo-bliss .fila-row,html.modo-bliss .row-urgent .fila-row,html.modo-bliss .row-pedir .fila-row{border-left:0 !important;padding-left:0 !important}
 #stk-ov .stk-big{font-size:30px;font-weight:800;font-family:'JetBrains Mono';text-align:center}
 .in-cart-row .fila-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .in-cart-row .nom{font-weight:700;font-size:13px}
@@ -4211,7 +4214,7 @@ function rowHTML(it,a,f){const cant=qOf(it,a);
           `<span class="fila-prov">${nombreProveedorVisual(it)}</span>`+pendBadge+extraProvBadge+
         `</div>`+
         `<div class="fila-precios"><span class="fila-venta">${precioVal}</span><span class="fila-costo">${costoVal}</span><span class="fila-margen ${mgCls}">${mgVal}</span>${abcBadge}</div>`+
-        `<div class="fila-col"><span class="fila-lbl">STK</span><span class="stk-val" onclick="event.stopPropagation();stkCorregirAbrir('${it.ref}')">${statStock}</span></div>`+
+        `<div class="fila-col"><span class="fila-lbl">STK</span><span class="stk-val" onclick="event.stopPropagation();stkToque('${it.ref}')">${statStock}</span></div>`+
         `<div class="fila-col"><span class="fila-lbl">VTA</span><span><span class="trend ${a.trend.k}">${a.trend.t}</span> ${fmt.format(ventasPeriodo)}</span></div>`+
         `<div class="fila-col" style="color:${covColor(a)}"><span class="fila-lbl">COB</span><span>${covTxt}</span></div>`+
         `<div class="fila-pedir">${stepper}</div>`+
@@ -4226,7 +4229,7 @@ function rowHTML(it,a,f){const cant=qOf(it,a);
         `<div class="prod-meta">${nombreProveedorVisual(it)}</div>`+pendBadge+extraProvBadge+
         priceLine+
         `<div class="card-stats">`+
-          `<span class="cstat cstat-stock"><span class="cstat-label">STK</span> <span class="stk-val" onclick="event.stopPropagation();stkCorregirAbrir('${it.ref}')">${statStock}</span></span>`+
+          `<span class="cstat cstat-stock"><span class="cstat-label">STK</span> <span class="stk-val" onclick="event.stopPropagation();stkToque('${it.ref}')">${statStock}</span></span>`+
           `<span class="cstat"><span class="trend ${a.trend.k}">${a.trend.t}</span><span class="cstat-label">VTA</span> ${fmt.format(ventasPeriodo)}</span>`+
           `<span class="cstat cstat-cov" style="color:${covColor(a)}"><span class="cstat-label" style="color:inherit">COB</span> ${covTxt}</span>`+
         `</div>`+
@@ -4622,7 +4625,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.3';
+const APP_VERSION='2026-10-15.5';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -7116,7 +7119,18 @@ document.getElementById('ptbody').addEventListener('click',ev=>{
 });
 
 // ---- Corregir stock con un toque en STK (POS táctil) — misma acción que Reconteo/Ficha ----
-let _stkRef=null;
+let _stkRef=null,_stkTimer=null,_stkRefTap=null;
+// STK: un toque alterna unidades ↔ cajas/displays (si el producto tiene empaque); dos toques rápidos
+// abren "Corregir stock". El toque simple espera ~260 ms por si viene el segundo.
+function stkToque(ref){
+  if(_stkTimer&&_stkRefTap===ref){clearTimeout(_stkTimer);_stkTimer=null;stkCorregirAbrir(ref);return;}
+  clearTimeout(_stkTimer);_stkRefTap=ref;
+  _stkTimer=setTimeout(()=>{
+    _stkTimer=null;
+    const it=(DB.items||[]).find(i=>i.ref===ref);
+    if(it&&it.fmt>1&&typeof toggleStockPacks==='function')toggleStockPacks(ref);
+  },260);
+}
 function stkCorregirAbrir(ref){
   const it=DB.items.find(i=>i.ref===ref);
   if(!it){showToast('Producto no encontrado');return;}
