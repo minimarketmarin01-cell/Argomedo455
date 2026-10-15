@@ -1756,8 +1756,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
 
 /* ==== Pedidos más limpio (menos ruido visual, armado de pedido más cómodo) ====
    1) una sola señal de estado: fondo suave (sin ●, etiquetas ni chips de color);
-   2) menos datos por fila: nombre, proveedor, STK, sugerido y cantidad (precio, costo, margen, VTA y COB
-      quedan en la ficha);
+   2) (revertido: la lista vuelve a mostrar precio, costo, margen, VTA y COB);
    3) botones − / + y cantidad más grandes;
    6) tipografía y colores más calmados. */
 html .row-urgent{background:#FDF6F5 !important}
@@ -1769,26 +1768,17 @@ html .row-urgent .fila-nombre::before,html .row-pedir .fila-nombre::before,
 html .row-urgent .card-main::before,html .row-pedir .card-main::before{content:none !important;display:none !important}
 html .fila-badge{display:none !important}
 html .row-urgent .card-stats .cstat-cov,html .row-pedir .card-stats .cstat-cov{background:none !important;padding:0 !important}
-/* datos que se ocultan en la lista */
-html .prod-prices,html .fila-precios,html .abc-badge,html .card-stats .cstat:not(.cstat-stock),
-html .fila-row>div:nth-of-type(5),html .fila-row>div:nth-of-type(6){display:none !important}
-html .ptable-head>*:nth-child(3),html .ptable-head>*:nth-child(4){display:none !important}
-/* fila táctil: miniatura | nombre | STK | pedir */
-html.vista-filas .fila-row,html.modo-bliss .fila-row{display:grid !important;grid-template-columns:52px minmax(0,1fr) 84px 172px;grid-template-rows:auto;align-items:center;column-gap:10px;border-left:0 !important}
-html.vista-filas .fila-thumb,html.modo-bliss .fila-thumb{grid-column:1;grid-row:1;width:52px;height:52px;border-radius:9px}
-html.vista-filas .fila-thumb .card-thumb,html.vista-filas .fila-thumb .card-thumb-empty,
-html.modo-bliss .fila-thumb .card-thumb,html.modo-bliss .fila-thumb .card-thumb-empty{width:52px;height:52px}
-html.vista-filas .fila-nombre-col,html.modo-bliss .fila-nombre-col{grid-column:2;grid-row:1}
-html.vista-filas .fila-row>div:nth-of-type(4),html.modo-bliss .fila-row>div:nth-of-type(4){grid-column:3;grid-row:1}
-html.vista-filas .fila-pedir,html.modo-bliss .fila-pedir{grid-column:4;grid-row:1}
-html.vista-filas .ptable-head>*:nth-child(2),html.modo-bliss .ptable-head>*:nth-child(2){flex:0 0 84px}
-html.vista-filas .ptable-head>*:nth-child(5),html.modo-bliss .ptable-head>*:nth-child(5){flex:0 0 172px}
+/* fila táctil BlissOS: misma grilla de antes, con la columna "Pedir" más ancha para los botones grandes */
+html.modo-bliss .fila-row{grid-template-columns:52px minmax(0,1fr) 100px 64px 66px 172px !important;border-left:0 !important}
+html.modo-bliss .ptable-head>*:nth-child(5){flex:0 0 172px}
 /* botones − / + y cantidad más grandes (fila y tarjeta) */
 html .qbtn,html.vista-filas .qbtn,html.modo-bliss .qbtn{width:46px !important;height:46px !important;font-size:22px !important}
 html .qty-in,html.vista-filas .qty-in,html.modo-bliss .qty-in{width:54px !important;height:46px !important;padding:0 !important;font-size:19px !important;font-weight:700}
 html .qstep{border-radius:12px}
 .card-stepper{min-width:132px}
 html:not(.vista-filas) .qbtn{width:40px !important;height:44px !important}
+html.vista-filas:not(.modo-bliss) .qbtn{width:18px !important;height:25px !important;font-size:13px !important}
+html.vista-filas:not(.modo-bliss) .qty-in{width:20px !important;height:auto !important;padding:3px 1px !important;font-size:12px !important}
 html:not(.vista-filas) .qty-in{width:48px !important;height:44px !important}
 html .row-urgent .fila-row,html .row-pedir .fila-row,html .row-ok .fila-row,html .row-sobre .fila-row{background:transparent !important}
 html.vista-filas .fila-pedir{border-left:0 !important}
@@ -4670,7 +4660,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.6';
+const APP_VERSION='2026-10-15.7';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
