@@ -1817,6 +1817,15 @@ html.modo-bliss .ptable-head>*:nth-child(5){flex:0 0 132px}
 .oline .mp-toggle-btn{padding:6px;opacity:.75}
 .oline-mp{flex:1 1 100%;order:9;margin-top:4px;padding:8px 10px;border-radius:10px;background:var(--paper);border:1.5px solid var(--line)}
 .oline-mp.hidden{display:none}
+.cp2-cal{margin-bottom:12px}
+.cp2-cal-head{display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:14px;margin-bottom:6px}
+.cp2-nav{width:40px;height:36px;border:1px solid var(--line);background:var(--card);border-radius:10px;font-size:20px;line-height:1;cursor:pointer}
+.cp2-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center}
+.cp2-dow{font-size:11px;color:var(--muted);padding:3px 0;text-transform:uppercase}
+.cp2-dia{height:40px;border:0;border-radius:10px;background:transparent;font-size:15px;font-weight:600;color:var(--ink);cursor:pointer}
+.cp2-dia:disabled{color:var(--line);cursor:default}
+.cp2-dia.hoy{box-shadow:inset 0 0 0 1.5px var(--muted)}
+.cp2-dia.sel{background:var(--verde);color:#fff}
 </style>
 </head>
 <body>
@@ -4770,7 +4779,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.12';
+const APP_VERSION='2026-10-15.13';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15138,6 +15147,36 @@ function confirmarAccion({titulo,mensaje,textoConfirmar,textoCancelar,peligro,on
 // fechaSugerida (opcional): si se está retomando un pedido ya confirmado (ver
 // cargarPedidoConfirmadoEnCarrito), se prellena con la fecha YA acordada con el proveedor en
 // vez de recalcularla de cero con estimarFechaLlegada — así no se pisa sin querer.
+// Calendario propio (embebido) para "Confirmar pedido": semana desde el lunes, días pasados deshabilitados.
+const CP2_MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const CP2_DIAS=['lun','mar','mié','jue','vie','sáb','dom'];
+function cp2MostrarCalendario(inp,alElegir){
+  const box=document.getElementById('cp2-cal'),txt=document.getElementById('cp2-fecha-txt');
+  const hoy=isoLocalDate(new Date());
+  const ini=(inp.value||hoy).split('-').map(Number);
+  let y=ini[0],m=ini[1]-1;
+  const etiqueta=iso=>{const [yy,mm,dd]=iso.split('-').map(Number);const d=new Date(yy,mm-1,dd);return ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'][d.getDay()]+' '+dd+' de '+CP2_MESES[mm-1];};
+  function pintar(){
+    txt.textContent='Llegada: '+etiqueta(inp.value);
+    const primero=new Date(y,m,1),offset=(primero.getDay()+6)%7,dias=new Date(y,m+1,0).getDate();
+    let h='<div class="cp2-cal-head"><button type="button" class="cp2-nav" data-nav="-1" aria-label="Mes anterior">‹</button><span>'+CP2_MESES[m].charAt(0).toUpperCase()+CP2_MESES[m].slice(1)+' de '+y+'</span><button type="button" class="cp2-nav" data-nav="1" aria-label="Mes siguiente">›</button></div><div class="cp2-cal-grid">';
+    CP2_DIAS.forEach(d=>{h+='<span class="cp2-dow">'+d+'</span>';});
+    for(let i=0;i<offset;i++)h+='<span></span>';
+    for(let d=1;d<=dias;d++){
+      const iso=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+      const cls='cp2-dia'+(iso===inp.value?' sel':'')+(iso===hoy?' hoy':'');
+      h+='<button type="button" class="'+cls+'" data-iso="'+iso+'"'+(iso<hoy?' disabled':'')+'>'+d+'</button>';
+    }
+    box.innerHTML=h+'</div>';
+  }
+  box.onclick=e=>{
+    const nav=e.target.closest('[data-nav]');
+    if(nav){m+=Number(nav.dataset.nav);if(m<0){m=11;y--;}if(m>11){m=0;y++;}pintar();return;}
+    const dia=e.target.closest('[data-iso]');
+    if(dia&&!dia.disabled){inp.value=dia.dataset.iso;pintar();setTimeout(alElegir,180);}
+  };
+  pintar();
+}
 function abrirConfirmarPedido({provNombre,lines,fechaSugerida,notaExtra,onConfirm}){
   let modal=document.getElementById('cp2-ov');
   if(!modal){
@@ -15150,7 +15189,7 @@ function abrirConfirmarPedido({provNombre,lines,fechaSugerida,notaExtra,onConfir
         '<div class="mm-body">'+
           '<p id="cp2-resumen" style="font-size:13.5px;line-height:1.5;color:var(--ink2);margin:0 0 12px"></p>'+
           '<label style="display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:4px">Fecha estimada de llegada</label>'+
-          '<input type="date" id="cp2-fecha" style="width:100%;padding:9px 10px;border-radius:10px;border:1px solid var(--line);font-size:13.5px;font-family:inherit;margin-bottom:16px;box-sizing:border-box">'+
+          '<input type="hidden" id="cp2-fecha">'+'<div id="cp2-fecha-txt" style="font-weight:700;font-size:14px;margin-bottom:6px"></div>'+'<div id="cp2-cal" class="cp2-cal"></div>'+
           '<button class="mm-save" id="cp2-btn-ok" style="width:100%">Sí, ya lo pedí</button>'+
           '<button class="loadbtn" id="cp2-btn-cancel" style="width:100%;margin-top:8px">Cancelar</button>'+
         '</div>'+
@@ -15178,16 +15217,8 @@ function abrirConfirmarPedido({provNombre,lines,fechaSugerida,notaExtra,onConfir
   modal.classList.remove('hidden');
   void modal.offsetWidth;
   _sincronizarNav();
-  // El calendario se abre solo y, al elegir la fecha (Aceptar), el pedido se confirma y la ventana se
-  // cierra. Si escribe la fecha con el teclado no se confirma solo (solo cuando viene del calendario).
-  let _viaCalendario=false;
-  fechaInp.onkeydown=()=>{_viaCalendario=false;};
-  fechaInp.onpointerdown=()=>{_viaCalendario=true;};
-  fechaInp.onchange=()=>{if(_viaCalendario&&fechaInp.value&&!btnOk.disabled)btnOk.click();};
-  setTimeout(()=>{
-    if(modal.classList.contains('hidden'))return;
-    try{if(fechaInp.showPicker){_viaCalendario=true;fechaInp.showPicker();}}catch(e){_viaCalendario=false;}
-  },200);
+  // Calendario embebido en la ventana: al tocar un día se elige la fecha, se confirma el pedido y se cierra.
+  cp2MostrarCalendario(fechaInp,()=>{if(!btnOk.disabled)btnOk.click();});
 }
 
 // Condición ÚNICA y central que decide si el autorrelleno del carrito puede tocar algo:
