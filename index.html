@@ -811,6 +811,12 @@ html.carrito-fijo #rc-ov .mm-sections{
 .hm-motbtn:active{background:var(--line)}
 .hm-fixnote{font-size:10px;color:var(--muted);margin-top:7px;font-style:italic}
 .in-cart-row{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:7px}
+/* POS táctil (vista-filas): un toque en la fila agrega al carrito, un toque en STK corrige el stock y
+   la ficha se abre con el botón ⓘ (ver ptbody click delegado). */
+html.vista-filas .card-cell{cursor:pointer;-webkit-tap-highlight-color:rgba(46,125,50,.12)}
+html.vista-filas .stk-val{display:inline-block;min-width:46px;min-height:34px;line-height:26px;padding:3px 8px;border-radius:9px;background:rgba(0,0,0,.05);border:1px dashed var(--line);text-align:center;cursor:pointer}
+.fila-info{flex:none;margin-left:auto;width:34px;height:34px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);color:var(--muted);font-size:17px;font-weight:700;font-family:Georgia,serif;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+#stk-ov .stk-big{font-size:30px;font-weight:800;font-family:'JetBrains Mono';text-align:center}
 .in-cart-row .fila-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .in-cart-row .nom{font-weight:700;font-size:13px}
 .in-cart-row .cat{font-size:11px;color:var(--muted)}
@@ -2008,6 +2014,27 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
           <button type="button" class="ck" data-k="0">0</button>
           <button type="button" class="ck" data-k=".">,</button>
           <button type="button" class="ck ck-eq" data-k="=">=</button>
+        </div>
+      </div>
+    </div>
+    <div class="mm-ov hidden" id="stk-ov">
+      <div class="mm-card">
+        <div class="mm-head"><h3>Corregir stock</h3><button class="loadbtn" id="stk-cancelar" type="button">Cancelar</button></div>
+        <div class="mm-body">
+          <div class="mm-field">
+            <div id="stk-nombre" style="font-weight:700;font-size:15px;margin-bottom:6px">—</div>
+            <div style="color:var(--muted);font-size:12px;text-align:center">Stock actual</div>
+            <div class="stk-big" id="stk-actual">—</div>
+          </div>
+          <div class="mm-field">
+            <label>Stock real (contado)</label>
+            <div class="mm-qty">
+              <button class="qbtn" id="stk-menos" type="button">−</button>
+              <input id="stk-nuevo" inputmode="decimal" placeholder="0">
+              <button class="qbtn" id="stk-mas" type="button">+</button>
+            </div>
+          </div>
+          <button class="mm-save" id="stk-guardar" type="button" style="width:100%">Guardar stock</button>
         </div>
       </div>
     </div>
@@ -4180,11 +4207,11 @@ function rowHTML(it,a,f){const cant=qOf(it,a);
         `<div class="fila-thumb">${thumb}</div>`+
         `<div class="fila-nombre-col">`+
           `<span class="fila-badge">${a.status==='urgente'?'URGENTE':a.status==='pedir'?'A PEDIR':''}</span>`+
-          `<span class="fila-nombre-line" style="display:flex;align-items:flex-start;gap:3px">${favStarHTML(it.ref)}<span class="fila-nombre prod-name">${it.nombre}</span></span>`+
+          `<span class="fila-nombre-line" style="display:flex;align-items:flex-start;gap:3px">${favStarHTML(it.ref)}<span class="fila-nombre prod-name">${it.nombre}</span><button type="button" class="fila-info" data-info="${it.ref}" aria-label="Abrir ficha del producto">i</button></span>`+
           `<span class="fila-prov">${nombreProveedorVisual(it)}</span>`+pendBadge+extraProvBadge+
         `</div>`+
         `<div class="fila-precios"><span class="fila-venta">${precioVal}</span><span class="fila-costo">${costoVal}</span><span class="fila-margen ${mgCls}">${mgVal}</span>${abcBadge}</div>`+
-        `<div class="fila-col"><span class="fila-lbl">STK</span><span>${statStock}</span></div>`+
+        `<div class="fila-col"><span class="fila-lbl">STK</span><span class="stk-val" onclick="event.stopPropagation();stkCorregirAbrir('${it.ref}')">${statStock}</span></div>`+
         `<div class="fila-col"><span class="fila-lbl">VTA</span><span><span class="trend ${a.trend.k}">${a.trend.t}</span> ${fmt.format(ventasPeriodo)}</span></div>`+
         `<div class="fila-col" style="color:${covColor(a)}"><span class="fila-lbl">COB</span><span>${covTxt}</span></div>`+
         `<div class="fila-pedir">${stepper}</div>`+
@@ -4595,7 +4622,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.1';
+const APP_VERSION='2026-10-15.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -7070,11 +7097,68 @@ async function fpEliminarProducto(f){
 document.getElementById('fp-eliminar-btn').onclick=()=>{if(_fpActual)fpEliminarProducto(_fpActual);};
 
 document.getElementById('ptbody').addEventListener('click',ev=>{
+  const filas=document.documentElement.classList.contains('vista-filas');
+  // POS táctil (vista-filas): el botón ⓘ abre la ficha; un toque en cualquier otra parte de la
+  // fila agrega 1 al carrito (igual que Loyverse). Fuera de ese modo, el nombre sigue abriendo la ficha.
+  if(filas){
+    const info=ev.target.closest('.fila-info');
+    if(info){ev.stopPropagation();fpAbrir(info.dataset.info);return;}
+    if(ev.target.closest('button,input,select,textarea,a,[onclick],.mp-panel,.qcell,.cambio-badge,.pend-badge,.abc-badge'))return;
+    const fila=ev.target.closest('.card-cell[data-ref]');
+    const mas=fila&&fila.querySelector('.qbtn[data-d="1"]');
+    if(mas){mas.click();fila.classList.remove('flash-update');void fila.offsetWidth;fila.classList.add('flash-update');}
+    return;
+  }
   const nom=ev.target.closest('.prod-name');
   if(!nom)return;
   const tr=nom.closest('[data-ref]');
   if(tr)fpAbrir(tr.dataset.ref);
 });
+
+// ---- Corregir stock con un toque en STK (POS táctil) — misma acción que Reconteo/Ficha ----
+let _stkRef=null;
+function stkCorregirAbrir(ref){
+  const it=DB.items.find(i=>i.ref===ref);
+  if(!it){showToast('Producto no encontrado');return;}
+  _stkRef=ref;
+  document.getElementById('stk-nombre').textContent=it.nombre;
+  document.getElementById('stk-actual').textContent=it.stock!=null?fmt1(it.stock):'—';
+  const inp=document.getElementById('stk-nuevo');inp.value='';inp.placeholder=it.stock!=null?fmt1(it.stock):'0';
+  abrirModal('stk-ov');
+  setTimeout(()=>{try{inp.focus();}catch(e){}},150);
+}
+function stkPaso(d){
+  const inp=document.getElementById('stk-nuevo');
+  const base=inp.value.trim()===''?(Number(inp.placeholder)||0):(Number(inp.value)||0);
+  inp.value=String(Math.max(0,+(base+d).toFixed(3)));
+}
+async function stkCorregirGuardar(){
+  const inp=document.getElementById('stk-nuevo');
+  const val=inp.value.trim();
+  if(val===''){showToast('Escribe el stock real primero');return;}
+  const nuevo=Number(val.replace(',','.'));
+  if(isNaN(nuevo)||nuevo<0){showToast('Cantidad inválida');return;}
+  const btn=document.getElementById('stk-guardar');
+  btn.disabled=true;btn.textContent='Guardando…';
+  try{
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'ajustar_stock',payload:{sku:_stkRef,stockNuevo:nuevo,motivo:'Corrección desde Pedidos',responsable:''}})});
+    const j=await res.json();
+    if(j&&j.ok){
+      const it=DB.items.find(x=>x.ref===_stkRef);
+      if(it){it.stock=j.stockNuevo!=null?j.stockNuevo:nuevo;if(j.trackHabilitado)it.track=true;}
+      persist();sonidoGuardado();
+      showToast((it?it.nombre:'Stock')+' → '+fmt1(nuevo));
+      cerrarModal('stk-ov');
+      try{render();}catch(e){}
+    }else showToast(''+((j&&j.error)||'No se pudo guardar'));
+  }catch(e){showToast('Error de conexión al guardar');}
+  finally{btn.disabled=false;btn.textContent='Guardar stock';}
+}
+document.getElementById('stk-cancelar').onclick=()=>cerrarModal('stk-ov');
+document.getElementById('stk-menos').onclick=()=>stkPaso(-1);
+document.getElementById('stk-mas').onclick=()=>stkPaso(1);
+document.getElementById('stk-guardar').onclick=stkCorregirGuardar;
+document.getElementById('stk-nuevo').addEventListener('keydown',e=>{if(e.key==='Enter')stkCorregirGuardar();});
 // En Reconteo el nombre es solo informativo — a diferencia de Pedidos, acá NO abre la Ficha,
 // para no interrumpir el flujo de contar/escribir stock por accidente al tocar el nombre.
 const rkState={cat:'',search:'',sort:'nombre',dir:1};
