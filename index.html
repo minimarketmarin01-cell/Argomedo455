@@ -787,7 +787,7 @@ html.carrito-fijo #rc-ov .mm-sections{
 .hm-summary .val{font-family:'JetBrains Mono';font-weight:700;font-size:16px;color:var(--rojo)}
 .hm-row{border-bottom:1px solid var(--line2);padding:9px 0}
 .hm-row:last-child{border-bottom:none}
-.hm-row .top{display:flex;justify-content:space-between;gap:8px}
+.hm-row .fila-top{display:flex;justify-content:space-between;gap:8px}
 .hm-row .nom{font-weight:700;font-size:13px}
 .hm-row .costo{font-family:'JetBrains Mono';font-weight:700;font-size:13px;white-space:nowrap}
 .hm-row .meta{font-size:11.5px;color:var(--muted);margin-top:2px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
@@ -811,7 +811,7 @@ html.carrito-fijo #rc-ov .mm-sections{
 .hm-motbtn:active{background:var(--line)}
 .hm-fixnote{font-size:10px;color:var(--muted);margin-top:7px;font-style:italic}
 .in-cart-row{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:7px}
-.in-cart-row .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.in-cart-row .fila-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .in-cart-row .nom{font-weight:700;font-size:13px}
 .in-cart-row .cat{font-size:11px;color:var(--muted)}
 .in-cart-row .x{background:none;border:none;color:var(--rojo);font-size:16px;cursor:pointer;padding:0 2px;line-height:1}
@@ -4595,7 +4595,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-14.91';
+const APP_VERSION='2026-10-15.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -9895,7 +9895,7 @@ function mmRenderCart(){
       const sinCosto=!(c.coste>0);
       return `
       <div class="in-cart-row" data-ref="${c.ref}">
-        <div class="top"><span class="nom">${c.nombre}</span><button class="x" data-x="${c.ref}" aria-label="Quitar de la lista"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div>
+        <div class="fila-top"><span class="nom">${c.nombre}</span><button class="x" data-x="${c.ref}" aria-label="Quitar de la lista"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div>
         <div class="cat">${c.prov}${c.peso?' · ⚖️ kg':''}${c.origen==='vencimiento'?' · desde Vencimientos':''}</div>
         <div class="qtyrow">
           <button class="qbtn" data-menos="${c.ref}" type="button">−</button>
@@ -12289,7 +12289,7 @@ function hmPintar(items){
       const warn=it.estadoCosto&&String(it.estadoCosto).indexOf('')===0;
       return `
       <div class="hm-row" data-fi="${it.filaIndex}">
-        <div class="top"><span class="nom">${it.nombre}</span><span class="costo">${peso(it.costoTotal)}</span></div>
+        <div class="fila-top"><span class="nom">${it.nombre}</span><span class="costo">${peso(it.costoTotal)}</span></div>
         <div class="meta">
           <span>${it.fecha}</span>·<span>${it.cantidad} ${it.unidad}</span>·<span>${it.categoria}</span>
           <span class="hm-badge ${mkey}">${MOTIVO_LBL[mkey]}</span>
@@ -12427,7 +12427,7 @@ function inRenderCart(){
       const sinCosto=!(c.coste>0);
       return `
       <div class="in-cart-row" data-ref="${c.ref}">
-        <div class="top"><span class="nom">${c.nombre}</span><button class="x" data-x="${c.ref}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+        <div class="fila-top"><span class="nom">${c.nombre}</span><button class="x" data-x="${c.ref}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
         <div class="cat">${c.prov}${c.peso?' · ⚖️ kg':''}</div>
         <div class="qtyrow">
           <button class="qbtn" data-menos="${c.ref}" type="button">−</button>

@@ -3869,6 +3869,22 @@ const MOTIVOS_MERMA_VALIDOS = ["liquidado", "vencido", "dañado", "robo", "consu
 // el flujo de Descuentos activos, para contabilizar la parte de un lote que no se
 // logra vender antes de vencer. El costo sale de Loyverse cuando el producto lo
 // tiene cargado; si no, se acepta costoManual (digitado a mano en el formulario).
+// Costo escrito a mano en un producto que Loyverse tiene SIN costo: además de usarlo para el
+// registro, se guarda en Loyverse (y en D1) para que el producto deje de quedar sin costo.
+// Mejor esfuerzo: si Loyverse falla, el registro igual usa el costo escrito.
+async function guardarCostoManualEnLoyverse(env, it, costo) {
+  if (!it || !it.id_loyverse || !(costo > 0)) return false;
+  try {
+    await actualizarPrecioCostoLoyverse(env, it.id_loyverse, it.variant_id, null, costo);
+    try { await run(env, "UPDATE productos SET costo = ? WHERE sku = ?", costo, String(it.sku)); } catch (e) { /* el webhook lo refleja igual */ }
+    await logMsg(env, "💲 Costo guardado en Loyverse desde Merma: " + it.nombre + " · $" + costo);
+    return true;
+  } catch (e) {
+    await logMsg(env, "⚠️ No se pudo guardar el costo en Loyverse (" + it.nombre + "): " + e.message);
+    return false;
+  }
+}
+
 async function accionMerma(env, payload) {
   payload = payload || {};
   const it = await get(env, "SELECT * FROM productos WHERE sku = ?", String(payload.sku || "").trim());
@@ -3886,6 +3902,7 @@ async function accionMerma(env, payload) {
   // El costo de Loyverse manda siempre que exista — el manual es solo un respaldo
   // para productos que todavía no lo tienen cargado ahí.
   const costoUnit = costoLoyverse > 0 ? costoLoyverse : costoManual;
+  if (!(costoLoyverse > 0) && costoManual > 0) await guardarCostoManualEnLoyverse(env, it, costoManual);
   const costoTotal = Math.round(cantidad * costoUnit);
   const motivo = MOTIVOS_MERMA_VALIDOS.includes(payload.motivo) ? payload.motivo : "otro";
   const origen = payload.origen === "vencimiento" ? "vencimiento" : "manual";
