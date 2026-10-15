@@ -1788,6 +1788,20 @@ html .sug-hint{font-size:13px;font-weight:600;color:var(--ink2)}
 html .prod-name,html .fila-nombre,html.modo-bliss .fila-nombre{font-weight:600 !important;color:var(--ink)}
 html .prod-meta,html .fila-prov{font-weight:400 !important;color:var(--muted);font-size:12.5px}
 html .card-stats .cstat-stock,html .fila-col{font-weight:600}
+
+/* Carrito: "Escala de volumen" y "Carritos guardados" en una sola fila (mitad cada uno), compactos y con
+   fondo claro para no cansar la vista; al abrir uno, ocupa todo el ancho. */
+#order-body .qbtn{width:38px !important;height:40px !important;font-size:19px !important}
+#order-body .qty-in{width:44px !important;height:40px !important;font-size:17px !important}
+.cart-extras{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.cart-extras .scalecard{flex:1 1 0;min-width:0;border-radius:10px}
+.cart-extras .scalecard.abierta{flex:1 1 100%}
+.cart-extras .scale-head{background:#F2F4EC;color:var(--ink);padding:7px 10px;gap:6px;border-bottom:1px solid transparent}
+.cart-extras .scale-head .t{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cart-extras .scale-head .s{color:var(--muted);font-size:11px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.cart-extras .scale-head>div{min-width:0}
+.cart-extras .scale-head .accordion-chev{width:15px;height:15px;color:var(--muted)}
+.cart-extras .scale-head.open{border-bottom-color:var(--line)}
 </style>
 </head>
 <body>
@@ -2588,13 +2602,15 @@ html .card-stats .cstat-stock,html .fila-col{font-weight:600}
           </div>
         </div>
       </div>
-      <div class="scalecard hidden" id="scalecard" style="margin-top:12px">
+      <div class="cart-extras">
+      <div class="scalecard hidden" id="scalecard">
         <div class="scale-head" id="scale-head"><div><div class="t">⚡ Escala de volumen</div><div class="s" id="scale-sub"></div></div><svg class="accordion-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
         <div class="scale-body accordion-body collapsed" id="scale-body"></div>
       </div>
-      <div class="scalecard" id="cg-card" style="margin-top:12px">
+      <div class="scalecard" id="cg-card">
         <div class="scale-head" id="cg-head"><div><div class="t">🔖 Carritos guardados</div><div class="s" id="cg-sub">—</div></div><svg class="accordion-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
         <div class="scale-body accordion-body collapsed" id="cg-body"></div>
+      </div>
       </div>
     </div>
   </div>
@@ -4329,6 +4345,15 @@ function toggleAccordion(headEl,bodyEl,openState){
   headEl.classList.toggle('open',open);
   return open;
 }
+
+// Al abrir "Escala de volumen" o "Carritos guardados" ocupa todo el ancho de la fila; cerrado, comparte la fila.
+(function(){
+  ['scale-head','cg-head'].forEach(id=>{
+    const h=document.getElementById(id);
+    if(h)h.addEventListener('click',()=>setTimeout(()=>{const c=h.closest('.scalecard');if(c)c.classList.toggle('abierta',h.classList.contains('open'));},0));
+  });
+})();
+
 (function(){
   const head=document.getElementById('ayuda-head');
   if(head)head.onclick=()=>toggleAccordion(head,document.getElementById('ayuda-body'));
@@ -4391,6 +4416,14 @@ function cartUpdateTotals(){
   const badge=document.getElementById('cart-badge');
   if(badge){badge.textContent=totalFilas>99?'99+':totalFilas;badge.classList.toggle('on',totalFilas>0);}
 }
+
+// Líneas del carrito cuyo costo se muestra POR UNIDAD (un toque en el costo alterna total ↔ c/u).
+const CART_COSTO_UNIT=new Set();
+function cartSubHtml(it,q,cost,provTag){
+  const unit=CART_COSTO_UNIT.has(it.ref);
+  const txt=unit?(peso(q>0?cost/q:0)+' c/u'):peso(cost);
+  return (provTag||'')+txt+(it.fmt>1?' · '+q+' u':'')+(it.stock!=null?' · STK: '+it.stock:'');
+}
 function cartApplyQty(ref,newPacks){
   const it=DB.items.find(i=>i.ref===ref);
   if(!it)return;
@@ -4406,7 +4439,7 @@ function cartApplyQty(ref,newPacks){
     if(!document.querySelector('#order-body .oline'))document.getElementById('order-body').innerHTML='<div class="order-empty">Sin productos sugeridos con los parámetros actuales.</div>';
   }else if(row){
     const q=newPacks*it.fmt,cost=tierCostUn(it)*q;
-    const sub=row.querySelector('.oline-sub');if(sub)sub.textContent=peso(cost)+(it.fmt>1?' · '+q+' u':'')+(it.stock!=null?' · STK: '+it.stock:'');
+    const sub=row.querySelector('.oline-sub');if(sub){const pt=sub.querySelector('.oline-prov-tag');sub.innerHTML=cartSubHtml(it,q,cost,pt?pt.outerHTML:'');}
     const qty=row.querySelector('.qty-in');if(qty&&+qty.value!==newPacks)qty.value=newPacks;
     const qstep=row.querySelector('.qstep');if(qstep)qstep.classList.toggle('has',newPacks>0);
     const qw=row.querySelector('.qword');if(qw)qw.textContent=labelFor(it,newPacks);
@@ -4460,7 +4493,7 @@ function renderOrder(){
     return `<div class="oline" data-ref="${l.it.ref}"${color?` style="border-left:4px solid ${color};padding-left:8px"`:''}>
       <div class="on-wrap">
         <span class="on">${l.nombre}</span>
-        <span class="oline-sub">${provTag}${peso(l.cost)}${l.it.fmt>1?' · '+(l.q)+' u':''}${stockTxt}</span>
+        <span class="oline-sub" title="Toca para ver el costo por unidad">${cartSubHtml(l.it,l.q,l.cost,provTag)}</span>
         ${cambio>0?`<span class="oline-cambio"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.7-3"/><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3"/><polyline points="21 3 21 9 15 9"/><polyline points="3 21 3 15 9 15"/></svg> Cambio: ${fmt.format(cambio)} u</span>`:''}
       </div>
       <div class="qcell">
@@ -4494,6 +4527,17 @@ function renderOrder(){
       const row=del.closest('.oline');
       const ref=row&&row.dataset.ref;
       if(ref)cartApplyQty(ref,0);
+      return;
+    }
+    const subTap=ev.target.closest('.oline-sub');
+    if(subTap&&subTap.closest('.oline')){
+      const row=subTap.closest('.oline'),ref=row.dataset.ref;
+      const it=DB.items.find(i=>i.ref===ref);
+      if(it){
+        if(CART_COSTO_UNIT.has(ref))CART_COSTO_UNIT.delete(ref);else CART_COSTO_UNIT.add(ref);
+        const q=state.edits[ref]||0,pt=subTap.querySelector('.oline-prov-tag');
+        subTap.innerHTML=cartSubHtml(it,q,tierCostUn(it)*q,pt?pt.outerHTML:'');
+      }
       return;
     }
     const b=ev.target.closest('.qbtn');
@@ -4660,7 +4704,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.7';
+const APP_VERSION='2026-10-15.8';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
