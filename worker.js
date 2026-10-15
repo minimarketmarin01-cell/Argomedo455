@@ -2360,7 +2360,7 @@ async function repFiadosCliente(env, clienteId) {
   const detalle = fiadosAbiertos.map(f => {
     const saldo = Math.round(f.saldo * 100) / 100;
     saldoTotal += saldo;
-    return { fiadoId: f.id, fechaHora: f.fecha_hora, montoTotal: f.monto_total, saldo, lineas: lineasPorFiado[f.id] || [] };
+    return { fiadoId: f.id, fechaHora: f.fecha_hora, montoTotal: f.monto_total, recibo: f.receipt_id_loyverse, saldo, lineas: lineasPorFiado[f.id] || [] };
   });
   return { saldoTotal: Math.round(saldoTotal * 100) / 100, fiadosAbiertos: detalle };
 }
