@@ -1813,6 +1813,10 @@ html .card-stats .cstat-stock,html .fila-col{font-weight:600}
 .card-stepper{min-width:96px}
 html.modo-bliss .fila-row{grid-template-columns:52px minmax(0,1fr) 100px 64px 66px 132px !important}
 html.modo-bliss .ptable-head>*:nth-child(5){flex:0 0 132px}
+.oline{flex-wrap:wrap}
+.oline .mp-toggle-btn{padding:6px;opacity:.75}
+.oline-mp{flex:1 1 100%;order:9;margin-top:4px;padding:8px 10px;border-radius:10px;background:var(--paper);border:1.5px solid var(--line)}
+.oline-mp.hidden{display:none}
 </style>
 </head>
 <body>
@@ -4498,6 +4502,14 @@ function colorForProv(prov){
   for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))>>>0;}
   return CART_PROV_PALETTE[h%CART_PROV_PALETTE.length];
 }
+function mpToggleHTML(ref){
+  return `<button type="button" class="mp-toggle-btn" onclick="event.stopPropagation();toggleMinimoPedido('${ref}')" title="Cambiar mínimo de pedido" aria-label="Cambiar mínimo de pedido"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>`;
+}
+// Tuerca "mínimo de pedido" dentro del carrito: un solo panel abierto a la vez (ref abierta).
+let _mpCartAbierto=null;
+function mpCartGearHTML(ref){
+  return mpToggleHTML(ref).replace(/onclick="[^"]*"/,'data-mp-cart="'+ref+'"');
+}
 function renderOrder(){
   const lines=currentOrderVisible();
   const body=document.getElementById('order-body');
@@ -4544,7 +4556,9 @@ function renderOrder(){
         </div>
         <span class="qword ${(l.it.fmt>1||multOf(l.it)>1)?'gold':''}">${labelFor(l.it,l.packs)}</span>
       </div>
+      ${mpCartGearHTML(l.it.ref)}
       <button class="odel" data-act="del" aria-label="Eliminar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>
+      <div class="oline-mp${_mpCartAbierto===l.it.ref?'':' hidden'}" data-mp-cart-panel="${l.it.ref}">${_mpCartAbierto===l.it.ref?_gpFilaConfig(l.it):''}</div>
     </div>`;
   }).join('');
   html+=soloCambio.map(c=>`<div class="oline oline-cambio-only" data-ref="${c.it.ref}">
@@ -4569,6 +4583,17 @@ function renderOrder(){
       if(ref)cartApplyQty(ref,0);
       return;
     }
+    const gear=ev.target.closest('[data-mp-cart]');
+    if(gear){
+      const ref=gear.dataset.mpCart,it=DB.items.find(i=>i.ref===ref);
+      const panel=document.querySelector('#order-body [data-mp-cart-panel="'+CSS.escape(ref)+'"]');
+      if(!it||!panel)return;
+      if(_mpCartAbierto===ref){_mpCartAbierto=null;panel.classList.add('hidden');return;}
+      document.querySelectorAll('#order-body [data-mp-cart-panel]').forEach(x=>x.classList.add('hidden'));
+      _mpCartAbierto=ref;panel.innerHTML=_gpFilaConfig(it);panel.classList.remove('hidden');
+      return;
+    }
+    if(ev.target.closest('.oline-mp')){_gpCfgOnClick(ev);return;}
     const subTap=ev.target.closest('.oline-sub');
     if(subTap&&subTap.closest('.oline')){
       const row=subTap.closest('.oline'),ref=row.dataset.ref;
@@ -4581,7 +4606,7 @@ function renderOrder(){
       return;
     }
     const b=ev.target.closest('.qbtn');
-    if(b){
+    if(b&&!b.hasAttribute('data-gp-cfg-d')){
       const cell=b.closest('.qcell');
       const inp=cell.querySelector('.qty-in');
       const st=+inp.dataset.step||1;
@@ -4590,7 +4615,8 @@ function renderOrder(){
       cartApplyQty(inp.dataset.ref,newVal);
     }
   });
-  body.addEventListener('input',e=>{if(e.target.classList&&e.target.classList.contains('qty-in'))cartApplyQty(e.target.dataset.ref,Math.max(0,parseInt(e.target.value)||0));});
+  body.addEventListener('change',_gpCfgOnChange);
+  body.addEventListener('input',e=>{if(e.target.classList&&e.target.classList.contains('qty-in')&&!e.target.hasAttribute('data-gp-cfg-num'))cartApplyQty(e.target.dataset.ref,Math.max(0,parseInt(e.target.value)||0));});
 })();
 // ===================== CARRITOS GUARDADOS (borradores, NO confirman ni envían el pedido) =====
 // Un borrador por proveedor (identificado por "cgProvId": el nombre del proveedor, o '__ALL__'
@@ -4744,7 +4770,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.10';
+const APP_VERSION='2026-10-15.11';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -8475,6 +8501,7 @@ async function _gpGuardarMultiplo(ref,fila,valorEnUnidades,empaqueEnUnidades,pal
     // El próximo guardado (cuando saquen el foco, vía el evento 'change') sí repinta normal.
     const activo=document.activeElement;
     const sigueEditando=fila&&(activo===fila.querySelector('[data-gp-cfg-num]')||activo===fila.querySelector('[data-gp-cfg-empaque]'));
+    const enCarrito=fila&&fila.closest&&fila.closest('.oline-mp');
     if(!sigueEditando){
       // Esta misma fila se reusa dentro de la Ficha del producto (fpPaneMinimo) — ahí no hay
       // lista de Configuración que re-renderizar, solo hay que repintar el propio pane con el
@@ -8485,6 +8512,8 @@ async function _gpGuardarMultiplo(ref,fila,valorEnUnidades,empaqueEnUnidades,pal
       if(enFicha){
         const itActualizado=DB.items.find(x=>x.ref===ref);
         if(itActualizado)document.getElementById('fp-pane-minimo').innerHTML=_gpFilaConfig(itActualizado);
+      }else if(enCarrito){
+        /* el render() de más abajo repinta el carrito y deja este panel abierto (_mpCartAbierto) */
       }else{
         if(_gpProvActual)_gpProdListaCompleta=itemsFor(_gpProvActual.nombre).slice().sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
         if(_gpModo==='config'){
@@ -8493,7 +8522,7 @@ async function _gpGuardarMultiplo(ref,fila,valorEnUnidades,empaqueEnUnidades,pal
         }
       }
     }
-    try{render();}catch(_){}
+    if(!(enCarrito&&sigueEditando))try{render();}catch(_){}
     sonidoGuardado();
     showToast('Mínimo actualizado');
   }catch(e){
