@@ -1833,6 +1833,9 @@ html.carrito-fijo .cart-resizer .grip{left:14px;width:24px;height:70px;border-ra
 html.carrito-fijo .cart-resizer .grip::before{content:'\2194';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--wa);line-height:1}
 html.carrito-fijo .cart-resizer:hover .grip,html.carrito-fijo .cart-resizer.dragging .grip{background:var(--wa);box-shadow:0 2px 10px rgba(0,0,0,.25)}
 html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resizer.dragging .grip::before{color:#fff}
+.mm-save.mm-falta{opacity:.55}
+.campo-falta{outline:3px solid var(--rojo);outline-offset:2px;border-radius:8px;animation:campoFalta .5s ease 2}
+@keyframes campoFalta{0%,100%{outline-color:var(--rojo)}50%{outline-color:transparent}}
 </style>
 </head>
 <body>
@@ -4786,7 +4789,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.16';
+const APP_VERSION='2026-10-15.17';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -13385,6 +13388,7 @@ function rcValidar(){
   if(cant>0){
     btn.disabled=false;
     btn.textContent='Guardar y sumar stock';
+    btn.classList.toggle('mm-falta',!!rcFaltante());
     return;
   }
   // Cantidad=0: no hay stock que sumar — solo tiene sentido habilitar Guardar si costo,
@@ -13397,8 +13401,42 @@ function rcValidar(){
   const sectInput=(document.getElementById('rc-sect-input').value||'').trim().toUpperCase();
   const sectCambio=sectInput!==(it.sector||'');
   const hayCambio=costoCambio||precioCambio||provCambio||sectCambio;
-  btn.disabled=!hayCambio;
+  btn.disabled=false; // no se deshabilita: al tocarlo sin datos, dice qué casilla falta (ver rcFaltante)
+  btn.classList.toggle('mm-falta',!hayCambio);
   btn.textContent=hayCambio?'Guardar cambios':'Guardar y sumar stock';
+}
+function rcHayCambioSinCantidad(){
+  const{costoCambio,precioCambio}=rcCalcularCambiosCostoPrecio();
+  const it=rcState.item;
+  const provInput=(document.getElementById('rc-prov-input').value||'').trim().toUpperCase();
+  const provCambio=provInput!==((it.prov&&it.prov!=='SIN PROVEEDOR')?it.prov:'');
+  const sectInput=(document.getElementById('rc-sect-input').value||'').trim().toUpperCase();
+  const sectCambio=sectInput!==(it.sector||'');
+  return costoCambio||precioCambio||provCambio||sectCambio;
+}
+// Primer dato obligatorio que falta en Recepción (o null si se puede guardar): mensaje + casilla a resaltar.
+function rcFaltante(){
+  const it=rcState.item;
+  if(!it)return{msg:'Primero elige un producto',campo:'rc-search'};
+  const cantIngresada=Number(document.getElementById('rc-cantidad').value)||0;
+  const uCaja=Number(document.getElementById('rc-unidades-caja').value)||0;
+  if(rcState.modo==='caja'&&cantIngresada>0&&!(uCaja>0))return{msg:'Falta cuántas unidades trae cada caja/display',campo:'rc-unidades-caja'};
+  if(cantIngresada<=0){
+    if(!rcHayCambioSinCantidad())return{msg:'Falta la cantidad recibida',campo:'rc-cantidad'};
+    return null;
+  }
+  const fecha=fmtDateInputToDDMMAAAA(document.getElementById('rc-fecha').value);
+  if(!fecha&&CATEGORIAS_CAMBIO.length&&esCategoriaCambio(it.prov))return{msg:'Falta la fecha de vencimiento ("'+it.prov+'" maneja vencimiento)',campo:'rc-fecha-dd'};
+  return null;
+}
+function rcAvisarFaltante(f){
+  showToast(f.msg);
+  const campo=document.getElementById(f.campo);
+  if(!campo)return;
+  try{campo.scrollIntoView({block:'center',behavior:'smooth'});}catch(e){}
+  try{campo.focus();}catch(e){}
+  campo.classList.add('campo-falta');
+  setTimeout(()=>campo.classList.remove('campo-falta'),2600);
 }
 function rcReset(){
   _rcSuprimirBorrador=true;
@@ -14025,6 +14063,9 @@ function _pesoDecimales(n){
 }
 document.getElementById('rc-guardar').onclick=async()=>{
   const btn=document.getElementById('rc-guardar');
+  if(!CATEGORIAS_CAMBIO.length){try{await cargarConfigCambio();}catch(e){}}
+  const falta=rcFaltante();
+  if(falta){rcAvisarFaltante(falta);return;}
   const it=rcState.item;if(!it)return;
   const cantIngresada=Number(document.getElementById('rc-cantidad').value)||0;
   // Requisito 4: si la compra fue por caja, el stock real a sumar es cajas × unidades/caja.
