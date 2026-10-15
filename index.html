@@ -4770,7 +4770,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.11';
+const APP_VERSION='2026-10-15.12';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15178,6 +15178,16 @@ function abrirConfirmarPedido({provNombre,lines,fechaSugerida,notaExtra,onConfir
   modal.classList.remove('hidden');
   void modal.offsetWidth;
   _sincronizarNav();
+  // El calendario se abre solo y, al elegir la fecha (Aceptar), el pedido se confirma y la ventana se
+  // cierra. Si escribe la fecha con el teclado no se confirma solo (solo cuando viene del calendario).
+  let _viaCalendario=false;
+  fechaInp.onkeydown=()=>{_viaCalendario=false;};
+  fechaInp.onpointerdown=()=>{_viaCalendario=true;};
+  fechaInp.onchange=()=>{if(_viaCalendario&&fechaInp.value&&!btnOk.disabled)btnOk.click();};
+  setTimeout(()=>{
+    if(modal.classList.contains('hidden'))return;
+    try{if(fechaInp.showPicker){_viaCalendario=true;fechaInp.showPicker();}}catch(e){_viaCalendario=false;}
+  },200);
 }
 
 // Condición ÚNICA y central que decide si el autorrelleno del carrito puede tocar algo:
