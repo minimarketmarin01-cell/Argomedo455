@@ -1836,6 +1836,19 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
 .mm-save.mm-falta{opacity:.55}
 .campo-falta{outline:3px solid var(--rojo);outline-offset:2px;border-radius:8px;animation:campoFalta .5s ease 2}
 @keyframes campoFalta{0%,100%{outline-color:var(--rojo)}50%{outline-color:transparent}}
+/* Recepción → Ajustar stock: casillas bien visibles (cantidad contada y nombre) */
+#rc-ajustar-box{background:#EAF3E4;border:2px solid var(--verde);border-radius:14px;padding:14px !important;margin-top:6px}
+#rc-ajustar-box label{display:block;font-size:15px !important;font-weight:800 !important;color:var(--verde) !important;text-transform:none !important;letter-spacing:0 !important;margin-bottom:8px !important}
+#rc-ajustar-box label::before{content:'✍️ '}
+#rc-ajustar-cantidad{height:64px;font-size:30px !important;font-weight:800;text-align:center;background:#fff !important;border:3px solid var(--verde) !important;border-radius:12px !important;box-shadow:0 2px 8px rgba(46,125,50,.18)}
+#rc-ajustar-cantidad::placeholder{font-size:16px;font-weight:600;color:#6B8F63}
+#rc-ajustar-cantidad:focus{outline:none;box-shadow:0 0 0 4px rgba(46,125,50,.25)}
+#rc-ajustar-guardar{background:var(--verde) !important;color:#fff !important;border-color:var(--verde) !important;font-size:15px !important;padding:13px !important}
+#rc-nombre-box{background:#FFF7DD;border:2px solid #E2B93B;border-radius:12px;padding:10px 12px !important;margin-top:10px !important}
+#rc-nombre-box label{display:block;font-size:13px !important;font-weight:800 !important;color:#8A6A00 !important;text-transform:none !important;letter-spacing:0 !important;margin-bottom:6px !important}
+#rc-nombre-box label::before{content:'✏️ '}
+#rc-nombre-input{background:#fff !important;border:2px solid #C9A227 !important;border-radius:10px !important;font-size:15px !important;padding:11px 12px !important;font-weight:600}
+#rc-nombre-input:focus{outline:none;box-shadow:0 0 0 4px rgba(201,162,39,.28)}
 </style>
 </head>
 <body>
@@ -4798,7 +4811,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-15.19';
+const APP_VERSION='2026-10-16.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
