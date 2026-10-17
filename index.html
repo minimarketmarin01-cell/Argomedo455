@@ -4856,7 +4856,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-17.3';
+const APP_VERSION='2026-10-17.4';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5597,6 +5597,17 @@ function abrirModal(id){
   _sincronizarNav();
   _actualizarVisibilidadFab();
 }
+// Módulos abiertos desde el menú "Más": al cerrarlos (botón Cerrar o Atrás) se vuelve a "Más" con su
+// grupo desplegado, en vez de caer en Pedidos. { ov: id del módulo, grp: grupo de Más (inv, prod, ...) }
+let _masOrigen=null;
+function _volverAMas(){
+  const o=_masOrigen;_masOrigen=null;
+  abrirModal('mas-ov');
+  if(o&&o.grp){
+    const head=document.getElementById('mas-grp-'+o.grp+'-head'),body=document.getElementById('mas-grp-'+o.grp+'-body');
+    if(head&&body&&typeof toggleAccordion==='function')toggleAccordion(head,body,true);
+  }
+}
 function cerrarModal(id){
   const el=document.getElementById(id);
   if(el){el.classList.add('hidden');el.style.removeProperty('display');}
@@ -5622,11 +5633,13 @@ function cerrarModal(id){
     showScreen('inicio');
     return;
   }
+  if(_masOrigen&&_masOrigen.ov===id){_volverAMas();_sincronizarNav();_actualizarVisibilidadFab();return;}
   guardarUltimaPantalla('pedido');
   _sincronizarNav();
   _actualizarVisibilidadFab();
 }
 function cerrarOverlays(){
+  _masOrigen=null;
   document.querySelectorAll('.mm-ov, .scan-ov').forEach(o=>{o.classList.add('hidden');o.style.removeProperty('display');});
   if(typeof toggleCarrito==='function')toggleCarrito(false); // en celular cierra el panel; en tablet/escritorio no tiene efecto (CSS lo mantiene visible)
   guardarUltimaPantalla('pedido');
@@ -14605,7 +14618,7 @@ async function rzGuardarStock(sku,rid){
     btn.disabled=false;btn.textContent='Guardar stock';
   }
 }
-document.getElementById('mas-q-riesgo').onclick=()=>{document.getElementById('mas-ov').classList.add('hidden');rzAbrir();};
+document.getElementById('mas-q-riesgo').onclick=()=>{document.getElementById('mas-ov').classList.add('hidden');_masOrigen={ov:'rz-ov',grp:'inv'};rzAbrir();};
 document.getElementById('rz-cerrar').onclick=()=>cerrarModal('rz-ov');
 
 // ===================== REPORTES DEL DÍA (todos los movimientos de auditoría por fecha) =====================
