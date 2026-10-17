@@ -2988,6 +2988,10 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
     <div class="mm-topbar"><button class="loadbtn" id="rk-cerrar" style="width:100%">Cerrar</button></div>
     <div class="mm-body">
       <div class="hm-summary"><span class="lbl" id="rk-lbl">—</span><span class="val" id="rk-val"></span></div>
+      <div id="rk-avance" style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;font-weight:700;margin-bottom:4px"><span id="rk-avance-txt">Contados: 0 de 0</span><span id="rk-avance-pct" style="color:var(--verde)">0%</span></div>
+        <div style="height:12px;border-radius:7px;background:var(--line);overflow:hidden"><div id="rk-avance-barra" style="height:100%;width:0;background:var(--verde);border-radius:7px;transition:width .3s ease"></div></div>
+      </div>
       <div class="prov-combo" id="rk-combo" style="margin-bottom:10px">
         <span class="prov-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13.5 13.5 20a1.5 1.5 0 0 1-2.1 0L4 12.6V4h8.6l7.4 7.4a1.5 1.5 0 0 1 0 2.1Z"/><circle cx="8.3" cy="8.3" r="1.3"/></svg></span>
         <input class="prov-all" id="rk-all" placeholder="Proveedor o producto… escribe o toca" autocomplete="off" inputmode="text">
@@ -4852,7 +4856,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-17.2';
+const APP_VERSION='2026-10-17.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -4914,8 +4918,17 @@ function setLastSync(t){localStorage.setItem('cumpas_last_sync',String(t));}
 let ABC_BY_SKU={};
 // Skus excluidos a mano de "Riesgo de quiebre" (ver módulo rz*) — persistido en D1, llega en
 // cada sync/full como j.riesgoExcluidos (array de skus). Set para lookup O(1) desde rzCalcular().
-let RIESGO_EXCLUIDOS=new Set();
-let FAVORITOS=new Set();
+// Excluidos de Riesgo de quiebre y favoritos: se guardan también en el teléfono, así se ven completos
+// aunque la app se abra sin conexión o antes de que llegue la primera sincronización.
+function _leerCacheSet(clave){try{return new Set(JSON.parse(localStorage.getItem(clave)||'[]'));}catch(e){return new Set();}}
+function _guardarCacheSet(clave,set){try{localStorage.setItem(clave,JSON.stringify(Array.from(set)));}catch(e){}}
+let RIESGO_EXCLUIDOS=_leerCacheSet('rz_excluidos_cache');
+let FAVORITOS=_leerCacheSet('favoritos_cache');
+// Se aplica SIEMPRE que llega una respuesta del servidor (antes solo si cambiaban los productos).
+function aplicarListasCompartidas(j){
+  if(j&&Array.isArray(j.riesgoExcluidos)){RIESGO_EXCLUIDOS=new Set(j.riesgoExcluidos);_guardarCacheSet('rz_excluidos_cache',RIESGO_EXCLUIDOS);}
+  if(j&&Array.isArray(j.favoritos)){FAVORITOS=new Set(j.favoritos);_guardarCacheSet('favoritos_cache',FAVORITOS);}
+}
 async function cargarABC(){
   try{
     const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=abc');
@@ -5198,6 +5211,7 @@ async function cloudSync(silent,live,full,origen){
       // Poll de fondo (silencioso, cada 5s, sin que el usuario haya tocado nada): si los
       // datos son EXACTAMENTE los mismos de la última vez, no se toca el DOM para nada —
       // así el scroll y cualquier edición en curso quedan intactos.
+      aplicarListasCompartidas(j);
       const esPollDeFondo=silent&&!live&&!full;
       const firma=JSON.stringify(j.items)+'|'+JSON.stringify(j.ventas)+'|'+JSON.stringify(j.pendientes);
       if(esPollDeFondo&&firma===_ultimoPayloadFirma)return true;
@@ -5390,6 +5404,7 @@ async function pollFondo(){
     _ultimoPollOk=Date.now();
     actualizarIndicadorEnVivo();
 
+    aplicarListasCompartidas(j);
     const firma=JSON.stringify(j.items)+'|'+JSON.stringify(j.ventas)+'|'+JSON.stringify(j.pendientes);
     if(firma===_ultimoPayloadFirma)return; // nada cambió, no hay nada que repintar
 
@@ -7405,7 +7420,19 @@ document.getElementById('stk-nuevo').addEventListener('keydown',e=>{if(e.key==='
 const rkState={cat:'',search:'',sort:'nombre',dir:1};
 document.getElementById('mas-q-reconteo').onclick=()=>{document.getElementById('mas-ov').classList.add('hidden');rkAbrir();};
 document.getElementById('rk-cerrar').onclick=()=>cerrarModal('rk-ov');
+let _rkContados=new Set();
+function rkActualizarAvance(lista,hay){
+  const t=document.getElementById('rk-avance-txt'),pc=document.getElementById('rk-avance-pct'),b=document.getElementById('rk-avance-barra');
+  if(!t)return;
+  const total=hay?lista.length:0;
+  let hechos=0;if(hay)lista.forEach(p=>{if(_rkContados.has(p.ref))hechos++;});
+  const pct=total?Math.round(hechos/total*100):0;
+  t.textContent=!hay?('Contados en esta sesión: '+_rkContados.size):((total&&hechos>=total)?'¡Lista completa! '+hechos+' de '+total:'Contados: '+hechos+' de '+total);
+  pc.textContent=hay?pct+'%':'';
+  b.style.width=(hay?pct:0)+'%';
+}
 function rkAbrir(presetSearch){
+  _rkContados=new Set();
   rkState.cat='';rkState.search=presetSearch||'';rkState.sort='nombre';rkState.dir=1;
   const inp=document.getElementById('rk-all');if(inp)inp.value=presetSearch||'';
   document.getElementById('rk-x').classList.toggle('on',!!presetSearch);
@@ -7495,6 +7522,7 @@ function rkRender(){
   });
   const cat=rkState.cat,q=rkState.search;
   const lista=rkFiltrados();
+  rkActualizarAvance(lista,!!(cat||q));
   document.getElementById('rk-lbl').textContent=lista.length+' producto'+(lista.length===1?'':'s');
   document.getElementById('rk-val').textContent=cat?cat:(q?'búsqueda':'elige categoría o busca');
   if(!cat && !q){
@@ -7515,7 +7543,7 @@ function rkRender(){
           style="width:76px;padding:8px;border-radius:8px;border:1px solid var(--borde);text-align:center;font-size:15px">`;
     return `<div class="sm-row" data-rk-ref="${p.ref}">
       <div class="sm-info">
-        <div class="nom">${p.nombre}</div>
+        <div class="nom">${p.nombre}${_rkContados.has(p.ref)?' <span style="font-size:11px;font-weight:800;color:var(--verde);background:#E3F0DD;border-radius:10px;padding:2px 8px;white-space:nowrap">✓ Contado</span>':''}</div>
         <div class="meta">REF ${p.ref} · ${p.prov} · sistema: ${stockTxt}${p.barcode?' · '+p.barcode:''}</div>
       </div>
       ${campo}
@@ -7598,7 +7626,7 @@ async function rkGuardarFila(inp){
   const val=inp.value.trim();
   if(val==='')return; // no tocó nada, no manda petición
   const nuevo=Number(val);
-  if(isNaN(nuevo)||nuevo<0){showToast('Cantidad inválida');inp.value='';return;}
+  if(isNaN(nuevo)||nuevo<0){sonidoError();showToast('Cantidad inválida');inp.value='';return;}
   const row=inp.closest('.sm-row');
   inp.disabled=true;
   try{
@@ -7611,14 +7639,21 @@ async function rkGuardarFila(inp){
       inp.value='';
       inp.placeholder=fmt1(nuevo);
       if(row){row.classList.add('flash-update');setTimeout(()=>row.classList.remove('flash-update'),900);}
-      sonidoGuardado();
-      if(j.avisoStock)showToast(j.avisoStock);
-      else showToast((j.trackHabilitado?'Seguimiento activado · ':'')+(it?it.nombre:ref)+' → '+fmt1(nuevo));
+      _rkContados.add(ref);
+      if(j.avisoStock){sonidoError();showToast(j.avisoStock);}
+      else{sonidoGuardado();showToast((j.trackHabilitado?'Seguimiento activado · ':'')+(it?it.nombre:ref)+' → '+fmt1(nuevo));}
+      try{
+        const nom=row&&row.querySelector('.nom');
+        if(nom&&!nom.querySelector('.rk-ok'))nom.insertAdjacentHTML('beforeend',' <span class="rk-ok" style="font-size:11px;font-weight:800;color:var(--verde);background:#E3F0DD;border-radius:10px;padding:2px 8px;white-space:nowrap">✓ Contado</span>');
+        rkActualizarAvance(rkFiltrados(),!!(rkState.cat||rkState.search));
+      }catch(e){}
     }else{
-      showToast(''+(j&&j.error?j.error:'No se pudo guardar'));
+      sonidoError();
+      showToast('Error: '+(j&&j.error?j.error:'no se pudo guardar el stock'));
     }
   }catch(e){
-    showToast('Error de conexión al guardar');
+    sonidoError();
+    showToast('Error de conexión: no se pudo guardar el stock');
   }finally{
     inp.disabled=false;
   }
@@ -14420,6 +14455,7 @@ function rzActualizarBadge(){
 }
 function rzAbrir(){
   abrirModal('rz-ov');
+  try{pollFondo().then(()=>{try{rzRender();}catch(e){}});}catch(e){}
   _rzSnap=new Set(rzCalcular(false).map(x=>x.it.ref));_rzRevisados=new Set();
   { const b=document.getElementById('rz-buscar'); if(b)b.value=''; }
   const selProv=document.getElementById('rz-prov');
@@ -14487,7 +14523,7 @@ async function rzExcluir(sku,nombre){
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'excluir_riesgo',payload:{sku}})});
     const j=await res.json();
     if(j&&j.ok){
-      RIESGO_EXCLUIDOS.add(sku);
+      RIESGO_EXCLUIDOS.add(sku);_guardarCacheSet('rz_excluidos_cache',RIESGO_EXCLUIDOS);
       _rzRevisados.add(sku);
       showToast('Excluido: '+nombre);
       rzRender();
@@ -14517,7 +14553,7 @@ async function rzIncluir(sku){
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'incluir_riesgo',payload:{sku}})});
     const j=await res.json();
     if(j&&j.ok){
-      RIESGO_EXCLUIDOS.delete(sku);
+      RIESGO_EXCLUIDOS.delete(sku);_guardarCacheSet('rz_excluidos_cache',RIESGO_EXCLUIDOS);
       showToast('↩ Reincluido en Riesgo de quiebre');
       // Repinta el bloque de excluidos sin usar el toggle (que abre/cierra según .hidden) —
       // acá se quiere refrescar el contenido manteniéndolo visible tal como estaba.
