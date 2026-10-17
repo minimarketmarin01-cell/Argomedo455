@@ -2828,6 +2828,13 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
       <div class="cat" style="margin-bottom:10px;line-height:1.4">Productos <b>A</b> o <b>B</b> (los que más venden) con cobertura urgente o sin control de stock — es decir, alta rotación que se puede quedar sin vender por falta de reposición a tiempo.</div>
       <button type="button" id="rz-activar-push" style="width:100%;margin-bottom:10px;padding:10px;border-radius:10px;border:1.5px solid var(--azul);background:var(--azul-bg);color:var(--azul);font-weight:700;font-size:13px;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Activar avisos en este celular (8 AM y 3 PM)</button>
       <div id="rz-push-estado" class="cat hidden" style="margin-bottom:10px"></div>
+      <div id="rz-avance" style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;font-weight:700;margin-bottom:4px"><span id="rz-avance-txt">Avance: 0 de 0 revisados</span><span id="rz-avance-pct" style="color:var(--verde)">0%</span></div>
+        <div style="height:12px;border-radius:7px;background:var(--line);overflow:hidden"><div id="rz-avance-barra" style="height:100%;width:0;background:var(--verde);border-radius:7px;transition:width .3s ease"></div></div>
+      </div>
+      <div style="position:relative;margin-bottom:8px">
+        <input id="rz-buscar" type="search" inputmode="search" autocomplete="off" placeholder="Buscar por nombre o código…" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--line);border-radius:12px;font-size:14px">
+      </div>
       <div class="sm-filters" style="display:flex;gap:6px;margin-bottom:6px">
         <select id="rz-prov" style="flex:1;min-width:0;padding:8px;border-radius:10px;border:1px solid var(--borde);background:#fff;font-size:12.5px">
           <option value=""><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><rect x="4" y="4" width="16" height="17" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="17" x2="13" y2="17"/></svg> Todos los proveedores</option>
@@ -4801,7 +4808,26 @@ function _getAudioCtx(){
   if(!_audioCtx){try{_audioCtx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){return null;}}
   return _audioCtx;
 }
-document.addEventListener('pointerdown',()=>{const ctx=_getAudioCtx();if(ctx&&ctx.state==='suspended')ctx.resume().catch(()=>{});},{once:true});
+['pointerdown','touchstart','click','keydown'].forEach(ev=>document.addEventListener(ev,()=>{const ctx=_getAudioCtx();if(ctx&&ctx.state==='suspended')ctx.resume().catch(()=>{});},{passive:true}));
+// Sonido de error: dos tonos graves descendentes (distinto al "ding" de éxito).
+function sonidoError(){
+  try{
+    const ctx=_getAudioCtx();
+    if(!ctx)return;
+    if(ctx.state==='suspended')ctx.resume().catch(()=>{});
+    const ahora=ctx.currentTime;
+    [[330,0,0.14],[220,0.15,0.2]].forEach(([freq,retraso,dur])=>{
+      const inicio=ahora+retraso;
+      const osc=ctx.createOscillator(),gain=ctx.createGain();
+      osc.type='square';osc.frequency.value=freq;
+      gain.gain.setValueAtTime(0.0001,inicio);
+      gain.gain.exponentialRampToValueAtTime(0.12,inicio+0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001,inicio+dur);
+      osc.connect(gain);gain.connect(ctx.destination);
+      osc.start(inicio);osc.stop(inicio+dur+0.02);
+    });
+  }catch(e){}
+}
 function sonidoGuardado(){
   try{
     const ctx=_getAudioCtx();
@@ -14394,6 +14420,8 @@ function rzActualizarBadge(){
 }
 function rzAbrir(){
   abrirModal('rz-ov');
+  _rzSnap=new Set(rzCalcular(false).map(x=>x.it.ref));_rzRevisados=new Set();
+  { const b=document.getElementById('rz-buscar'); if(b)b.value=''; }
   const selProv=document.getElementById('rz-prov');
   // Proveedor real de la WebApp (proveedorNombre) — mismo fallback a categoría de Loyverse
   // que ya usa itemsFor()/el filtro de Vencimientos, para los productos que aún no fueron
@@ -14404,11 +14432,24 @@ function rzAbrir(){
   if(provsConRiesgo.includes(provActual))selProv.value=provActual;
   rzRender();
 }
+let _rzSnap=new Set(),_rzRevisados=new Set();
+function rzActualizarAvance(){
+  const total=_rzSnap.size;
+  let hechos=0;_rzRevisados.forEach(r=>{if(_rzSnap.has(r))hechos++;});
+  const pct=total?Math.round(hechos/total*100):0;
+  const t=document.getElementById('rz-avance-txt'),pc=document.getElementById('rz-avance-pct'),b=document.getElementById('rz-avance-barra');
+  if(t)t.textContent=(total&&hechos>=total)?'¡Todo revisado! '+hechos+' de '+total:'Avance: '+hechos+' de '+total+' revisados';
+  if(pc)pc.textContent=pct+'%';
+  if(b)b.style.width=pct+'%';
+}
 function rzRender(){
   const soloA=document.getElementById('rz-clase').value==='A';
   const provFiltro=document.getElementById('rz-prov').value;
   let lista=rzCalcular(soloA);
   if(provFiltro)lista=lista.filter(x=>(x.it.proveedorNombre||x.it.prov)===provFiltro);
+  const qBus=normTxt((document.getElementById('rz-buscar')||{value:''}).value||'').trim();
+  if(qBus){const ws=qBus.split(/\s+/).filter(Boolean);lista=lista.filter(x=>{const hay=normTxt(x.it.nombre||'');const ref=String(x.it.ref||''),bc=x.it.barcode?String(x.it.barcode):'';return ws.every(w=>hay.includes(w)||ref.includes(w)||bc.includes(w));});}
+  rzActualizarAvance();
   document.getElementById('rz-lbl').textContent=lista.length+' producto'+(lista.length===1?'':'s')+' en riesgo de quiebre';
   const exclBtn=document.getElementById('rz-excl-count');
   if(exclBtn)exclBtn.textContent=RIESGO_EXCLUIDOS.size?' ('+RIESGO_EXCLUIDOS.size+')':'';
@@ -14424,7 +14465,7 @@ function rzRender(){
           <div style="font-weight:700;font-size:13.5px">${it.nombre}</div>
           <div style="font-size:11px;color:var(--muted)">${it.proveedorNombre||it.prov} · ${stockTxt} · ${covTxt}</div>
         </div>
-        <span class="abc-badge abc-${clase.toLowerCase()}" style="flex-shrink:0">${clase}</span>
+        <span style="display:flex;gap:6px;align-items:center;flex-shrink:0">${_rzRevisados.has(it.ref)?'<span style="font-size:11px;font-weight:800;color:var(--verde);background:#E3F0DD;border-radius:10px;padding:2px 8px">✓ Revisado</span>':''}<span class="abc-badge abc-${clase.toLowerCase()}">${clase}</span></span>
       </div>
       <div style="display:flex;gap:6px">
         <input id="${rid}-stock" type="number" inputmode="decimal" placeholder="Corregir stock" value="${it.track&&it.stock!=null?it.stock:''}" style="flex:1;min-width:0;padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;font-size:12.5px;font-family:'JetBrains Mono'">
@@ -14452,6 +14493,7 @@ async function rzExcluir(sku,nombre){
     const j=await res.json();
     if(j&&j.ok){
       RIESGO_EXCLUIDOS.add(sku);
+      _rzRevisados.add(sku);
       showToast('Excluido: '+nombre);
       rzRender();
       try{rzActualizarBadge();}catch(e){}
@@ -14500,9 +14542,9 @@ async function rzIncluir(sku){
 async function rzGuardarStock(sku,rid){
   const inp=document.getElementById(rid+'-stock');
   const val=inp.value.trim();
-  if(val===''){showToast('Escribe el stock corregido primero');return;}
+  if(val===''){sonidoError();showToast('Escribe el stock corregido primero');return;}
   const nuevo=Number(val);
-  if(isNaN(nuevo)){showToast('Cantidad inválida');return;}
+  if(isNaN(nuevo)){sonidoError();showToast('Cantidad inválida');return;}
   const btn=document.querySelector(`.rz-guardar-stock[data-rid="${rid}"]`);
   btn.disabled=true;btn.textContent='Guardando…';
   try{
@@ -14516,17 +14558,19 @@ async function rzGuardarStock(sku,rid){
       // localmente y devuelve ok:true + avisoStock — hay que avisar eso en vez del toast de
       // éxito genérico, o el usuario cree que quedó todo sincronizado cuando no fue así (mismo
       // chequeo que ya hace rkGuardarFila en Reconteo de stock).
-      sonidoGuardado();
-      if(j.avisoStock)showToast(j.avisoStock);
-      else showToast((j.trackHabilitado?'Seguimiento activado · ':'Stock corregido: ')+fmt1(nuevo));
+      _rzRevisados.add(sku);
+      if(j.avisoStock){sonidoError();showToast(j.avisoStock);}
+      else{sonidoGuardado();showToast((j.trackHabilitado?'Seguimiento activado · ':'Stock corregido: ')+fmt1(nuevo));}
       rzRender(); // vuelve a calcular el riesgo con el stock ya corregido — el producto puede salir de la lista si ya no está en riesgo
       try{render();}catch(_){} // refleja el cambio también en la tabla principal de Pedidos
     }else{
-      showToast(''+(j&&j.error?j.error:'No se pudo guardar'));
+      sonidoError();
+      showToast('Error: '+(j&&j.error?j.error:'no se pudo guardar el stock'));
       btn.disabled=false;btn.textContent='Guardar stock';
     }
   }catch(e){
-    showToast('Error de conexión al guardar');
+    sonidoError();
+    showToast('Error de conexión: no se pudo guardar el stock');
     btn.disabled=false;btn.textContent='Guardar stock';
   }
 }
@@ -14586,6 +14630,7 @@ document.getElementById('rd-cerrar').onclick=()=>cerrarModal('rd-ov');
 document.getElementById('rd-fecha').onchange=rdCargar;
 wireFlechasFecha('rd-fecha');
 document.getElementById('rz-prov').onchange=rzRender;
+document.getElementById('rz-buscar').oninput=rzRender;
 document.getElementById('rz-clase').onchange=rzRender;
 document.getElementById('rz-ver-excluidos').onclick=rzMostrarExcluidos;
 
