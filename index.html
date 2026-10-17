@@ -2832,8 +2832,10 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
         <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;font-weight:700;margin-bottom:4px"><span id="rz-avance-txt">Avance: 0 de 0 revisados</span><span id="rz-avance-pct" style="color:var(--verde)">0%</span></div>
         <div style="height:12px;border-radius:7px;background:var(--line);overflow:hidden"><div id="rz-avance-barra" style="height:100%;width:0;background:var(--verde);border-radius:7px;transition:width .3s ease"></div></div>
       </div>
-      <div style="position:relative;margin-bottom:8px">
-        <input id="rz-buscar" type="search" inputmode="search" autocomplete="off" placeholder="Buscar por nombre o código…" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--line);border-radius:12px;font-size:14px">
+      <div class="mm-search" style="margin-bottom:8px">
+        <input id="rz-buscar" type="search" inputmode="search" autocomplete="off" placeholder="Buscar por nombre o código…" style="padding-right:96px">
+        <button class="mm-mic" id="rz-mic" type="button" aria-label="Buscar por voz"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
+        <button class="mm-scan cam-btn" id="rz-scan" type="button" aria-label="Escanear código"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13.5" r="3.2"/></svg></button>
       </div>
       <div class="sm-filters" style="display:flex;gap:6px;margin-bottom:6px">
         <select id="rz-prov" style="flex:1;min-width:0;padding:8px;border-radius:10px;border:1px solid var(--borde);background:#fff;font-size:12.5px">
@@ -4856,7 +4858,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-17.4';
+const APP_VERSION='2026-10-17.5';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14675,6 +14677,12 @@ document.getElementById('rd-fecha').onchange=rdCargar;
 wireFlechasFecha('rd-fecha');
 document.getElementById('rz-prov').onchange=rzRender;
 document.getElementById('rz-buscar').oninput=rzRender;
+document.getElementById('rz-mic').onclick=()=>voiceSearch(document.getElementById('rz-mic'),text=>{document.getElementById('rz-buscar').value=text;rzRender();});
+document.getElementById('rz-scan').onclick=()=>{
+  const reopen=()=>{document.getElementById('rz-ov').classList.remove('hidden');_sincronizarNav();};
+  document.getElementById('rz-ov').classList.add('hidden');
+  openScanner(code=>{reopen();document.getElementById('rz-buscar').value=code;rzRender();},reopen);
+};
 document.getElementById('rz-clase').onchange=rzRender;
 document.getElementById('rz-ver-excluidos').onclick=rzMostrarExcluidos;
 
