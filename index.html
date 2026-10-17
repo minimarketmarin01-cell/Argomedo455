@@ -4852,7 +4852,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-17.1';
+const APP_VERSION='2026-10-17.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14471,14 +14471,9 @@ function rzRender(){
         <input id="${rid}-stock" type="number" inputmode="decimal" placeholder="Corregir stock" value="${it.track&&it.stock!=null?it.stock:''}" style="flex:1;min-width:0;padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;font-size:12.5px;font-family:'JetBrains Mono'">
         <button type="button" class="loadbtn rz-guardar-stock" data-sku="${it.ref}" data-rid="${rid}" style="white-space:nowrap;padding:8px 12px;font-size:12.5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polyline points="20 6 9 17 4 12"/></svg> Guardar stock</button>
       </div>
-      <button type="button" class="loadbtn rz-ir-pedido" data-prov="${(it.prov||'').replace(/"/g,'&quot;')}" style="width:100%;padding:8px;font-size:12.5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M3 4h2l2.2 11h9.6L19 8H6.4"/></svg> Ir al pedido de ${it.prov}</button>
       <button type="button" class="rz-excluir" data-sku="${it.ref}" data-nombre="${it.nombre.replace(/"/g,'&quot;')}" style="width:100%;padding:7px;font-size:11.5px;border-radius:9px;border:1px dashed var(--line);background:transparent;color:var(--muted);font-weight:600;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><circle cx="12" cy="12" r="9"/><line x1="5.5" y1="5.5" x2="18.5" y2="18.5"/></svg> Excluir de esta lista</button>
     </div>`;
   }).join('');
-  box.querySelectorAll('.rz-ir-pedido').forEach(b=>b.onclick=()=>{
-    cerrarModal('rz-ov');
-    pickProv(b.dataset.prov); // misma función que usa el selector de proveedores de siempre — no duplica lógica de navegación del catálogo
-  });
   box.querySelectorAll('.rz-guardar-stock').forEach(b=>b.onclick=()=>rzGuardarStock(b.dataset.sku,b.dataset.rid));
   box.querySelectorAll('.rz-excluir').forEach(b=>b.onclick=()=>rzExcluir(b.dataset.sku,b.dataset.nombre));
 }
