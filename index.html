@@ -406,8 +406,18 @@ html.carrito-fijo #rc-ov .mm-sections{
 .vc-editbox{margin-top:8px;padding:10px;background:var(--paper);border:1px solid var(--line);border-radius:10px}
 .vc-editlbl{font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px}
 .fecha-date-hidden{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;left:0;top:0}
-.mm-qty input{flex:1;padding:11px 14px;border:1.5px solid var(--line);border-radius:10px;font-size:16px;font-family:'JetBrains Mono';text-align:center}
-#rc-cantidad-field .mm-qty input{padding:9px 12px;font-size:15px}
+/* Botones +/- (.qbtn) y el input de cantidad agrandados a propósito (pedido explícito: "deben
+   ser más grandes ergonómicos para ingresar rápido los pedidos") — antes el input de Recepción
+   en particular quedaba MÁS CHICO que el resto de las pantallas que usan .mm-qty (9px/15px acá
+   vs. 11px/16px en Préstamos/Etiquetas/ABC/Ver catálogo), sin ningún motivo real para esa
+   inconsistencia — ahora todas comparten el mismo tamaño, grande. */
+/* min-width:0 es necesario acá: un <input> dentro de un contenedor flex trae un ancho mínimo
+   implícito del navegador bastante grande (piensa que "debe" caber su contenido completo), y en
+   un contenedor angosto eso ganaba el forcejeo por espacio contra los botones +/- de al lado —
+   terminaban aplastados a ~12px de ancho (casi invisibles) en vez de los 44px declarados más
+   abajo en .qbtn. Con min-width:0 el input SÍ puede achicarse si hace falta, dejando a los
+   botones quedarse con su tamaño completo — que es justo lo que importa para tocar rápido. */
+.mm-qty input{flex:1;min-width:0;padding:14px;border:1.5px solid var(--line);border-radius:10px;font-size:18px;font-family:'JetBrains Mono';text-align:center}
 .mm-qty .unidad{font-weight:700;color:var(--muted);min-width:28px}
 .mm-costo-ok{background:var(--verde-bg);border:1px solid var(--verde);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--verde);font-weight:600}
 .mm-costo-warn{background:var(--rojo-bg);border:1px solid var(--rojo);border-radius:10px;padding:9px 12px;font-size:12.5px;color:var(--rojo);font-weight:600;margin-bottom:8px;line-height:1.4}
@@ -1352,9 +1362,14 @@ html.modo-bliss #prov-all{font-size:17px}
 .cp-img-cand.sel{border-color:var(--wa);border-width:2.5px}
 .qstep{display:inline-flex;align-items:center;border:1.5px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
 .qstep.has{border-color:var(--salvia-2);box-shadow:0 0 0 2px var(--salvia-tint)}
-.qbtn{border:none;background:#F4F3EE;width:30px;height:40px;font-size:17px;font-weight:700;color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;user-select:none;-webkit-user-select:none}
+/* Base agrandada (pedido explícito: botones +/- "más grandes ergonómicos para ingresar rápido
+   los pedidos") — 44x48 cumple el tamaño mínimo recomendado de blanco de toque (~44px). Las
+   variantes más compactas (html.vista-filas, para ver muchas filas de la tabla de Armar pedido a
+   la vez, y html.modo-bliss, para equipos viejos) tienen sus propios overrides más abajo y NO
+   se tocan — ahí la densidad importa más que el tamaño del botón. */
+.qbtn{border:none;background:#F4F3EE;width:44px;height:48px;flex:none;font-size:20px;font-weight:700;color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;user-select:none;-webkit-user-select:none}
 .qbtn:active{background:var(--wa);color:#fff}
-.qty-in{width:30px;text-align:center;font-family:'JetBrains Mono';font-weight:700;padding:9px 1px;border:none;border-left:1px solid var(--line);border-right:1px solid var(--line);font-size:14.5px}
+.qty-in{width:40px;text-align:center;font-family:'JetBrains Mono';font-weight:700;padding:12px 1px;border:none;border-left:1px solid var(--line);border-right:1px solid var(--line);font-size:16px}
 .qty-in:focus{outline:none;background:#F1FBF5}
 .qword{font-size:9.5px;color:var(--muted);font-weight:600;font-family:'Manrope';white-space:normal;text-align:right;max-width:78px}
 .qword.gold{color:var(--gold)}
@@ -2409,7 +2424,7 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
         <div id="pr-detalle" class="hidden">
         <div class="mm-field" style="margin-bottom:8px">
           <label>Cantidad</label>
-          <div class="mm-qty" style="height:38px">
+          <div class="mm-qty" style="height:48px">
             <button class="qbtn rc-qty-hold" id="pr-qty-menos" type="button" style="height:100%">−</button>
             <input id="pr-cantidad" inputmode="decimal" placeholder="0">
             <span class="unidad" id="pr-unidad">u</span>
@@ -2517,7 +2532,7 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
                 <button type="button" class="rc-modo-btn active" id="rc-modo-unidad" data-modo="unidad" style="border-color:var(--wa-d);background:var(--wa-bg,var(--verde-bg));color:var(--wa-d)">Por unidad</button>
                 <button type="button" class="rc-modo-btn" id="rc-modo-caja" data-modo="caja">Por caja/Display</button>
               </div>
-              <div class="mm-qty" style="height:38px">
+              <div class="mm-qty" style="height:48px">
                 <button class="qbtn rc-qty-hold" id="rc-qty-menos" type="button" style="height:100%">−</button>
                 <input id="rc-cantidad" inputmode="decimal" placeholder="0" disabled>
                 <span class="unidad" id="rc-unidad">u</span>
@@ -3122,7 +3137,7 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
               <button type="button" class="rc-modo-btn active" id="cp-modo-unidad" data-modo="unidad" style="border-color:var(--wa-d);background:var(--wa-bg,var(--verde-bg));color:var(--wa-d)">Por unidad</button>
               <button type="button" class="rc-modo-btn" id="cp-modo-caja" data-modo="caja">Por caja</button>
             </div>
-            <div class="mm-qty" style="height:38px">
+            <div class="mm-qty" style="height:48px">
               <button class="qbtn cp-qty-hold" id="cp-qty-menos" type="button" style="height:100%">−</button>
               <input id="cp-cantidad" inputmode="decimal" placeholder="0" autocomplete="off">
               <span class="unidad" id="cp-unidad">u</span>
@@ -4811,7 +4826,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-16.1';
+const APP_VERSION='2026-10-17.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
