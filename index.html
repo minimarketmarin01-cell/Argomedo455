@@ -4858,7 +4858,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-17.5';
+const APP_VERSION='2026-10-18.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14289,9 +14289,15 @@ document.getElementById('rc-guardar').onclick=async()=>{
       showToast(msg);
       // No cerramos: reseteamos y dejamos la ventana lista para el siguiente producto,
       // así puedes recibir varios seguidos sin tener que reabrir Recepción.
-      rcReset();
-      rcLimpiarBorrador(); // ya se guardó de verdad — un F5 después de esto no debe revivirlo
-      document.getElementById('rc-search').focus();
+      // Si mientras se guardaba ya empezaste con OTRO producto, no se borra lo que escribiste: solo se
+      // limpia el formulario cuando sigue siendo el producto que se acaba de guardar.
+      if(rcState.item&&rcState.item.ref!==it.ref){
+        showToast(msg+' — sigues con "'+rcState.item.nombre+'"');
+      }else{
+        rcReset();
+        rcLimpiarBorrador(); // ya se guardó de verdad — un F5 después de esto no debe revivirlo
+        document.getElementById('rc-search').focus();
+      }
     }else{showToast('Error: '+((j&&j.error)||'no se pudo guardar'));}
   }catch(e){
     if(e.name==='AbortError')showToast('El guardado tardó demasiado. Revisa tu conexión y vuelve a intentar (el stock pudo haberse guardado — verifica antes de repetir).');
@@ -14340,9 +14346,11 @@ async function rcGuardarSoloPrecio(it){
         showToast(msg);
         render();
       }
-      rcReset();
-      rcLimpiarBorrador();
-      document.getElementById('rc-search').focus();
+      if(!(rcState.item&&rcState.item.ref!==it.ref)){
+        rcReset();
+        rcLimpiarBorrador();
+        document.getElementById('rc-search').focus();
+      }
     }else{showToast('Error: '+((j&&j.error)||'no se pudo guardar'));}
   }catch(e){
     showToast(e.name==='AbortError'?'El guardado tardó demasiado. Revisa tu conexión y vuelve a intentar (el costo/precio pudo haberse guardado — verifica antes de repetir).':'Error de conexión al guardar');
