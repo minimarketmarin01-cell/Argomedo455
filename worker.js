@@ -1000,6 +1000,13 @@ async function sincronizarCatalogo(env) {
   let ivaTaxId = null;
   try { ivaTaxId = await obtenerIvaTaxId(env); } catch (e) { /* se avisa solo al crear/activar, no bloquea el sync */ }
 
+  // Solo se escriben los productos NUEVOS o que cambiaron (antes se reescribían los ~3.000 productos en CADA
+  // sincronización: eso agotó el límite diario gratuito de filas escritas de D1).
+  const _igual = (a, b) => String(a == null ? "" : a) === String(b == null ? "" : b);
+  const _igualN = (a, b) => (a == null && b == null) || (a != null && b != null && Number(a) === Number(b));
+  const existentes = {};
+  ((await env.DB.prepare("SELECT sku, id_loyverse, variant_id, nombre, categoria, barcode, precio, costo, stock, sold_by_weight, track_stock, con_iva, imagen_url FROM productos").all()).results || [])
+    .forEach(r => { existentes[r.sku] = r; });
   const stmts = [];
   const saltados = [];
   items.forEach(it => {
@@ -1014,6 +1021,12 @@ async function sincronizarCatalogo(env) {
     const peso = !!(it.sold_by_weight || it.soldByWeight);
     const conIva = ivaTaxId ? (Array.isArray(it.tax_ids) && it.tax_ids.includes(ivaTaxId)) : false;
 
+    const catNom = mapaCategorias[it.category_id] || "SIN CATEGORÍA";
+    const ex = existentes[v.sku];
+    if (ex && _igual(ex.id_loyverse, it.id) && _igual(ex.variant_id, v.variant_id) && _igual(ex.nombre, it.item_name) &&
+        _igual(ex.categoria, catNom) && _igual(ex.barcode, v.barcode || "") && _igualN(ex.precio, precio || 0) && _igualN(ex.costo, v.cost || 0) &&
+        _igualN(ex.stock, stock) && _igualN(ex.sold_by_weight, peso ? 1 : 0) && _igualN(ex.track_stock, it.track_stock ? 1 : 0) &&
+        _igualN(ex.con_iva, conIva ? 1 : 0) && _igual(ex.imagen_url, it.image_url || null)) return;
     // ON CONFLICT: si el sku ya existe en D1, NO se toca `proveedor` ni `sector`
     // (columnas que esta sentencia ni siquiera incluye) — solo se refrescan los
     // datos que sí vienen de Loyverse.
