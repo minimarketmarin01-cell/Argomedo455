@@ -4368,6 +4368,15 @@ async function ventasPorSku(env, dias) {
 // `ventas` de Argomedo (histórico completo, nunca se purga) en vez de una tabla
 // separada de ventas diarias. rev/prof solo son reales desde que se agregaron las
 // columnas venta/utilidad (Fase 1) — antes de eso quedan en 0 para esas filas viejas.
+// El resumen de ventas por producto recorre toda la tabla `ventas` y cada carga del dashboard lo pedía de nuevo: era
+// la mayor fuente de filas leídas de D1. Se guarda 2 minutos en memoria (solo para el dashboard).
+let _vrCache = { t: 0, datos: null };
+async function ventasResumenConCache(env) {
+  if (_vrCache.datos && Date.now() - _vrCache.t < 120000) return _vrCache.datos;
+  const datos = await ventasResumenTodas(env);
+  _vrCache = { t: Date.now(), datos };
+  return datos;
+}
 async function ventasResumenTodas(env) {
   const ahora = Date.now();
   const d7 = fechaISO(new Date(ahora - 7 * 86400000));
@@ -4418,7 +4427,7 @@ async function payloadDashboard(env, synced, syncMsg) {
     };
   });
 
-  const resumen = await ventasResumenTodas(env);
+  const resumen = await ventasResumenConCache(env);
   const ventasRows = {};
   resumen.forEach(r => {
     ventasRows[r.sku] = {
