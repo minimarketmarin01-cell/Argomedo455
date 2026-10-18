@@ -4858,7 +4858,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-18.1';
+const APP_VERSION='2026-10-18.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5611,6 +5611,7 @@ function _volverAMas(){
   }
 }
 function cerrarModal(id){
+  if(id==='dlg-ov'&&_dlgCancel){_dlgCancel();return;} // Atrás sobre un diálogo propio = cancelar
   const el=document.getElementById(id);
   if(el){el.classList.add('hidden');el.style.removeProperty('display');}
   // Caso especial: la Ficha de producto (fp-ov) fue abierta desde el Nivel 2 de Gestionar
@@ -6385,7 +6386,7 @@ async function fpCopiarAOtroLocal(p,modo){
   const confirmMsg=modo==='todo'
     ?('¿Copiar "'+p.nombre+'" completo a '+OTRO_LOCAL_NOMBRE+'?\n\nSi ya existe allá (mismo código de barras), se actualiza. Si no existe, se crea. Se copia también la imagen (si tiene). El stock NUNCA se copia.')
     :('¿Copiar solo costo y precio de "'+p.nombre+'" a '+OTRO_LOCAL_NOMBRE+'?');
-  if(!confirm(confirmMsg))return;
+  if(!await dlgConfirm(confirmMsg))return;
   box.classList.remove('hidden');
   box.innerHTML='<span class="cat">Enviando a '+OTRO_LOCAL_NOMBRE+'…</span>';
   if(btnTodo)btnTodo.disabled=true; if(btnCP)btnCP.disabled=true;
@@ -6435,8 +6436,8 @@ function fpPaneUnidad(f){
     document.getElementById('fp-ov').classList.add('hidden');
     openScanner(code=>{reopen();fpBarcodeInp.value=code;},reopen);
   };
-  document.getElementById('fp-g-generar-codigo').onclick=()=>{
-    if((fpBarcodeInp.value||'').trim()&&!confirm('Ya hay un código escrito ("'+fpBarcodeInp.value.trim()+'"). ¿Reemplazarlo por uno generado?'))return;
+  document.getElementById('fp-g-generar-codigo').onclick=async ()=>{
+    if((fpBarcodeInp.value||'').trim()&&!await dlgConfirm('Ya hay un código escrito ("'+fpBarcodeInp.value.trim()+'"). ¿Reemplazarlo por uno generado?'))return;
     const codigo=generarCodigoBarrasInterno();
     if(!codigo){showToast('No se pudo generar un código único — intenta de nuevo');return;}
     fpBarcodeInp.value=codigo;
@@ -7056,7 +7057,7 @@ async function fpEliminarLote(filaIndex,cantidad){
   const msg='¿Eliminar este lote de "'+p.nombre+'"?\n\n'+
     (cant>0?('Se descontarán '+cant+' del stock en Loyverse (revierte la recepción).\n'):'')+
     'Esta acción no se puede deshacer.';
-  if(!confirm(msg))return;
+  if(!await dlgConfirm(msg))return;
   showToast('Eliminando lote…');
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'eliminar_lote',payload:{filaIndex:Number(filaIndex),sku:p.sku,cantidad:cant}})});
@@ -7316,7 +7317,7 @@ async function fpGuardarTodo(){
 const FP_ELIMINAR_BTN_HTML=document.getElementById('fp-eliminar-btn').innerHTML;
 async function fpEliminarProducto(f){
   const p=f.producto;
-  if(!confirm('¿Eliminar "'+p.nombre+'" de Loyverse?\n\nSe borra del catálogo de forma PERMANENTE. Esta acción no se puede deshacer.'))return;
+  if(!await dlgConfirm('¿Eliminar "'+p.nombre+'" de Loyverse?\n\nSe borra del catálogo de forma PERMANENTE. Esta acción no se puede deshacer.'))return;
   const btn=document.getElementById('fp-eliminar-btn');
   btn.disabled=true;btn.textContent='Eliminando…';
   // Timeout: si el servidor (o Loyverse detrás) no responde en 45s, avisa en vez de quedar
@@ -7798,7 +7799,7 @@ async function smEliminar(){
   if(!sel.length)return;
   const sinId=sel.filter(p=>!p.id).length;
   const aviso=sinId?('\n\n'+sinId+' no tienen id de Loyverse (usa Catálogo antes).'):'';
-  if(!confirm('¿Eliminar '+sel.length+' producto'+(sel.length===1?'':'s')+' de Loyverse?\n\nSe borran del catálogo de forma PERMANENTE. Esta acción no se puede deshacer.'+aviso))return;
+  if(!await dlgConfirm('¿Eliminar '+sel.length+' producto'+(sel.length===1?'':'s')+' de Loyverse?\n\nSe borran del catálogo de forma PERMANENTE. Esta acción no se puede deshacer.'+aviso))return;
   const b=document.getElementById('sm-del');b.disabled=true;b.textContent='Eliminando…';
   // Timeout: si el servidor (o Loyverse detrás) no responde en 45s, avisa en vez de quedar
   // colgado en "Eliminando…" en silencio (mismo patrón que ya usa Crear producto).
@@ -8706,7 +8707,7 @@ document.getElementById('gp-prod-scan').onclick=()=>{
   },reopen);
 };
 async function gpEliminar(prov){
-  if(!confirm('¿Eliminar el proveedor "'+prov.nombre+'"?'))return;
+  if(!await dlgConfirm('¿Eliminar el proveedor "'+prov.nombre+'"?'))return;
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'eliminar_proveedor',payload:{id:prov.id}})});
     const j=await res.json();
@@ -9165,10 +9166,10 @@ document.getElementById('mas-q-crear').onclick=()=>{
 // de casualidad, perdiendo el producto a medio cargar (mismo bug ya corregido en Recepción).
 // Solo pregunta cuando hay algo que perder: abrir y cerrar sin escribir nada no debe molestar
 // con un confirm.
-function cpDescartar(){
+async function cpDescartar(){
   const val=id=>{const el=document.getElementById(id);return el?(el.value||'').trim():'';};
   const hayAlgo=!!val('cp-nombre')||!!val('cp-barcode')||!!val('cp-cat-input')||!!_cpImagenUrl||!!_cpImagenBase64;
-  if(hayAlgo&&!confirm('¿Cancelar la creación de este producto?\n\nSe pierde lo que hayas ingresado (nombre, categoría, código, imagen, etc.).'))return;
+  if(hayAlgo&&!await dlgConfirm('¿Cancelar la creación de este producto?\n\nSe pierde lo que hayas ingresado (nombre, categoría, código, imagen, etc.).'))return;
   cerrarModal('cp-ov');
   if(_cpDesdeRecepcion){_cpDesdeRecepcion=false;abrirModal('rc-ov');rcRestaurarPendiente();}
 }
@@ -9997,9 +9998,9 @@ document.getElementById('cp-scan').onclick=()=>{
   document.getElementById('cp-ov').classList.add('hidden');
   openScanner(code=>{reopen();document.getElementById('cp-barcode').value=code;cpAutocompletarPorCodigo(code);},reopen);
 };
-document.getElementById('cp-generar-codigo').onclick=()=>{
+document.getElementById('cp-generar-codigo').onclick=async ()=>{
   const inp=document.getElementById('cp-barcode');
-  if((inp.value||'').trim()&&!confirm('Ya hay un código escrito ("'+inp.value.trim()+'"). ¿Reemplazarlo por uno generado?'))return;
+  if((inp.value||'').trim()&&!await dlgConfirm('Ya hay un código escrito ("'+inp.value.trim()+'"). ¿Reemplazarlo por uno generado?'))return;
   const codigo=generarCodigoBarrasInterno();
   if(!codigo){showToast('No se pudo generar un código único — intenta de nuevo');return;}
   inp.value=codigo;
@@ -10341,9 +10342,9 @@ document.getElementById('btn-merma').onclick=()=>openMerma();
 // abajo): antes era un botón a todo el ancho pegado justo debajo de Guardar merma y se tocaba
 // de casualidad, perdiendo el producto/cantidad/motivo a medio cargar (mismo bug ya corregido
 // en Recepción). Solo pregunta cuando hay algo que perder.
-function mmDescartar(){
+async function mmDescartar(){
   const hayAlgo=mmCart.length>0||!!mmState.motivo||!!mmState.resp;
-  if(hayAlgo&&!confirm('¿Cancelar el registro de esta merma?\n\nSe pierde el carrito ('+mmCart.length+' producto'+(mmCart.length===1?'':'s')+') y lo que hayas ingresado.'))return;
+  if(hayAlgo&&!await dlgConfirm('¿Cancelar el registro de esta merma?\n\nSe pierde el carrito ('+mmCart.length+' producto'+(mmCart.length===1?'':'s')+') y lo que hayas ingresado.'))return;
   closeMerma();
 }
 document.getElementById('mm-cancelar').onclick=mmDescartar;
@@ -11697,7 +11698,7 @@ function vcFilaHtml(l){
 // Cablea los botones de un lote de filas recién pintadas — separado de vcFilaHtml para no
 // repetir este bloque en cada llamada de vcRender (agrupada o plana).
 function vcWireFilas(box){
-  box.querySelectorAll('[data-act="ok"]').forEach(b=>b.onclick=()=>{
+  box.querySelectorAll('[data-act="ok"]').forEach(b=>b.onclick=async ()=>{
     const l=_vcTodos.find(x=>String(x.filaIndex)===String(b.dataset.i));
     // En categorías "cambio con proveedor" (Ideal/Castaño/San Jorge), "Vendido" es la excepción
     // (lo esperado ahí es "Retirar" → cambio con el proveedor) — un solo mensaje combinado si
@@ -11706,8 +11707,8 @@ function vcWireFilas(box){
       const msg=l.estado==='Vencido'
         ?'Este producto ya está VENCIDO y es de una categoría que normalmente se cambia con el proveedor (no se vende vencido). ¿Seguro que se vendió antes de vencer?\n\nSi en realidad se venció, tocá "Retirar" para gestionar el cambio.'
         :'Este producto es de una categoría que normalmente se cambia con el proveedor. ¿Seguro que se vendió?';
-      if(!confirm(msg))return;
-    }else if(l&&l.estado==='Vencido'&&!confirm('Este producto ya está VENCIDO. ¿Seguro que se vendió antes de vencer?\n\nSi en realidad se venció, tocá "Merma" en vez de "Vendido".')){
+      if(!await dlgConfirm(msg))return;
+    }else if(l&&l.estado==='Vencido'&&!await dlgConfirm('Este producto ya está VENCIDO. ¿Seguro que se vendió antes de vencer?\n\nSi en realidad se venció, tocá "Merma" en vez de "Vendido".')){
       return;
     }
     vcRevisar(b.dataset.i,'vendido');
@@ -12115,7 +12116,7 @@ function daRenderPendientes(){
 // precio quedó pendiente (ver daRenderPendientes). Muestra el error real de Loyverse si falla,
 // en vez de que quede invisible solo en los logs del servidor.
 async function daRestaurarPrecio(filaIndex){
-  if(!confirm('¿Restaurar el precio original en Loyverse ahora?'))return;
+  if(!await dlgConfirm('¿Restaurar el precio original en Loyverse ahora?'))return;
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'restaurar_precio_descuento',payload:{filaIndex}})});
     const j=await res.json();
@@ -12167,7 +12168,7 @@ async function daRegistrar(filaIndex){
 }
 async function daCerrar(filaIndex){
   const l=_daLotes.find(x=>String(x.filaIndex)===String(filaIndex));
-  if(!confirm('¿Cerrar la gestión de "'+(l?l.nombre:'este lote')+'"?\n\nPasará a Historial con lo registrado hasta ahora (vendido/merma), sin esperar a que se agote la cantidad.'))return;
+  if(!await dlgConfirm('¿Cerrar la gestión de "'+(l?l.nombre:'este lote')+'"?\n\nPasará a Historial con lo registrado hasta ahora (vendido/merma), sin esperar a que se agote la cantidad.'))return;
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'cerrar_gestion_descuento',payload:{filaIndex}})});
     const j=await res.json();
@@ -12257,7 +12258,7 @@ async function vcMarcarDescuento(filaIndex,nombre,sku,cantidad){
   // Primero pregunta cuántas unidades tuvieron descuento (prellenado con el total del lote,
   // por si el proveedor solo descontó una parte) — este número es el que se usa para calcular
   // el monto sugerido del segundo prompt, no solo la cantidad total del lote a ciegas.
-  let cantTxt=prompt('¿Cuántas unidades de "'+(nombre||'este producto')+'" tuvieron descuento?'+(cantidadLote?' (de '+cantidadLote+' en este lote)':''),cantidadLote?String(cantidadLote):'');
+  let cantTxt=await dlgPrompt('¿Cuántas unidades de "'+(nombre||'este producto')+'" tuvieron descuento?'+(cantidadLote?' (de '+cantidadLote+' en este lote)':''),cantidadLote?String(cantidadLote):'');
   if(cantTxt===null)return;   // canceló el prompt: no cierra el lote
   cantTxt=cantTxt.trim().replace(',','.');
   const cantConDescuento=cantTxt?(Number(cantTxt)||0):cantidadLote;
@@ -12266,7 +12267,7 @@ async function vcMarcarDescuento(filaIndex,nombre,sku,cantidad){
   // como estimación de cuánto debería ser el descuento en la factura. Es solo un valor
   // precargado y editable en el prompt — el usuario puede corregirlo o borrarlo antes de aceptar.
   const sugerido=(costoConIva&&cantConDescuento)?Math.round(costoConIva*cantConDescuento):null;
-  let montoTxt=prompt('¿Cuánto fue el descuento en la factura para "'+(nombre||'este producto')+'"? (déjalo vacío si no lo sabes todavía)',sugerido!=null?String(sugerido):'');
+  let montoTxt=await dlgPrompt('¿Cuánto fue el descuento en la factura para "'+(nombre||'este producto')+'"? (déjalo vacío si no lo sabes todavía)',sugerido!=null?String(sugerido):'');
   if(montoTxt===null)return;   // canceló el prompt: no cierra el lote
   montoTxt=montoTxt.trim().replace(/[^\d.]/g,'');
   const monto=montoTxt?Number(montoTxt):null;
@@ -12331,7 +12332,7 @@ async function vcEliminarLote(filaIndex,sku,cantidad,nombre){
   const msg='¿Eliminar este lote de "'+nombre+'"?\n\n'+
     (cant>0?('Se descontarán '+cant+' del stock en Loyverse (revierte la recepción).\n'):'')+
     'Esta acción no se puede deshacer.';
-  if(!confirm(msg))return;
+  if(!await dlgConfirm(msg))return;
   showToast('Eliminando lote…');
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'eliminar_lote',payload:{
@@ -12472,10 +12473,10 @@ const _daFiltro=vcWireBuscadorInteligente('da',{
 // antes era un botón a todo el ancho pegado justo debajo de Guardar lote y se tocaba de
 // casualidad, perdiendo el producto/cantidad/lote/fecha a medio cargar (mismo bug ya corregido
 // en Recepción). Solo pregunta cuando hay algo que perder.
-function vcCancelarForm(){
+async function vcCancelarForm(){
   const val=id=>{const el=document.getElementById(id);return el?(el.value||'').trim():'';};
   const hayAlgo=!!(vcNew&&vcNew.item)||!!val('vc-cantidad')||!!val('vc-lote')||!!val('vc-fecha-dd')||!!val('vc-fecha-mm')||!!val('vc-fecha-aaaa');
-  if(hayAlgo&&!confirm('¿Cancelar este lote nuevo?\n\nSe pierde el producto elegido y lo que hayas ingresado.'))return;
+  if(hayAlgo&&!await dlgConfirm('¿Cancelar este lote nuevo?\n\nSe pierde el producto elegido y lo que hayas ingresado.'))return;
   vcShowList();
 }
 document.getElementById('vc-cancelar').onclick=vcCancelarForm;
@@ -12747,7 +12748,7 @@ async function hmCorregir(filaIndex,nuevoMotivo){
   }catch(e){showToast('Error de conexión al corregir');}
 }
 async function hmEliminar(filaIndex,nombre){
-  if(!confirm('¿Eliminar este registro? Esta acción no se puede deshacer.'))return;
+  if(!await dlgConfirm('¿Eliminar este registro? Esta acción no se puede deshacer.'))return;
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'eliminar_merma',payload:{filaIndex:Number(filaIndex)}})});
     const j=await res.json();
@@ -12861,9 +12862,9 @@ document.getElementById('btn-insumos').onclick=openInsumos;
 // abajo): antes era un botón a todo el ancho pegado justo debajo de Guardar consumo y se tocaba
 // de casualidad, perdiendo el carrito completo a medio cargar (mismo bug ya corregido en
 // Recepción). Solo pregunta cuando hay algo que perder.
-function inDescartar(){
+async function inDescartar(){
   const hayAlgo=inCart.length>0||!!inResp;
-  if(hayAlgo&&!confirm('¿Cancelar este consumo interno?\n\nSe pierde el carrito ('+inCart.length+' producto'+(inCart.length===1?'':'s')+') y lo que hayas ingresado.'))return;
+  if(hayAlgo&&!await dlgConfirm('¿Cancelar este consumo interno?\n\nSe pierde el carrito ('+inCart.length+' producto'+(inCart.length===1?'':'s')+') y lo que hayas ingresado.'))return;
   inLimpiarBorrador();closeInsumos();
 }
 document.getElementById('in-cancelar').onclick=inDescartar;
@@ -13074,7 +13075,7 @@ async function prCargarPendientes(){
   }catch(e){box.innerHTML='<div class="vc-empty">Error de conexión</div>';}
 }
 async function prDevolver(id,btn){
-  if(!confirm('¿Confirmas que este préstamo ya fue devuelto?\n\nEsto ajustará el stock en Loyverse de vuelta.'))return;
+  if(!await dlgConfirm('¿Confirmas que este préstamo ya fue devuelto?\n\nEsto ajustará el stock en Loyverse de vuelta.'))return;
   btn.disabled=true;btn.textContent='Guardando…';
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'devolver_prestamo',payload:{id}})});
@@ -13095,7 +13096,7 @@ async function prDevolver(id,btn){
 async function prCorregirDireccion(id,btn,direccionActual,sku,cantidad,costoUnitario,responsable){
   const nuevaDir=direccionActual==='salida'?'entrada':'salida';
   const nuevaDirTxt=nuevaDir==='salida'?'Le prestamos':'Nos prestaron';
-  if(!confirm('¿Corregir este préstamo a "'+nuevaDirTxt+'"?\n\nSe marca el registro actual como devuelto (revierte lo que ajustó) y se crea uno nuevo con la dirección correcta.'))return;
+  if(!await dlgConfirm('¿Corregir este préstamo a "'+nuevaDirTxt+'"?\n\nSe marca el registro actual como devuelto (revierte lo que ajustó) y se crea uno nuevo con la dirección correcta.'))return;
   btn.disabled=true;
   try{
     const res1=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'devolver_prestamo',payload:{id}})});
@@ -13371,7 +13372,7 @@ async function rcEliminarMovimiento(id,cantidad){
   const msg='¿Eliminar este movimiento de recepción de "'+it.nombre+'"?\n\n'+
     (cant>0?('Se descontarán '+fmt1(cant)+' del stock en Loyverse (revierte la recepción).\n'):'')+
     'Esta acción no se puede deshacer.';
-  if(!confirm(msg))return;
+  if(!await dlgConfirm(msg))return;
   showToast('Eliminando movimiento…');
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'eliminar_movimiento_stock',payload:{id:Number(id),sku:it.ref}})});
@@ -13696,10 +13697,10 @@ function closeRecibir(){
 // ✕ a secas a propósito — una ✕ se lee como "volver" inocuo, y esto borra lo cargado.
 // Solo pregunta cuando hay algo que perder: salir de una pantalla vacía no debe molestar con
 // un confirm. Para SALIR sin perder nada siguen estando la barra inferior y el botón atrás.
-function rcDescartar(){
+async function rcDescartar(){
   const buscador=document.getElementById('rc-search');
   const hayAlgo=!!rcState.item||!!(buscador&&buscador.value.trim());
-  if(hayAlgo&&!confirm('¿Descartar la recepción a medio cargar?\n\nSe pierde el producto elegido y lo que hayas ingresado.\n\nSi solo quieres salir sin perderla, usa la barra de abajo o el botón atrás.'))return;
+  if(hayAlgo&&!await dlgConfirm('¿Descartar la recepción a medio cargar?\n\nSe pierde el producto elegido y lo que hayas ingresado.\n\nSi solo quieres salir sin perderla, usa la barra de abajo o el botón atrás.'))return;
   closeRecibir();
 }
 
@@ -13887,8 +13888,8 @@ document.getElementById('rc-scan').onclick=()=>{
 };
 // El código escaneado no coincide con ningún producto: ofrece crearlo sin perder lo ya
 // ingresado en Recepción (costo y cantidad quedan guardados y se restauran al volver).
-function rcProductoNoEncontrado(code){
-  if(!confirm('Producto no encontrado\n\nEste artículo no existe en el inventario.\n¿Deseas crearlo ahora?'))return;
+async function rcProductoNoEncontrado(code){
+  if(!await dlgConfirm('Producto no encontrado\n\nEste artículo no existe en el inventario.\n¿Deseas crearlo ahora?'))return;
   _rcPendiente={
     barcode:code,
     costo:document.getElementById('rc-costo').value||'',
@@ -14219,7 +14220,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
   // accidentales (doble tap sin querer) que sumaban stock de más. Solo se pregunta cuando
   // realmente va a sumar stock (cantidad>0) — guardar solo precio/costo/proveedor/sector
   // (cantidad=0, ver más abajo) no toca stock y no tiene ese riesgo.
-  if(cantidad>0&&!confirm('¿Confirmar recepción en '+LOCAL_NOMBRE+' de '+fmt1(cantidad)+' '+(it.peso?'kg':'u')+' de "'+it.nombre+'"?\n\nEl stock quedará en '+fmt1(Math.max(0,Number(it.stock)||0)+cantidad)+'.'))return;
+  if(cantidad>0&&!await dlgConfirm('¿Confirmar recepción en '+LOCAL_NOMBRE+' de '+fmt1(cantidad)+' '+(it.peso?'kg':'u')+' de "'+it.nombre+'"?\n\nEl stock quedará en '+fmt1(Math.max(0,Number(it.stock)||0)+cantidad)+'.'))return;
   const provInput=(document.getElementById('rc-prov-input').value||'').trim().toUpperCase();
   const provActual=(it.prov&&it.prov!=='SIN PROVEEDOR')?it.prov:'';
   const provCambio=provInput!==provActual;
@@ -14541,7 +14542,7 @@ function rzRender(){
 // control de stock real). Confirma antes porque, a diferencia de corregir stock, esto cambia
 // qué se ve en la lista para siempre hasta que alguien lo reincluya a mano.
 async function rzExcluir(sku,nombre){
-  if(!confirm('¿Excluir "'+nombre+'" de Riesgo de quiebre?\n\nNo volverá a aparecer acá hasta que lo reincluyas desde "Ver productos excluidos".'))return;
+  if(!await dlgConfirm('¿Excluir "'+nombre+'" de Riesgo de quiebre?\n\nNo volverá a aparecer acá hasta que lo reincluyas desde "Ver productos excluidos".'))return;
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'excluir_riesgo',payload:{sku}})});
     const j=await res.json();
@@ -15298,6 +15299,42 @@ function lineasEliminadasDePedidoConfirmado(){
 // nodo en el DOM, se repuebla en cada llamada. Bloquea doble clic deshabilitando
 // el botón de confirmar apenas se toca, y limpia listeners previos con
 // cloneNode para que llamadas sucesivas no acumulen handlers duplicados.
+// Diálogos propios (reemplazan a confirm()/prompt() del navegador, que mostraban "…github.io dice").
+// dlgConfirm(msg) → Promise<boolean>;  dlgPrompt(msg, valorInicial) → Promise<string|null>.
+let _dlgCancel=null;
+function _dlgModal(){
+  let m=document.getElementById('dlg-ov');
+  if(m)return m;
+  m=document.createElement('div');
+  m.className='mm-ov hidden';m.id='dlg-ov';m.style.zIndex='99999';
+  m.innerHTML='<div class="mm-card" style="max-width:340px"><div class="mm-body">'+
+    '<p id="dlg-msg" style="font-size:14.5px;line-height:1.5;color:var(--ink);margin:6px 0 14px;white-space:pre-line"></p>'+
+    '<input id="dlg-in" class="hidden" autocomplete="off" style="width:100%;box-sizing:border-box;padding:12px;border:2px solid var(--verde);border-radius:12px;font-size:17px;margin-bottom:12px">'+
+    '<button class="mm-save" id="dlg-ok" type="button" style="width:100%">Aceptar</button>'+
+    '<button class="loadbtn" id="dlg-cancel" type="button" style="width:100%;margin-top:8px">Cancelar</button>'+
+    '</div></div>';
+  document.body.appendChild(m);
+  return m;
+}
+function _dlgAbrir(msg,conInput,valor){
+  return new Promise(res=>{
+    const m=_dlgModal(),inp=document.getElementById('dlg-in');
+    const ok=document.getElementById('dlg-ok'),no=document.getElementById('dlg-cancel');
+    document.getElementById('dlg-msg').textContent=String(msg);
+    inp.classList.toggle('hidden',!conInput);inp.value=conInput&&valor!=null?String(valor):'';
+    let hecho=false;
+    const fin=v=>{if(hecho)return;hecho=true;_dlgCancel=null;m.classList.add('hidden');try{_sincronizarNav();}catch(e){}res(v);};
+    _dlgCancel=()=>fin(conInput?null:false);
+    ok.onclick=()=>fin(conInput?inp.value:true);
+    no.onclick=()=>fin(conInput?null:false);
+    inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();fin(inp.value);}else if(e.key==='Escape')fin(null);};
+    m.classList.remove('hidden');
+    try{_sincronizarNav();}catch(e){}
+    setTimeout(()=>{try{(conInput?inp:ok).focus();if(conInput)inp.select();}catch(e){}},60);
+  });
+}
+function dlgConfirm(msg){return _dlgAbrir(msg,false);}
+function dlgPrompt(msg,valor){return _dlgAbrir(msg,true,valor);}
 function confirmarAccion({titulo,mensaje,textoConfirmar,textoCancelar,peligro,onConfirm,onCancel}){
   let modal=document.getElementById('confirm-ov');
   if(!modal){
@@ -15888,7 +15925,7 @@ function renderProvHoyReal(){
       if(btnInc)btnInc.onclick=async(ev)=>{
         ev.stopPropagation();
         if(!pendientesSinRecibir.length)return;
-        if(!confirm('¿Finalizar este pedido como incompleto?\n\n'+pendientesSinRecibir.length+' producto(s) sin recepción quedarán disponibles para volver a pedirse. Lo que ya se recibió no se modifica.'))return;
+        if(!await dlgConfirm('¿Finalizar este pedido como incompleto?\n\n'+pendientesSinRecibir.length+' producto(s) sin recepción quedarán disponibles para volver a pedirse. Lo que ya se recibió no se modifica.'))return;
         const ok=await finalizarPedidoIncompleto(pendientesSinRecibir);
         if(ok){detalle.classList.add('hidden');}
       };
@@ -15966,7 +16003,7 @@ function renderRecepcionarHoy(){
         ev.stopPropagation();
         const skusPend=itemsPendientesPorProveedorHastaHoy(btnInc.dataset.prov).map(it=>it.sku);
         if(!skusPend.length)return;
-        if(!confirm('¿Finalizar este pedido como incompleto?\n\n'+skusPend.length+' producto(s) sin recepción quedarán disponibles para volver a pedirse. Lo que ya se recibió no se modifica.'))return;
+        if(!await dlgConfirm('¿Finalizar este pedido como incompleto?\n\n'+skusPend.length+' producto(s) sin recepción quedarán disponibles para volver a pedirse. Lo que ya se recibió no se modifica.'))return;
         const ok=await finalizarPedidoIncompleto(skusPend);
         if(ok){detalle.classList.add('hidden');}
       };
