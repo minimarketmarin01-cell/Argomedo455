@@ -4395,14 +4395,39 @@ async function ventasPorSku(env, dias) {
 // `ventas` de Argomedo (histórico completo, nunca se purga) en vez de una tabla
 // separada de ventas diarias. rev/prof solo son reales desde que se agregaron las
 // columnas venta/utilidad (Fase 1) — antes de eso quedan en 0 para esas filas viejas.
-// El resumen de ventas por producto recorre toda la tabla `ventas` y cada carga del dashboard lo pedía de nuevo: era
-// la mayor fuente de filas leídas de D1. Se guarda 2 minutos en memoria (solo para el dashboard).
-let _vrCache = { t: 0, datos: null };
+// El resumen de ventas por producto recorre toda la tabla `ventas` y cada carga del dashboard lo pedía de nuevo. Ahora se
+// parte en dos: los días ANTERIORES a hoy (cambian casi nunca) se guardan 10 minutos en memoria, y HOY se lee en vivo y
+// se suma. Así una venta nueva se ve al instante y la lectura sigue siendo barata.
+let _vrHist = { t: 0, hoy: "", datos: null };
 async function ventasResumenConCache(env) {
-  if (_vrCache.datos && Date.now() - _vrCache.t < 120000) return _vrCache.datos;
-  const datos = await ventasResumenTodas(env);
-  _vrCache = { t: Date.now(), datos };
-  return datos;
+  const ahora = Date.now();
+  const hoy = fechaISO(new Date(ahora));
+  if (!_vrHist.datos || _vrHist.hoy !== hoy || ahora - _vrHist.t > 600000) {
+    const d7 = fechaISO(new Date(ahora - 7 * 86400000)), d14 = fechaISO(new Date(ahora - 14 * 86400000));
+    const d30 = fechaISO(new Date(ahora - 30 * 86400000)), d90 = fechaISO(new Date(ahora - 90 * 86400000));
+    const { results } = await env.DB.prepare(
+      `SELECT sku,
+         SUM(cantidad) AS u_all,
+         SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u7,
+         SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u14,
+         SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u30,
+         SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u90,
+         SUM(venta) AS rev, SUM(utilidad) AS prof
+       FROM ventas WHERE fecha_venta < ? GROUP BY sku`
+    ).bind(d7, d14, d30, d90, hoy).all();
+    _vrHist = { t: ahora, hoy, datos: results || [] };
+  }
+  const { results: hoyRows } = await env.DB.prepare(
+    "SELECT sku, SUM(cantidad) AS u, SUM(venta) AS rev, SUM(utilidad) AS prof FROM ventas WHERE fecha_venta >= ? GROUP BY sku"
+  ).bind(hoy).all();
+  const out = {};
+  _vrHist.datos.forEach(r => { out[r.sku] = { sku: r.sku, u_all: r.u_all || 0, u7: r.u7 || 0, u14: r.u14 || 0, u30: r.u30 || 0, u90: r.u90 || 0, rev: r.rev || 0, prof: r.prof || 0 }; });
+  (hoyRows || []).forEach(r => {
+    const o = out[r.sku] || (out[r.sku] = { sku: r.sku, u_all: 0, u7: 0, u14: 0, u30: 0, u90: 0, rev: 0, prof: 0 });
+    const u = r.u || 0;
+    o.u_all += u; o.u7 += u; o.u14 += u; o.u30 += u; o.u90 += u; o.rev += r.rev || 0; o.prof += r.prof || 0;
+  });
+  return Object.values(out);
 }
 async function ventasResumenTodas(env) {
   const ahora = Date.now();
