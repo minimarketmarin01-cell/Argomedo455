@@ -1759,6 +1759,10 @@ async function chequearYNotificarRiesgoQuiebre(env) {
 async function aplicarVentas(env, receipts) {
   if (!receipts || !receipts.length) return 0;
   let procesados = 0;
+  // Solo se escribe lo que cambió: esta función se vuelve a llamar con los recibos de las últimas 24 h en cada
+  // sincronización y en cada respaldo, y antes reescribía todas las líneas de todos esos recibos cada vez
+  // (miles de filas escritas de D1 al día). Además se recuerda variant_id → sku durante la llamada.
+  const skuPorVariante = new Map();
   for (const r of receipts) {
     if (r.cancelled_at) continue; // recibo anulado, no cuenta como venta
     if (!r.line_items || !r.line_items.length) continue;
@@ -1773,15 +1777,27 @@ async function aplicarVentas(env, receipts) {
     // gross_total_money, cost_total) — antes esta tabla solo guardaba cantidad.
     const porSku = {};
     for (const li of r.line_items) {
-      const fila = await get(env, "SELECT sku FROM productos WHERE variant_id = ?", li.variant_id);
+      let skuLinea = skuPorVariante.get(li.variant_id);
+      if (skuLinea === undefined) {
+        const filaP = await get(env, "SELECT sku FROM productos WHERE variant_id = ?", li.variant_id);
+        skuLinea = filaP ? filaP.sku : null;
+        skuPorVariante.set(li.variant_id, skuLinea);
+      }
+      const fila = skuLinea ? { sku: skuLinea } : null;
       if (!fila) continue; // producto no está en D1 todavía
       const acc = porSku[fila.sku] || (porSku[fila.sku] = { cantidad: 0, venta: 0, utilidad: 0 });
       acc.cantidad += signo * (Number(li.quantity) || 0);
       acc.venta += signo * (Number(li.total_money) || 0);
       acc.utilidad += signo * ((Number(li.gross_total_money) || Number(li.total_money) || 0) - (Number(li.cost_total) || 0));
     }
+    const yaGuardadas = {};
+    ((await env.DB.prepare("SELECT sku, cantidad, fecha_venta, venta, utilidad FROM ventas WHERE receipt_id = ?").bind(receiptId).all()).results || [])
+      .forEach(x => { yaGuardadas[x.sku] = x; });
     for (const sku of Object.keys(porSku)) {
       const acc = porSku[sku];
+      const ex = yaGuardadas[sku];
+      if (ex && Number(ex.cantidad) === acc.cantidad && String(ex.fecha_venta) === String(fechaVenta) &&
+          Number(ex.venta) === acc.venta && Number(ex.utilidad) === acc.utilidad) { procesados++; continue; }
       await run(env,
         `INSERT INTO ventas (receipt_id, sku, cantidad, fecha_venta, venta, utilidad) VALUES (?,?,?,?,?,?)
          ON CONFLICT(receipt_id, sku) DO UPDATE SET cantidad = excluded.cantidad, fecha_venta = excluded.fecha_venta,
@@ -1880,9 +1896,7 @@ async function registrarFiadoDesdeReceipt(env, r, numero) {
   // Diagnóstico temporal: deja rastro de CADA receipt evaluado (coincida o no), con los nombres
   // de pago tal cual los manda Loyverse — sin esto, un "no coincide" queda invisible (return
   // silencioso) y no hay forma de saber por qué una venta fiada no se detectó.
-  await logMsg(env, "🔍 Fiados: receipt " + numero + " · pagos=[" +
-    (r.payments || []).map(p => JSON.stringify((p && p.name) || null)).join(", ") +
-    "] · configurado=" + JSON.stringify(nombrePago) + " · coincide=" + (!!pago));
+  // (El log de diagnóstico por cada recibo evaluado se quitó: escribía una fila por recibo en CADA repaso.)
   if (!pago) return;
   const yaExiste = await get(env, "SELECT id, cliente_id FROM fiados WHERE receipt_id_loyverse = ?", numero);
   if (yaExiste) {
