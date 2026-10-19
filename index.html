@@ -4863,7 +4863,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-19.2';
+const APP_VERSION='2026-10-19.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5398,12 +5398,12 @@ function iniciarPollingTiempoReal(){
   if(_pollingTiempoReal)clearInterval(_pollingTiempoReal);
   conectarTiempoReal();
   _pollingTiempoReal=setInterval(revisarActualizacionCatalogo,30000);
-  // Respaldo: cada 10 min sí consulta a Loyverse directo (stock+ventas), por si algún
+  // Respaldo: cada 30 min sí consulta a Loyverse directo (stock+ventas), por si algún
   // webhook se perdió y la base quedó desactualizada sin que nadie lo note. Solo dibuja
   // si el usuario está inactivo, igual que el poll rápido.
   setInterval(()=>{
     if(document.visibilityState==='visible'&&!usuarioActivo())cloudSync(true,true);
-  },10*60*1000);
+  },30*60*1000);
   setInterval(actualizarIndicadorEnVivo,3000);
 }
 
