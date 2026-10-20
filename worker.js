@@ -4623,9 +4623,10 @@ const COLS_PRODUCTO_PANEL = ["sku", "id_loyverse", "variant_id", "nombre", "cate
 const TABLAS_SECCION_PANEL = { pedidos_pendientes: "pendientes", producto_proveedor_extra: "provsIds", riesgo_excluidos: "riesgo",
   favoritos: "favoritos", config_multiplo_producto: "multiplos" };
 function sentenciasRegistroCambios() {
-  const anotar = (tabla, clave) => "UPDATE panel_version SET v = v + 1 WHERE id = 1; INSERT OR REPLACE INTO panel_cambios (tabla, clave, v) " +
-    "VALUES ('" + tabla + "', " + clave + ", (SELECT v FROM panel_version WHERE id = 1));";
-  const trg = (nombre, cuando, tabla, cond, cuerpo) => "CREATE TRIGGER IF NOT EXISTS pc1_" + nombre + " AFTER " + cuando + " ON " + tabla +
+  const anotar = (tabla, clave) => "UPDATE panel_version SET v = v + 1 WHERE id = 1; INSERT INTO panel_cambios (tabla, clave, v) " +
+    "VALUES ('" + tabla + "', " + clave + ", (SELECT v FROM panel_version WHERE id = 1)) " +
+    "ON CONFLICT(tabla, clave) DO UPDATE SET v = excluded.v;";   // upsert: un "OR REPLACE" dentro del disparador lo anula la sentencia que lo dispara
+  const trg = (nombre, cuando, tabla, cond, cuerpo) => "CREATE TRIGGER IF NOT EXISTS pc2_" + nombre + " AFTER " + cuando + " ON " + tabla +
     (cond ? " WHEN " + cond : "") + " BEGIN " + cuerpo + " END";
   const distinto = COLS_PRODUCTO_PANEL.map(c => "OLD." + c + " IS NOT NEW." + c).join(" OR ");
   const antes = "date('now', '-4 hours')";   // "hoy" en Chile, aproximado hacia atrás (anota de más, nunca de menos)
@@ -4653,7 +4654,12 @@ let _registroCambiosListo = false;
 async function asegurarRegistroCambios(dbCruda) {
   if (_registroCambiosListo || !dbCruda) return;
   _registroCambiosListo = true;   // un intento por instancia: si falla, la app sigue con el panel completo/liviano
-  try { await dbCruda.batch(sentenciasRegistroCambios().map(x => dbCruda.prepare(x))); }
+  try {
+    // Versión anterior (pc1_): su "OR REPLACE" hacía fallar guardados repetidos del mismo producto. Se reemplaza por pc2_.
+    const viejos = (await dbCruda.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'pc1\\_%' ESCAPE '\\'").all()).results || [];
+    if (viejos.length) await dbCruda.batch(viejos.map(t => dbCruda.prepare("DROP TRIGGER IF EXISTS " + t.name)));
+    await dbCruda.batch(sentenciasRegistroCambios().map(x => dbCruda.prepare(x)));
+  }
   catch (e) { try { await dbCruda.prepare("INSERT INTO logs (fecha, mensaje) VALUES (?, ?)").bind(new Date().toISOString(), "⚠️ Registro de cambios del panel: " + e.message).run(); } catch (_) {} }
 }
 

@@ -48,6 +48,7 @@ async function paso(nombre, sql, guardar) {
   ok(nombre + " → completa vieja + cambios = completa nueva (cambios " + l.bytes + " bytes vs completo " + full.bytes + ")");
   return l.j;
 }
+const FAV = sq.prepare("PRAGMA table_info(favoritos)").all().map(c => c.name).find(n => n !== "sku");
 await get("");   // crea el registro de cambios (disparadores)
 const c0 = await paso("sin cambios", null);
 assert.deepStrictEqual(Object.keys(c0.items), []); assert.deepStrictEqual(c0.secciones, {});
@@ -68,6 +69,14 @@ const vAntes = sq.prepare("SELECT v FROM panel_version").get().v; sq.exec("UPDAT
   assert(r.j.ok && !r.j.completo && r.j.synced === true && r.j.items.S11 && r.j.items.S11.stock === 3 && r.bytes < 5000, JSON.stringify(r.j).slice(0, 300));
   ok("sync automático con número: sincroniza y responde solo los cambios (" + r.bytes + " bytes)");
   const sinNum = await get("?action=sync"); assert(sinNum.j.items && sinNum.j.items.rows); ok("sync sin número (botón manual): panel completo como siempre"); }
+// Regresión (falló en producción): el mismo producto/clave cambiando VARIAS veces, con sentencias de todo tipo.
+// Un "OR REPLACE" dentro del disparador lo anula la sentencia que lo dispara y daba UNIQUE constraint en panel_cambios.
+{ const antes = sq.prepare("SELECT v FROM panel_version").get().v;
+  for (const q of ["UPDATE productos SET stock = 41 WHERE sku = 'S20'", "UPDATE productos SET stock = 42 WHERE sku = 'S20'", "UPDATE OR IGNORE productos SET stock = 43 WHERE sku = 'S20'",
+    "UPDATE OR REPLACE productos SET stock = 44 WHERE sku = 'S20'", "INSERT OR REPLACE INTO favoritos(sku,%FAV%) VALUES ('S9','x')", "INSERT OR REPLACE INTO favoritos(sku,%FAV%) VALUES ('S9','y')",
+    "INSERT OR IGNORE INTO favoritos(sku,%FAV%) VALUES ('S9','z')", "INSERT INTO favoritos(sku,%FAV%) VALUES ('S9','w') ON CONFLICT(sku) DO UPDATE SET %FAV% = 'v'"])
+    sq.exec(q.replace(/%FAV%/g, FAV));
+  assert(sq.prepare("SELECT v FROM panel_version").get().v > antes); ok("el mismo producto y la misma lista guardados varias veces (UPDATE, OR IGNORE, OR REPLACE, ON CONFLICT) no fallan"); }
 // Casos que piden carga completa
 const base = (await get("")).j;
 sq.exec("UPDATE proveedores SET nombre = 'SOPROLE SA' WHERE id = 1");
