@@ -4234,9 +4234,15 @@ async function cargarConfigCambio(){
     if(j&&j.ok)CATEGORIAS_CAMBIO=j.categoriasCambio||[];
   }catch(e){}
 }
-async function cargarVencidosPendientes(){
+// La app repinta con cada cambio del servidor (cada venta) y antes cada repintado volvía a bajar TODOS los lotes
+// (más de 1 MB): era casi la mitad de la transferencia diaria. Ahora se piden como máximo cada 10 minutos, en modo
+// compacto; tras editar un lote (vcRefreshCurrentView) se piden de inmediato.
+let _vencPendTs=0,_vencPendEnCurso=false;
+async function cargarVencidosPendientes(forzar){
+  if(!forzar&&(_vencPendEnCurso||Date.now()-_vencPendTs<10*60*1000))return;
+  _vencPendEnCurso=true;
   try{
-    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=vencimientos');
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=vencimientos&compacto=1');
     const j=await res.json();
     if(j&&j.ok){
       const mapVenc={}, mapRet={};
@@ -4249,9 +4255,11 @@ async function cargarVencidosPendientes(){
       });
       VENCIDOS_POR_SKU=mapVenc;
       RETIRADOS_POR_SKU=mapRet;
+      _vencPendTs=Date.now();
       render();   // refresca la tabla/tarjeta con los datos ya cargados
     }
   }catch(e){}
+  finally{_vencPendEnCurso=false;}
 }
 async function cargarVencidoParaCambio(){
   await cargarConfigCambio();
@@ -5371,7 +5379,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.7';
+const APP_VERSION='2026-10-20.8';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5456,11 +5464,15 @@ function aplicarListasCompartidas(j){
   if(j&&Array.isArray(j.riesgoExcluidos)){RIESGO_EXCLUIDOS=new Set(j.riesgoExcluidos);_guardarCacheSet('rz_excluidos_cache',RIESGO_EXCLUIDOS);}
   if(j&&Array.isArray(j.favoritos)){FAVORITOS=new Set(j.favoritos);_guardarCacheSet('favoritos_cache',FAVORITOS);}
 }
-async function cargarABC(){
+// La clasificación ABC solo cambia al recalcularla (a mano o por la tarea diaria): se pide como máximo cada hora.
+let _abcTs=0;
+async function cargarABC(forzar){
+  if(!forzar&&Date.now()-_abcTs<60*60*1000)return;
   try{
     const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=abc');
     const j=await res.json();
     if(j&&j.ok&&Array.isArray(j.abc)){
+      _abcTs=Date.now();
       const map={};
       j.abc.forEach(r=>{map[r.sku]={clase:r.clase,pct:r.pct_participacion,venta:r.venta_total};});
       ABC_BY_SKU=map;
@@ -5477,7 +5489,7 @@ async function recalcularABC(periodoDias){
     const url=SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=abc_calcular&periodo='+(periodoDias||30);
     const res=await fetch(url);
     const j=await res.json();
-    if(j&&j.ok){showToast('ABC recalculado · '+(j.clasificados||0)+' productos');await cargarABC();}
+    if(j&&j.ok){showToast('ABC recalculado · '+(j.clasificados||0)+' productos');await cargarABC(true);}
     else{showToast('No se pudo recalcular el ABC');}
   }catch(e){showToast('Error al recalcular ABC: '+(e&&e.message?e.message:e));}
 }
@@ -11698,6 +11710,7 @@ function vcUpdatePendBadge(n){
 // repintar, para que la fecha/estado recién editado se refleje de inmediato en cualquiera de
 // las dos.
 async function vcRefreshCurrentView(){
+  _vencPendTs=0;   // se editó un lote: la próxima vez se piden los vencidos pendientes sin esperar los 10 min
   try{
     const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=vencimientos');
     const j=await res.json();

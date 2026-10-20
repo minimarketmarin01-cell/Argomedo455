@@ -6073,6 +6073,12 @@ const _servidor = {
           prioridad: r.prioridad, accion: r.accion, precioRecomendado: r.precio_recomendado || null,
           costoUsado: r.costo_usado || null, costoOrigen: r.costo_origen
         }));
+        // ?compacto=1: para el aviso de vencidos la app solo necesita unos pocos campos; sin `lista` (los mismos lotes con
+        // todas las columnas, que duplicaba el tamaño). Ver cargarVencidosPendientes.
+        if (url.searchParams.get("compacto") === "1") {
+          return json({ ok: true, lotes: lotes.map(l => ({ filaIndex: l.filaIndex, sku: l.sku, nombre: l.nombre, categoria: l.categoria,
+            cantidad: l.cantidad, fechaVencimiento: l.fechaVencimiento, estado: l.estado })) });
+        }
         return json({ ok: true, lista, lotes });
       }
 
