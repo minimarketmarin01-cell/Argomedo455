@@ -13,6 +13,11 @@
  *   - Recibir mercadería (lote_nuevo) con fecha de vencimiento
  ****************************************************************/
 
+import { crearDB } from "./pg/d1_compat.js";
+import { conEspejo, estadoEspejo } from "./pg/espejo.js";
+import { crearTransporteSupabase, soloLectura } from "./pg/transporte_supabase.js";
+import { autorizado as migAutorizado, vaciar as migVaciar, paso as migPaso, finalizar as migFinalizar, comparar as migComparar, compararRapido as migCompararRapido, paginaMigracion } from "./pg/migrador.js";
+
 // ============================================================
 //  CONFIG
 // ============================================================
@@ -2647,7 +2652,9 @@ async function accionMarcarPedidoRealizado(env, payload) {
 // obtenerMultiplosProducto.
 async function obtenerPedidosPendientesPorSku(env) {
   const { results } = await env.DB.prepare(
-    "SELECT sku, proveedor, cantidad, fecha, MAX(id) FROM pedidos_pendientes WHERE estado = 'confirmado' GROUP BY sku"
+    // (JOIN con el MAX(id) por sku en vez de columnas sueltas junto a MAX(): igual en D1 y en Postgres/Supabase)
+    "SELECT p.sku, p.proveedor, p.cantidad, p.fecha FROM pedidos_pendientes p " +
+    "JOIN (SELECT MAX(id) AS id FROM pedidos_pendientes WHERE estado = 'confirmado' GROUP BY sku) m ON m.id = p.id"
   ).all();
   const map = {};
   (results || []).forEach(r => { map[r.sku] = { proveedor: r.proveedor, cantidad: r.cantidad, fecha: r.fecha }; });
@@ -5576,6 +5583,39 @@ export default {
     }
 
     const url = new URL(request.url);
+    const accionUrl = url.searchParams.get("action") || "";
+
+    // ---------- Estado del espejo para la app (Más → Reportes → Respaldo en Supabase): solo conteos y sumas ----------
+    // Van ANTES del cambio de modo: siempre leen D1 real (aunque la URL traiga ?db=supabase) y no pasan por el espejo.
+    if (accionUrl === "espejo_comparar" && request.method === "GET") {
+      try { return json(await migCompararRapido(env)); } catch (e) { return json({ ok: false, error: e.message }, 500); }
+    }
+
+    // ---------- Copia D1 -> Supabase (migración; protegida por el secreto MIGRACION_CLAVE) ----------
+    if (/^migrar_(ui|vaciar|paso|finalizar|comparar|espejo)$/.test(accionUrl) && request.method === "GET") {
+      if (!migAutorizado(env, url.searchParams.get("clave") || "")) return json({ ok: false, error: "No autorizado" }, 403);
+      try {
+        if (accionUrl === "migrar_ui") return new Response(paginaMigracion(url.searchParams.get("clave")), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+        if (accionUrl === "migrar_vaciar") return json(await migVaciar(env));
+        if (accionUrl === "migrar_paso") return json(await migPaso(env, url.searchParams.get("tabla") || "", url.searchParams.get("desde") || 0));
+        if (accionUrl === "migrar_finalizar") return json(await migFinalizar(env));
+        if (accionUrl === "migrar_comparar") return json(await migComparar(env));
+        if (accionUrl === "migrar_espejo") return json({ ok: true, activo: !!(env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY && String(env.ESPEJO_SUPABASE || "1") !== "0"), ...estadoEspejo() });
+      } catch (e) { return json({ ok: false, error: e.message }, 500); }
+    }
+
+    // ---------- Modo de prueba con Supabase (?db=supabase), SOLO LECTURA ----------
+    // Misma lógica del servidor pero leyendo de Supabase en vez de D1. Ignora los webhooks de Loyverse, no guarda nada
+    // y no lanza el respaldo de fondo: así Supabase no se aparta de Cloudflare por cambios hechos solo en la prueba.
+    const modoSupabase = url.searchParams.get("db") === "supabase";
+    if (modoSupabase) {
+      if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) return json({ ok: false, error: "Supabase no está configurado en el servidor" }, 500);
+      if (url.pathname === "/webhook/loyverse") return json({ ok: true, ignorado: "modo de prueba Supabase" });
+      if (request.method === "POST") return json({ ok: false, error: "El modo de prueba (Supabase) es solo para mirar. Para guardar usa la app normal: se guarda en las dos bases." }, 403);
+      env = { ...env, DB: crearDB(soloLectura(crearTransporteSupabase({ url: env.SUPABASE_URL, key: env.SUPABASE_SERVICE_KEY }))), __modo: "supabase" };
+    } else {
+      env = conEspejo(env, ctx); // cada escritura en D1 se repite en Supabase en segundo plano
+    }
 
     // POST /webhook/loyverse — Loyverse envía su propio formato de body (no el
     // {action,payload} de la app), así que se atiende aparte y antes del parseo
@@ -6633,7 +6673,7 @@ export default {
       if (request.method === "GET" && !action) {
         // Además de responder con lo que hay en D1, repasa en segundo plano ventas y stock
         // contra Loyverse (ver respaldoLoyverseSegundoPlano).
-        if (ctx && ctx.waitUntil) ctx.waitUntil(respaldoLoyverseSegundoPlano(env).catch(() => {}));
+        if (!modoSupabase && ctx && ctx.waitUntil) ctx.waitUntil(respaldoLoyverseSegundoPlano(env).catch(() => {}));
         const resultado = await payloadDashboard(env, false, "");
         return json(resultado);
       }
@@ -6669,6 +6709,7 @@ export default {
   //  resuelve el huso horario automáticamente).
   // ============================================================
   async scheduled(event, env, ctx) {
+    env = conEspejo(env, ctx); // las tareas programadas también se copian a Supabase
     try {
       await asegurarTablas(env);
       // Recalcula la clasificación ABC antes de los demás chequeos: tanto el badge

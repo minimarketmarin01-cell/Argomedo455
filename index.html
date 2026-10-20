@@ -2704,6 +2704,20 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
   <button class="bn-item" id="bn-mas"><span class="ic">⋯</span>Más<span class="bn-dot" id="bn-mas-dot"></span></button>
 </nav>
 
+<div class="mm-ov hidden" id="sb-ov">
+  <div class="mm-card">
+    <div class="mm-head"><h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mm-head-ic"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.34 9.5 4.75 4.75 0 0 0 6.5 19z"/><path d="m9 14 2 2 4-4"/></svg>Respaldo en Supabase</h3></div>
+    <div class="mm-topbar"><button class="loadbtn" id="sb-cerrar" style="width:100%">Cerrar</button></div>
+    <div class="mm-body">
+      <div id="sb-estado" style="font-size:20px;font-weight:700;margin:8px 0 4px">Revisando…</div>
+      <div id="sb-sub" style="font-size:14px;color:#757575;margin-bottom:16px">Comparando Cloudflare (principal) con Supabase (copia)…</div>
+      <div id="sb-lista"></div>
+      <button class="mm-save" id="sb-revisar" style="margin-top:16px">Volver a revisar</button>
+      <button class="loadbtn" id="sb-copiar" style="width:100%;margin-top:10px">Copiar todo de nuevo a Supabase</button>
+      <div style="font-size:12px;color:#757575;margin-top:12px">Cada vez que la app guarda algo en Cloudflare, se copia solo a Supabase en segundo plano. Esta pantalla compara las dos bases: cantidad de registros de cada tabla y las sumas más importantes. "Copiar todo de nuevo" reemplaza la copia de Supabase con lo que hay en Cloudflare (Cloudflare no se toca); se usa la primera vez o si quedan diferencias.</div>
+    </div>
+  </div>
+</div>
 <div class="mm-ov hidden" id="mas-ov">
   <div class="mm-card">
     <div class="mm-head"><h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mm-head-ic"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>Más</h3></div>
@@ -2771,6 +2785,7 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
             <button id="mas-q-ventasdia"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg><br>Ventas por día</button>
             <button id="mas-q-mermasdia"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg><br>Mermas por día</button>
             <button id="mas-q-reportedia"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg><br>Reportes del día</button>
+            <button id="mas-q-supabase"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.34 9.5 4.75 4.75 0 0 0 6.5 19z"/><path d="m9 14 2 2 4-4"/></svg><br>Respaldo en Supabase</button>
           </div>
         </div>
       </div>
@@ -4863,7 +4878,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-19.3';
+const APP_VERSION='2026-10-20.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -4902,7 +4917,19 @@ const APP_VERSION='2026-10-19.3';
 })();
 
 // ===================== SINCRONIZACIÓN — Cloudflare Worker (D1) =====================
-const SYNC_URL='https://argomedo455.minimarketmarin01.workers.dev';
+// Modo de prueba: abrir la app con ?bd=supabase hace que todo se lea de la copia de Supabase (solo lectura).
+const MODO_SUPABASE=/[?&]bd=supabase\b/.test(location.search);
+const SYNC_BASE='https://argomedo455.minimarketmarin01.workers.dev';
+const SYNC_URL=SYNC_BASE+(MODO_SUPABASE?'/?db=supabase':'');
+// Aviso permanente cuando se está en el modo de prueba, para no confundirlo con la app real.
+if(MODO_SUPABASE){
+  document.addEventListener('DOMContentLoaded',()=>{
+    const b=document.createElement('div');
+    b.textContent='MODO PRUEBA · Supabase · solo lectura';
+    b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#F57C00;color:#fff;text-align:center;font:600 12px Manrope,sans-serif;padding:3px;pointer-events:none';
+    document.body.appendChild(b);
+  });
+}
 // Respaldo temporal: funciones que TODAVÍA no están en el Worker nuevo
 // (crear/eliminar productos, categorías, costo, consumo interno) siguen
 // en Apps Script hasta que se migren en una próxima sesión.
@@ -5346,7 +5373,7 @@ let _ultimaActualizacionConocida=null, _sseConexion=null;
 function conectarTiempoReal(){
   if(!('EventSource' in window))return; // navegador viejo: se queda solo con el sondeo de 30s
   if(_sseConexion)_sseConexion.close();
-  _sseConexion=new EventSource(SYNC_URL+'?action=stream');
+  _sseConexion=new EventSource(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=stream');
   _sseConexion.onmessage=(e)=>{
     _ultimoPollOk=Date.now();
     try{
@@ -5372,7 +5399,7 @@ document.addEventListener('visibilitychange',()=>{
 async function revisarActualizacionCatalogo(){
   if(document.visibilityState!=='visible')return;
   try{
-    const res=await fetch(SYNC_URL+'?action=ultima_actualizacion');
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=ultima_actualizacion');
     const j=await res.json();
     if(!j||!j.ok||!j.actualizadoEn)return;
     _ultimoPollOk=Date.now();
@@ -11406,7 +11433,7 @@ async function vcLoad(){
 // entrar a la pestaña) compitan por escribir "Cargando…" en el mismo contenedor a la vez.
 async function daCargarBadgeSolo(){
   try{
-    const res=await fetch(SYNC_URL+'?action=descuentos_activos');
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=descuentos_activos');
     const j=await res.json();
     _daLotes=(j&&j.ok&&Array.isArray(j.lotes))?j.lotes:[];
     _daInicializado=true;
@@ -12050,7 +12077,7 @@ async function daCargar(){
   const box=document.getElementById('da-list');
   box.innerHTML='<div class="vc-empty">Cargando…</div>';
   try{
-    const res=await fetch(SYNC_URL+'?action=descuentos_activos');
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=descuentos_activos');
     const j=await res.json();
     _daLotes=(j&&j.ok&&Array.isArray(j.lotes))?j.lotes:[];
     _daInicializado=true;
@@ -12068,7 +12095,7 @@ async function daCargar(){
 // incluye y puede dejar _daInicializado en true antes de que esto se pida.
 async function daCargarPendientes(){
   try{
-    const res=await fetch(SYNC_URL+'?action=precios_pendientes_restaurar');
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=precios_pendientes_restaurar');
     const j=await res.json();
     _daPendientesRestaurar=(j&&j.ok&&Array.isArray(j.lotes))?j.lotes:[];
   }catch(e){
@@ -14790,6 +14817,59 @@ function vdRenderLista(){
 }
 function vdRender(){vdRenderChart();vdRenderLista();}
 document.getElementById('mas-q-ventasdia').onclick=vdAbrir;
+
+// ===================== RESPALDO EN SUPABASE (estado del espejo) =====================
+// Pide al servidor la comparación liviana (conteos por tabla + sumas clave) entre Cloudflare D1 y Supabase.
+const _sbFmt=n=>Number.isFinite(n)?new Intl.NumberFormat('es-CL').format(n):'—';
+async function sbRevisar(){
+  const est=document.getElementById('sb-estado'),sub=document.getElementById('sb-sub'),lista=document.getElementById('sb-lista'),btn=document.getElementById('sb-revisar');
+  est.textContent='Revisando…';est.style.color='';sub.textContent='Comparando Cloudflare (principal) con Supabase (copia)…';lista.innerHTML='';btn.disabled=true;
+  try{
+    const res=await fetch(SYNC_BASE+'?action=espejo_comparar');
+    const j=await res.json();
+    if(!j||!j.ok)throw new Error((j&&j.error)||'no se pudo comparar');
+    est.textContent=j.todoCoincide?'✅ Las dos bases coinciden':'⚠️ Hay diferencias';
+    est.style.color=j.todoCoincide?'#388E3C':'#E65100';
+    const hora=new Date(j.revisadoEn).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
+    sub.textContent='Revisado a las '+hora+(j.enCache?' (hace menos de 1 minuto)':'')+' · '+j.tablas.length+' tablas';
+    const fila=(nombre,a,b,ok)=>`<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #E0E0E0"><span style="font-size:18px;color:${ok?'#388E3C':'#E53935'}">${ok?'✓':'✗'}</span><span style="flex:1;font-size:15px">${nombre}</span><span style="font-size:14px;color:#757575;text-align:right">${ok?_sbFmt(a):'Cloudflare '+_sbFmt(a)+'<br>Supabase '+_sbFmt(b)}</span></div>`;
+    let h=j.control.map(c=>fila(c.nombre,c.d1,c.supabase,c.coincide)).join('');
+    const malas=j.tablas.filter(t=>!t.coincide);
+    h+=fila('Registros en las '+j.tablas.length+' tablas',j.tablas.reduce((s,t)=>s+t.d1,0),j.tablas.reduce((s,t)=>s+t.supabase,0),!malas.length);
+    if(malas.length)h+='<div style="font-size:14px;color:#E65100;margin-top:12px">Tablas con diferencia: '+malas.map(t=>t.tabla+' ('+_sbFmt(t.d1)+' / '+_sbFmt(t.supabase)+')').join(', ')+'.</div>';
+    lista.innerHTML=h;
+  }catch(e){
+    est.textContent='No se pudo revisar';est.style.color='#E53935';sub.textContent=String(e.message||e);
+  }finally{btn.disabled=false;}
+}
+// Copia completa Cloudflare -> Supabase desde la app (antes había que abrir una página aparte). Pide la clave de
+// migración (el secreto MIGRACION_CLAVE del servidor); no se guarda en el teléfono.
+async function sbCopiar(){
+  const clave=prompt('Clave de migración (la misma que guardaste en Cloudflare como MIGRACION_CLAVE):');
+  if(!clave)return;
+  if(!confirm('Se borra la copia de Supabase y se vuelve a llenar con lo que hay en Cloudflare. Cloudflare no se toca. ¿Seguir?'))return;
+  const est=document.getElementById('sb-estado'),sub=document.getElementById('sb-sub'),lista=document.getElementById('sb-lista');
+  const bts=['sb-revisar','sb-copiar','sb-cerrar'].map(id=>document.getElementById(id));bts.forEach(b=>b.disabled=true);
+  const api=async(a,x)=>{const r=await fetch(SYNC_BASE+'?action='+a+'&clave='+encodeURIComponent(clave)+(x||''));const j=await r.json().catch(()=>null);if(!j||!j.ok)throw new Error((j&&j.error)||('HTTP '+r.status));return j;};
+  est.textContent='Copiando…';est.style.color='';lista.innerHTML='';
+  try{
+    sub.textContent='Vaciando la copia de Supabase…';await api('migrar_vaciar');
+    let t='proveedores',d=0,total=0,n=0;
+    while(t){const j=await api('migrar_paso','&tabla='+t+'&desde='+d);total+=j.copiadas;
+      if(j.terminada){n++;t=j.siguiente;d=0;}else d=j.desde;
+      sub.textContent='Copiando tabla '+(n+1)+' · '+_sbFmt(total)+' registros copiados'+(t?' ('+t+')':'');}
+    await api('migrar_finalizar');
+    bts.forEach(b=>b.disabled=false);
+    await sbRevisar();
+  }catch(e){
+    est.textContent='No se pudo copiar';est.style.color='#E53935';sub.textContent=String(e.message||e)==='No autorizado'?'La clave no es correcta.':String(e.message||e);
+  }finally{bts.forEach(b=>b.disabled=false);}
+}
+function sbAbrir(){document.getElementById('mas-ov').classList.add('hidden');abrirModal('sb-ov');sbRevisar();}
+document.getElementById('mas-q-supabase').onclick=sbAbrir;
+document.getElementById('sb-revisar').onclick=sbRevisar;
+document.getElementById('sb-copiar').onclick=sbCopiar;
+document.getElementById('sb-cerrar').onclick=()=>cerrarModal('sb-ov');
 document.getElementById('vd-cerrar').onclick=()=>cerrarModal('vd-ov');
 (function(){
   const inp=document.getElementById('vd-search');
