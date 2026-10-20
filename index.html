@@ -2712,6 +2712,7 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
       <div id="sb-estado" style="font-size:20px;font-weight:700;margin:8px 0 4px">Revisando…</div>
       <div id="sb-sub" style="font-size:14px;color:#757575;margin-bottom:16px">Comparando Cloudflare (principal) con Supabase (copia)…</div>
       <div id="sb-lista"></div>
+      <div id="sb-uso" style="margin-top:20px"></div>
       <button class="mm-save" id="sb-revisar" style="margin-top:16px">Volver a revisar</button>
       <button class="loadbtn" id="sb-copiar" style="width:100%;margin-top:10px">Copiar todo de nuevo a Supabase</button>
       <div style="font-size:12px;color:#757575;margin-top:12px">Cada vez que la app guarda algo en Cloudflare, se copia solo a Supabase en segundo plano. Esta pantalla compara las dos bases: cantidad de registros de cada tabla y las sumas más importantes. "Copiar todo de nuevo" reemplaza la copia de Supabase con lo que hay en Cloudflare (Cloudflare no se toca); se usa la primera vez o si quedan diferencias.</div>
@@ -4878,7 +4879,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.1';
+const APP_VERSION='2026-10-20.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14821,6 +14822,28 @@ document.getElementById('mas-q-ventasdia').onclick=vdAbrir;
 // ===================== RESPALDO EN SUPABASE (estado del espejo) =====================
 // Pide al servidor la comparación liviana (conteos por tabla + sumas clave) entre Cloudflare D1 y Supabase.
 const _sbFmt=n=>Number.isFinite(n)?new Intl.NumberFormat('es-CL').format(n):'—';
+// Uso de datos: cuántas descargas pesadas (>50 KB) entrega el servidor por día y a cuánta transferencia de Supabase equivale.
+// Límite gratis de Supabase: 5 GB al mes entre todas las apps; esto es una estimación con lo que mide este servidor.
+const _sbMB=b=>(b/1e6).toLocaleString('es-CL',{maximumFractionDigits:1})+' MB';
+const _sbNombreApp={pedidos:'Pedidos',finanzas:'Finanzas'};
+async function sbUso(){
+  const cont=document.getElementById('sb-uso');if(!cont)return;
+  try{
+    const res=await fetch(SYNC_BASE+'?action=uso_diario');const j=await res.json();
+    if(!j||!j.ok)throw new Error((j&&j.error)||'sin datos');
+    const apps=Object.entries(j.apps||{});
+    const tit='<div style="font-size:16px;font-weight:600;margin-bottom:4px">Uso de datos (descargas pesadas)</div>';
+    if(!apps.length){cont.innerHTML=tit+'<div style="font-size:14px;color:#757575">Todavía sin datos: se llena con el uso de la app.</div>';return;}
+    const gb=j.total.proyeccionMesGB,pct=gb/j.limiteGB;
+    const color=pct<0.5?'#388E3C':pct<0.8?'#E65100':'#E53935';
+    let h=tit+'<div style="font-size:14px;color:#757575;margin-bottom:8px">Promedio de los últimos '+Math.min(7,j.diasConDatos)+' día(s) con datos</div>';
+    h+=apps.map(([k,a])=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #E0E0E0;font-size:15px"><span>'+(_sbNombreApp[k]||k)+' · hoy</span><span style="color:#757575;text-align:right">'+a.hoyN+' descargas · '+_sbMB(a.hoyBytes)+'</span></div>').join('');
+    h+='<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #E0E0E0;font-size:15px"><span>Promedio por día</span><span style="color:#757575">'+_sbMB(j.total.promedioDiaBytes)+'</span></div>';
+    h+='<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;font-size:15px"><span>Proyección a 30 días</span><span style="color:'+color+';font-weight:600">'+gb.toLocaleString('es-CL',{maximumFractionDigits:2})+' GB de '+j.limiteGB+' GB gratis</span></div>';
+    h+='<div style="font-size:12px;color:#757575;margin-top:6px">Cuenta las respuestas del servidor de más de 50 KB (el resto casi no pesa). El límite de 5 GB es para todas las apps y locales juntos: suma el de cada local.</div>';
+    cont.innerHTML=h;
+  }catch(e){cont.innerHTML='<div style="font-size:14px;color:#757575">Uso de datos: no se pudo leer ('+String(e.message||e)+')</div>';}
+}
 async function sbRevisar(){
   const est=document.getElementById('sb-estado'),sub=document.getElementById('sb-sub'),lista=document.getElementById('sb-lista'),btn=document.getElementById('sb-revisar');
   est.textContent='Revisando…';est.style.color='';sub.textContent='Comparando Cloudflare (principal) con Supabase (copia)…';lista.innerHTML='';btn.disabled=true;
@@ -14865,7 +14888,7 @@ async function sbCopiar(){
     est.textContent='No se pudo copiar';est.style.color='#E53935';sub.textContent=String(e.message||e)==='No autorizado'?'La clave no es correcta.':String(e.message||e);
   }finally{bts.forEach(b=>b.disabled=false);}
 }
-function sbAbrir(){document.getElementById('mas-ov').classList.add('hidden');abrirModal('sb-ov');sbRevisar();}
+function sbAbrir(){document.getElementById('mas-ov').classList.add('hidden');abrirModal('sb-ov');sbRevisar();sbUso();}
 document.getElementById('mas-q-supabase').onclick=sbAbrir;
 document.getElementById('sb-revisar').onclick=sbRevisar;
 document.getElementById('sb-copiar').onclick=sbCopiar;
