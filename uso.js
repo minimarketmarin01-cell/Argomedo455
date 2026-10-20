@@ -3,6 +3,12 @@
 // las apps) cuando la app lea de ahí. Se guarda en una tabla propia de D1 (uso_diario), escrita SIEMPRE con la D1 "cruda",
 // sin pasar por el espejo: no se copia a Supabase ni entra en la comparación de las dos bases.
 const UMBRAL_BYTES = 50000;
+// La app de etiquetas del POS (Android) manda ?app=etiquetas en cada pedido: se cuenta aparte de "pedidos" y TODAS sus
+// respuestas, incluso las livianas (es una app chica y el total de muchas respuestas chicas es justo lo que hay que medir).
+export const APP_ETIQUETAS = "etiquetas";
+export function appDe(request, porDefecto) {
+  try { return new URL(request.url).searchParams.get("app") === APP_ETIQUETAS ? APP_ETIQUETAS : porDefecto; } catch (e) { return porDefecto; }
+}
 const LIMITE_GB = 5;
 const CREAR = "CREATE TABLE IF NOT EXISTS uso_diario (fecha TEXT NOT NULL, app TEXT NOT NULL, accion TEXT NOT NULL, " +
   "n INTEGER NOT NULL DEFAULT 0, bytes INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (fecha, app, accion))";
@@ -39,7 +45,7 @@ export async function medirUso(request, res, db, app) {
     if (accionUrl === "stream" || accionUrl === "uso_diario" || accionUrl === "espejo_comparar") return;
     if (!(res.headers.get("content-type") || "").includes("json")) return;
     const bytes = (await res.arrayBuffer()).byteLength;
-    if (bytes < UMBRAL_BYTES) return;
+    if (bytes < (app === APP_ETIQUETAS ? 0 : UMBRAL_BYTES)) return;
     const accion = (request.method === "GET" ? (accionUrl || "(panel)") : "POST") + (url.searchParams.get("db") === "supabase" ? " [prueba Supabase]" : "");
     await asegurarTabla(db);
     await db.prepare("INSERT INTO uso_diario (fecha, app, accion, n, bytes) VALUES (?,?,?,1,?) " +
