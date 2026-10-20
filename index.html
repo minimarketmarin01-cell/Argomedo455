@@ -5379,7 +5379,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.8';
+const APP_VERSION='2026-10-20.9';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -6243,6 +6243,13 @@ function cerrarModal(id){
   // el popstate real, que ya sabe reabrir gp-ov en Nivel 2 al llegar a {marin:'gpNivel',
   // nivel:2} — así que acá NO se duplica esa lógica, solo se dispara el mismo camino que ya
   // usa el botón Atrás real.
+  if(id==='fp-ov'&&typeof _fpVolverA!=='undefined'&&_fpVolverA==='ll'){
+    _fpVolverA=null;
+    _llUltClasif=0;
+    document.getElementById('ll-ov').classList.remove('hidden');
+    llLoad();
+    return;
+  }
   if(id==='fp-ov'&&typeof _fpVolverA!=='undefined'&&_fpVolverA==='gp'){
     history.back();
     return;
@@ -7922,6 +7929,13 @@ async function fpGuardarTodo(){
     // para buscar o escanear el siguiente — antes reabría la misma ficha, obligando a salir
     // a mano cada vez. edAbrir() ya limpia el buscador y enfoca el campo de búsqueda.
     fpLimpiarBorrador();
+    if(_fpVolverA==='ll'){
+      // Vino de Recién llegado: sigue con el siguiente producto sin pasar por la lista
+      render();
+      if(llSiguienteClasificar(sku,!!sector&&!!proveedorId))return;
+      cerrarModal('fp-ov');   // era el último: vuelve a la lista (ver cerrarModal)
+      return;
+    }
     cerrarModal('fp-ov');
     edAbrir();
     render();
@@ -14982,16 +14996,63 @@ async function rcGuardarSoloPrecio(it){
 }
 
 // ===================== RECIÉN LLEGADO =====================
+// Productos que entraron por Loyverse y todavía no tienen proveedor y/o sector: se clasifican desde la Ficha, uno tras otro.
+let _llSinClasif=[];
+let _llCola=[];
+const LL_TECNICOS=/^(abono fiado|precio variable)$/i;
+async function llCargarSinClasificar(){
+  try{
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=productos_por_revisar');
+    const j=await res.json();
+    if(j&&j.ok)_llSinClasif=(j.productos||[]).filter(p=>!LL_TECNICOS.test(String(p.nombre||'').trim()));
+  }catch(e){}
+  return _llSinClasif;
+}
+function llFaltaTxt(p){const f=[];if(!p.proveedor_id)f.push('proveedor');if(!p.sector)f.push('sector');return 'Falta '+f.join(' y ');}
+function llHtmlSinClasificar(){
+  if(!_llSinClasif.length)return '';
+  return '<div class="in2-section-title" style="margin:16px 0 8px">Sin proveedor o sector ('+_llSinClasif.length+')</div>'+
+    _llSinClasif.map(p=>`<div class="ll-row" data-clasif="${p.sku}" style="cursor:pointer"><div class="nom">${p.nombre}</div><div class="cat">${p.categoria||'Sin categoría'} · <span class="plus" style="color:#E53935">${llFaltaTxt(p)}</span></div><div class="fecharow"><button class="btn-guardar-fecha" type="button" data-clasif-btn="${p.sku}">Clasificar</button></div></div>`).join('');
+}
+// Tras guardar un producto en la Ficha abierta desde Recién llegado: lo saca de pendientes (si ya quedó con proveedor y sector)
+// y abre directo el siguiente de la cola. Devuelve false cuando no queda ninguno (la Ficha vuelve a la lista).
+function llSiguienteClasificar(skuGuardado,completo){
+  if(completo){
+    _llSinClasif=_llSinClasif.filter(p=>p.sku!==skuGuardado);
+    llUpdateBadge(_llLlegadasN);
+  }
+  _llCola=_llCola.filter(x=>x!==skuGuardado);
+  const sig=_llCola[0];
+  if(!sig)return false;
+  showToast('Guardado · quedan '+_llCola.length);
+  fpAbrir(sig);
+  return true;
+}
+function llCablearSinClasificar(box){
+  box.querySelectorAll('[data-clasif]').forEach(el=>el.onclick=()=>{
+    const sku=el.dataset.clasif;
+    const i=_llSinClasif.findIndex(p=>p.sku===sku);
+    _llCola=_llSinClasif.slice(i<0?0:i).map(p=>p.sku);
+    document.getElementById('ll-ov').classList.add('hidden');
+    _fpVolverA='ll'; // al cerrar la Ficha vuelve a Recién llegado (ver cerrarModal)
+    fpAbrir(sku);
+  });
+}
 async function llLoad(){
   const box=document.getElementById('ll-list'),lbl=document.getElementById('ll-lbl');
   box.innerHTML='';lbl.textContent='Cargando…';
   try{
-    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=llegadas');
+    const [res]=await Promise.all([fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=llegadas'),llCargarSinClasificar()]);
     const j=await res.json();
     if(!j||!j.ok){lbl.textContent='Error al cargar.';return;}
     const lst=j.llegadas;
     llUpdateBadge(lst.length);
-    if(!lst.length){lbl.textContent='';box.innerHTML='<div class="vc-empty">Sin llegadas pendientes por fechar</div>';return;}
+    if(!lst.length){
+      lbl.textContent='';
+      box.innerHTML=_llSinClasif.length?'<div class="vc-empty" style="padding:8px 0">Sin llegadas pendientes por fechar</div>'+llHtmlSinClasificar():'<div class="vc-empty">Sin llegadas pendientes por fechar</div>';
+      llCablearSinClasificar(box);
+      return;
+    }
     lbl.textContent=lst.length+' producto'+(lst.length===1?'':'s')+' con stock nuevo (agregado directo en Loyverse), esperando fecha';
     box.innerHTML=lst.map(it=>`
       <div class="ll-row" id="ll-row-${it.filaIndex}">
@@ -15014,10 +15075,14 @@ async function llLoad(){
     lst.forEach(it=>wireFechaSegmentada('ll-fecha-dd-'+it.filaIndex,'ll-fecha-mm-'+it.filaIndex,'ll-fecha-aaaa-'+it.filaIndex,'ll-fecha-'+it.filaIndex,'ll-fecha-cal-'+it.filaIndex));
     box.querySelectorAll('.btn-guardar-fecha').forEach(b=>b.onclick=()=>llGuardarFecha(b.dataset.i));
     box.querySelectorAll('.btn-ignorar').forEach(b=>b.onclick=()=>llIgnorar(b.dataset.ig));
+    box.insertAdjacentHTML('beforeend',llHtmlSinClasificar());
+    llCablearSinClasificar(box);
   }catch(e){lbl.textContent='Error de conexión.';}
 }
 let _rzUltimoConteo=0; // se actualiza cada vez que se recalcula el riesgo de quiebre (ver rzCalcular) — el punto de la nav combina esto con las llegadas pendientes
-function llUpdateBadge(n){
+let _llLlegadasN=0;
+function llUpdateBadge(n0){
+  _llLlegadasN=n0;const n=n0+_llSinClasif.length;
   const b=document.getElementById('ll-badge');
   if(b){
     const txt=n>99?'99+':String(n);
@@ -15750,8 +15815,10 @@ document.getElementById('rz-activar-push').onclick=async()=>{
 // entre una apertura y otra, el botón no queda mostrando información vieja.
 const _rzAbrirOriginal=rzAbrir;
 rzAbrir=function(){_rzAbrirOriginal();rzPintarEstadoPush();};
+let _llUltClasif=0;
 async function llCheckBadge(){
   try{
+    if(Date.now()-_llUltClasif>10*60*1000){_llUltClasif=Date.now();await llCargarSinClasificar();}
     const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=llegadas');
     const j=await res.json();
     if(j&&j.ok)llUpdateBadge(j.llegadas.length);
