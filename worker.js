@@ -4494,26 +4494,82 @@ async function ventasResumenTodas(env) {
 //  TEXT en Argomedo (no FK) y a la tabla `ventas` propia (histórico completo,
 //  nunca se purga, a diferencia de la `ventas_diarias` rodante de Marín).
 // ============================================================
+// Fila de un producto tal como la recibe la app (la usan el panel completo y el de cambios).
+function filaItemPanel(p, proveedorNombrePorId) {
+  return {
+    id: p.id_loyverse, vid: p.variant_id || "", ref: p.sku, nombre: p.nombre,
+    prov: p.proveedor || "SIN PROVEEDOR", cat: p.categoria || "", costo: p.costo || 0, precio: p.precio || 0,
+    stock: p.stock, track: !!p.track_stock, barcode: p.barcode || "", peso: !!p.sold_by_weight,
+    creado: p.fecha_creacion || null, descripcion: p.descripcion || "", imagen: p.imagen_url || "",
+    proveedorId: p.proveedor_id || null,
+    proveedorNombre: p.proveedor_id ? (proveedorNombrePorId[p.proveedor_id] || null) : null,
+    sector: p.sector || null
+  };
+}
+async function mapaNombresProveedores(env) {
+  const { results: proveedoresRows } = await env.DB.prepare("SELECT id, nombre FROM proveedores").all();
+  const m = {}; (proveedoresRows || []).forEach(pr => { m[pr.id] = pr.nombre; });
+  return m;
+}
+
+// Secciones chicas del panel. Cada una se arma igual en el panel completo y en el de cambios (que la reenvía entera
+// cuando su tabla cambió). Si una consulta falla, el panel sigue funcionando, solo sin esa sección esta vez.
+const SECCIONES_PANEL = ["pendientes", "provsIds", "riesgo", "favoritos", "multiplos"];
+async function seccionPanel(env, nombre, proveedorNombrePorId) {
+  if (nombre === "pendientes") {
+    // Pedidos pendientes: para que el frontend avise "ya pedido" sin una consulta extra por producto.
+    let pendientesRows = [];
+    try {
+      const { results } = await env.DB.prepare(
+        "SELECT sku, barcode, COALESCE(nombre, producto) AS nombre, proveedor, cantidad, canal, fecha, costo_unitario, costo_total, fecha_llegada_estimada, estado FROM pedidos_pendientes"
+      ).all();
+      pendientesRows = results || [];
+    } catch (err) { /* tabla recién migrada, sin filas todavía */ }
+    return { pendientes: { rows: pendientesRows } };
+  }
+  if (nombre === "provsIds") {
+    // Proveedores extra (multi-proveedor por FK, `producto_proveedor_extra`): sku → [id,...] y sku → [nombre,...].
+    // Argomedo no tiene el mecanismo de texto libre de Marín (provsExtra): el frontend cae a prov/proveedorNombre.
+    let provsIdsExtraObj = {}, provsNombresExtraObj = {};
+    try {
+      const { results: extraRows } = await env.DB.prepare("SELECT sku, proveedor_id FROM producto_proveedor_extra").all();
+      extraRows.forEach(r => {
+        (provsIdsExtraObj[r.sku] = provsIdsExtraObj[r.sku] || []).push(r.proveedor_id);
+        const nombreProv = proveedorNombrePorId[r.proveedor_id];
+        if (nombreProv) (provsNombresExtraObj[r.sku] = provsNombresExtraObj[r.sku] || []).push(nombreProv);
+      });
+    } catch (err) { /* sin filas todavía */ }
+    return { provsIdsExtra: provsIdsExtraObj, provsNombresExtra: provsNombresExtraObj };
+  }
+  if (nombre === "riesgo") {
+    let riesgoExcluidos = [];
+    try { riesgoExcluidos = await repRiesgoExcluidos(env); } catch (err) { /* sin filas todavía */ }
+    return { riesgoExcluidos };
+  }
+  if (nombre === "favoritos") {
+    let favoritos = [];
+    try { favoritos = await repFavoritos(env); } catch (err) { /* sin filas todavía */ }
+    return { favoritos };
+  }
+  if (nombre === "multiplos") {
+    let multiplosObj = {}, empaquesObj = {}, palabrasObj = {};
+    try { ({ multiplos: multiplosObj, empaques: empaquesObj, palabras: palabrasObj } = await obtenerMultiplosProducto(env)); }
+    catch (err) { /* sin filas todavía */ }
+    return { multiplos: multiplosObj, empaques: empaquesObj, palabras: palabrasObj };
+  }
+  return {};
+}
+
 async function payloadDashboard(env, synced, syncMsg) {
   await asegurarTablas(env);
+  // Primero el número del registro de cambios (ver asegurarRegistroCambios): lo que cambie mientras se arma este panel
+  // queda después de este número, así el próximo ?action=panel_cambios lo trae. Sin registro (p. ej. modo Supabase): null.
+  let cambiosCursor = null;
+  try { const v = await get(env, "SELECT v FROM panel_version WHERE id = 1"); cambiosCursor = v ? Number(v.v) : null; } catch (e) { /* sin registro */ }
   const { results: productos } = await env.DB.prepare("SELECT * FROM productos").all();
-
-  const { results: proveedoresRows } = await env.DB.prepare("SELECT id, nombre FROM proveedores").all();
-  const proveedorNombrePorId = {};
-  proveedoresRows.forEach(pr => { proveedorNombrePorId[pr.id] = pr.nombre; });
-
+  const proveedorNombrePorId = await mapaNombresProveedores(env);
   const itemsRows = {};
-  productos.forEach(p => {
-    itemsRows[p.sku] = {
-      id: p.id_loyverse, vid: p.variant_id || "", ref: p.sku, nombre: p.nombre,
-      prov: p.proveedor || "SIN PROVEEDOR", cat: p.categoria || "", costo: p.costo || 0, precio: p.precio || 0,
-      stock: p.stock, track: !!p.track_stock, barcode: p.barcode || "", peso: !!p.sold_by_weight,
-      creado: p.fecha_creacion || null, descripcion: p.descripcion || "", imagen: p.imagen_url || "",
-      proveedorId: p.proveedor_id || null,
-      proveedorNombre: p.proveedor_id ? (proveedorNombrePorId[p.proveedor_id] || null) : null,
-      sector: p.sector || null
-    };
-  });
+  productos.forEach(p => { itemsRows[p.sku] = filaItemPanel(p, proveedorNombrePorId); });
 
   const resumen = await ventasResumenConCache(env);
   const ventasRows = {};
@@ -4529,39 +4585,8 @@ async function payloadDashboard(env, synced, syncMsg) {
   const hoyRowsObj = {};
   ventasHoyRows.forEach(r => { hoyRowsObj[r.sku] = 1; });
 
-  // Pedidos pendientes — se manda siempre junto al resto del dashboard para que el
-  // frontend pueda avisar "ya pedido" sin una consulta extra por producto.
-  let pendientesRows = [];
-  try {
-    const { results } = await env.DB.prepare(
-      "SELECT sku, barcode, COALESCE(nombre, producto) AS nombre, proveedor, cantidad, canal, fecha, costo_unitario, costo_total, fecha_llegada_estimada, estado FROM pedidos_pendientes"
-    ).all();
-    pendientesRows = results || [];
-  } catch (err) { /* tabla recién migrada, sin filas todavía */ }
-
-  // Proveedores extra (multi-proveedor por FK) — mapa sku → [id,...] y sku → [nombre,...].
-  // Argomedo solo tiene el mecanismo FK (`producto_proveedor_extra`); no existe el mecanismo
-  // de texto libre más viejo de Marín (`producto_proveedores`), así que provsExtra (texto)
-  // no se manda — el frontend ya sabe convivir sin él (cae a prov/proveedorNombre).
-  let provsIdsExtraObj = {}, provsNombresExtraObj = {};
-  try {
-    const { results: extraRows } = await env.DB.prepare("SELECT sku, proveedor_id FROM producto_proveedor_extra").all();
-    extraRows.forEach(r => {
-      (provsIdsExtraObj[r.sku] = provsIdsExtraObj[r.sku] || []).push(r.proveedor_id);
-      const nombre = proveedorNombrePorId[r.proveedor_id];
-      if (nombre) (provsNombresExtraObj[r.sku] = provsNombresExtraObj[r.sku] || []).push(nombre);
-    });
-  } catch (err) { /* sin filas todavía */ }
-
-  let riesgoExcluidos = [];
-  try { riesgoExcluidos = await repRiesgoExcluidos(env); } catch (err) { /* sin filas todavía */ }
-
-  let favoritos = [];
-  try { favoritos = await repFavoritos(env); } catch (err) { /* sin filas todavía */ }
-
-  let multiplosObj = {}, empaquesObj = {}, palabrasObj = {};
-  try { ({ multiplos: multiplosObj, empaques: empaquesObj, palabras: palabrasObj } = await obtenerMultiplosProducto(env)); }
-  catch (err) { /* sin filas todavía */ }
+  const secciones = {};
+  for (const nombre of SECCIONES_PANEL) Object.assign(secciones, await seccionPanel(env, nombre, proveedorNombrePorId));
 
   return {
     ok: true,
@@ -4571,16 +4596,138 @@ async function payloadDashboard(env, synced, syncMsg) {
     ventasHoy: ventasHoyRows.length,
     items: { rows: itemsRows },
     ventas: { rows: ventasRows, hoy: { fecha: hoyISO, rows: hoyRowsObj } },
-    pendientes: { rows: pendientesRows },
-    provsIdsExtra: provsIdsExtraObj,
-    provsNombresExtra: provsNombresExtraObj,
-    riesgoExcluidos: riesgoExcluidos,
-    favoritos: favoritos,
-    multiplos: multiplosObj,
-    empaques: empaquesObj,
-    palabras: palabrasObj,
+    pendientes: secciones.pendientes,
+    provsIdsExtra: secciones.provsIdsExtra,
+    provsNombresExtra: secciones.provsNombresExtra,
+    riesgoExcluidos: secciones.riesgoExcluidos,
+    favoritos: secciones.favoritos,
+    multiplos: secciones.multiplos,
+    empaques: secciones.empaques,
+    palabras: secciones.palabras,
+    cambiosCursor,
     serverTime: new Date().toISOString()
   };
+}
+
+// ============================================================
+//  REGISTRO DE CAMBIOS DEL PANEL — la app baja solo lo que cambió
+// ============================================================
+// Disparadores (triggers) de la propia D1 anotan qué cambió en las tablas del panel, sin importar desde qué parte del
+// código se escribió: productos (por sku, solo si cambió algún dato que la app ve), proveedores, ventas de días
+// ANTERIORES (las de hoy se mandan siempre) y las tablas de cada sección chica. Cada cambio sube un contador
+// (panel_version.v) y deja en panel_cambios la clave con ese número; la tabla no crece sin límite porque cada clave
+// ocupa una sola fila. ?action=panel_cambios&desde=N devuelve lo que cambió después de N.
+// Se crea con la D1 sin espejo: estas tablas y disparadores no existen en Supabase (la copia sigue igual que siempre).
+const COLS_PRODUCTO_PANEL = ["sku", "id_loyverse", "variant_id", "nombre", "categoria", "proveedor", "costo", "precio", "stock",
+  "track_stock", "barcode", "sold_by_weight", "fecha_creacion", "descripcion", "imagen_url", "proveedor_id", "sector"];
+const TABLAS_SECCION_PANEL = { pedidos_pendientes: "pendientes", producto_proveedor_extra: "provsIds", riesgo_excluidos: "riesgo",
+  favoritos: "favoritos", config_multiplo_producto: "multiplos" };
+function sentenciasRegistroCambios() {
+  const anotar = (tabla, clave) => "UPDATE panel_version SET v = v + 1 WHERE id = 1; INSERT OR REPLACE INTO panel_cambios (tabla, clave, v) " +
+    "VALUES ('" + tabla + "', " + clave + ", (SELECT v FROM panel_version WHERE id = 1));";
+  const trg = (nombre, cuando, tabla, cond, cuerpo) => "CREATE TRIGGER IF NOT EXISTS pc1_" + nombre + " AFTER " + cuando + " ON " + tabla +
+    (cond ? " WHEN " + cond : "") + " BEGIN " + cuerpo + " END";
+  const distinto = COLS_PRODUCTO_PANEL.map(c => "OLD." + c + " IS NOT NEW." + c).join(" OR ");
+  const antes = "date('now', '-4 hours')";   // "hoy" en Chile, aproximado hacia atrás (anota de más, nunca de menos)
+  const s = [
+    "CREATE TABLE IF NOT EXISTS panel_version (id INTEGER PRIMARY KEY CHECK (id = 1), v INTEGER NOT NULL)",
+    "INSERT OR IGNORE INTO panel_version (id, v) VALUES (1, 0)",
+    "CREATE TABLE IF NOT EXISTS panel_cambios (tabla TEXT NOT NULL, clave TEXT NOT NULL, v INTEGER NOT NULL, PRIMARY KEY (tabla, clave))",
+    "CREATE INDEX IF NOT EXISTS idx_panel_cambios_v ON panel_cambios (v)",
+    trg("productos_ins", "INSERT", "productos", null, anotar("productos", "NEW.sku")),
+    trg("productos_del", "DELETE", "productos", null, anotar("productos", "OLD.sku")),
+    trg("productos_upd", "UPDATE", "productos", distinto, anotar("productos", "NEW.sku")),
+    trg("productos_sku", "UPDATE", "productos", "OLD.sku IS NOT NEW.sku", anotar("productos", "OLD.sku")),
+    trg("proveedores_ins", "INSERT", "proveedores", null, anotar("proveedores", "'*'")),
+    trg("proveedores_del", "DELETE", "proveedores", null, anotar("proveedores", "'*'")),
+    trg("proveedores_upd", "UPDATE", "proveedores", null, anotar("proveedores", "'*'")),
+    trg("ventas_ins", "INSERT", "ventas", "NEW.fecha_venta < " + antes, anotar("ventas", "NEW.sku")),
+    trg("ventas_del", "DELETE", "ventas", "OLD.fecha_venta < " + antes, anotar("ventas", "OLD.sku")),
+    trg("ventas_upd", "UPDATE", "ventas", "(OLD.fecha_venta < " + antes + " OR NEW.fecha_venta < " + antes + ")", anotar("ventas", "NEW.sku") + " " + anotar("ventas", "OLD.sku"))
+  ];
+  for (const [tabla, seccion] of Object.entries(TABLAS_SECCION_PANEL))
+    for (const cuando of ["INSERT", "UPDATE", "DELETE"]) s.push(trg(tabla + "_" + cuando.toLowerCase(), cuando, tabla, null, anotar("seccion", "'" + seccion + "'")));
+  return s;
+}
+let _registroCambiosListo = false;
+async function asegurarRegistroCambios(dbCruda) {
+  if (_registroCambiosListo || !dbCruda) return;
+  _registroCambiosListo = true;   // un intento por instancia: si falla, la app sigue con el panel completo/liviano
+  try { await dbCruda.batch(sentenciasRegistroCambios().map(x => dbCruda.prepare(x))); }
+  catch (e) { try { await dbCruda.prepare("INSERT INTO logs (fecha, mensaje) VALUES (?, ?)").bind(new Date().toISOString(), "⚠️ Registro de cambios del panel: " + e.message).run(); } catch (_) {} }
+}
+
+// Resumen de ventas de algunos skus, calculado igual que ventasResumenConCache (días anteriores + hoy) pero sin caché.
+async function resumenVentasDeSkus(env, skus, hoy) {
+  const out = {};
+  const ahora = Date.now();
+  const d7 = fechaISO(new Date(ahora - 7 * 86400000)), d14 = fechaISO(new Date(ahora - 14 * 86400000));
+  const d30 = fechaISO(new Date(ahora - 30 * 86400000)), d90 = fechaISO(new Date(ahora - 90 * 86400000));
+  for (let i = 0; i < skus.length; i += 90) {
+    const parte = skus.slice(i, i + 90), marcas = parte.map(() => "?").join(",");
+    const { results: hist } = await env.DB.prepare(
+      `SELECT sku,
+         SUM(cantidad) AS u_all,
+         SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u7,
+         SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u14,
+         SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u30,
+         SUM(CASE WHEN fecha_venta >= ? THEN cantidad ELSE 0 END) AS u90,
+         SUM(venta) AS rev, SUM(utilidad) AS prof
+       FROM ventas WHERE fecha_venta < ? AND sku IN (${marcas}) GROUP BY sku`
+    ).bind(d7, d14, d30, d90, hoy, ...parte).all();
+    const { results: deHoy } = await env.DB.prepare(
+      `SELECT sku, SUM(cantidad) AS u, SUM(venta) AS rev, SUM(utilidad) AS prof FROM ventas WHERE fecha_venta >= ? AND sku IN (${marcas}) GROUP BY sku`
+    ).bind(hoy, ...parte).all();
+    (hist || []).forEach(r => { out[r.sku] = { sku: r.sku, u_all: r.u_all || 0, u7: r.u7 || 0, u14: r.u14 || 0, u30: r.u30 || 0, u90: r.u90 || 0, rev: r.rev || 0, prof: r.prof || 0 }; });
+    (deHoy || []).forEach(r => {
+      const o = out[r.sku] || (out[r.sku] = { sku: r.sku, u_all: 0, u7: 0, u14: 0, u30: 0, u90: 0, rev: 0, prof: 0 });
+      const u = r.u || 0;
+      o.u_all += u; o.u7 += u; o.u14 += u; o.u30 += u; o.u90 += u; o.rev += r.rev || 0; o.prof += r.prof || 0;
+    });
+  }
+  return out;
+}
+
+// ?action=panel_cambios&desde=N: lo que cambió en el panel después de N. Los productos y ventas que cambiaron van fila
+// por fila (null = ya no existe); las ventas de los vendidos hoy van siempre; las secciones chicas que cambiaron van
+// enteras. Si no se puede (sin registro, número desconocido, cambió un proveedor o demasiados productos): completo.
+async function payloadCambios(env, desde) {
+  let hasta;
+  try { const v = await get(env, "SELECT v FROM panel_version WHERE id = 1"); hasta = v ? Number(v.v) : null; } catch (e) { hasta = null; }
+  const d = Number(desde);
+  if (hasta == null || desde === null || desde === "" || !Number.isFinite(d) || d > hasta) return { ok: true, completo: true, motivo: "sin registro de cambios" };
+  const cambios = d === hasta ? [] : ((await env.DB.prepare("SELECT tabla, clave FROM panel_cambios WHERE v > ? AND v <= ?").bind(d, hasta).all()).results || []);
+  const skus = new Set(), ventasSkus = new Set(), secs = new Set();
+  for (const c of cambios) {
+    if (c.tabla === "productos") skus.add(c.clave);
+    else if (c.tabla === "ventas") ventasSkus.add(c.clave);
+    else if (c.tabla === "seccion") secs.add(c.clave);
+    else return { ok: true, completo: true, motivo: "cambió " + c.tabla };
+  }
+  if (skus.size > 1500) return { ok: true, completo: true, motivo: "muchos productos" };
+  const proveedorNombrePorId = skus.size || secs.has("provsIds") ? await mapaNombresProveedores(env) : {};
+  const items = {};
+  const listaSkus = [...skus];
+  listaSkus.forEach(k => { items[k] = null; });
+  for (let i = 0; i < listaSkus.length; i += 90) {
+    const parte = listaSkus.slice(i, i + 90);
+    const { results } = await env.DB.prepare("SELECT * FROM productos WHERE sku IN (" + parte.map(() => "?").join(",") + ")").bind(...parte).all();
+    (results || []).forEach(p => { items[p.sku] = filaItemPanel(p, proveedorNombrePorId); });
+  }
+  const hoyISO = fechaISO();
+  const { results: ventasHoyRows } = await env.DB.prepare("SELECT DISTINCT sku FROM ventas WHERE fecha_venta = ?").bind(hoyISO).all();
+  const hoyRowsObj = {};
+  (ventasHoyRows || []).forEach(r => { hoyRowsObj[r.sku] = 1; ventasSkus.add(r.sku); });
+  const resumen = await resumenVentasDeSkus(env, [...ventasSkus], hoyISO);
+  const ventasRows = {};
+  ventasSkus.forEach(k => {
+    const r = resumen[k];
+    ventasRows[k] = r ? { ref: r.sku, u_all: r.u_all || 0, u7: r.u7 || 0, u14: r.u14 || 0, u30: r.u30 || 0, u90: r.u90 || 0, rev: Math.round(r.rev || 0), prof: Math.round(r.prof || 0) } : null;
+  });
+  const secciones = {};
+  for (const nombre of SECCIONES_PANEL) if (secs.has(nombre)) Object.assign(secciones, await seccionPanel(env, nombre, proveedorNombrePorId));
+  return { ok: true, completo: false, version: "cambios", cursor: hasta, ventasHoy: (ventasHoyRows || []).length, items,
+    ventas: { rows: ventasRows, hoy: { fecha: hoyISO, rows: hoyRowsObj } }, secciones, serverTime: new Date().toISOString() };
 }
 
 
@@ -5757,6 +5904,9 @@ const _servidor = {
         if (action === "full") {
           try { await calcularABC(env, 30); await marcarCatalogoActualizado(env); } catch (err) { /* el catálogo ya sincronizó igual */ }
         }
+        // La app manda ?desde=N en el sync automático: tras sincronizar con Loyverse responde solo lo que cambió.
+        const desdeCambios = url.searchParams.get("desde");
+        if (action === "sync" && desdeCambios !== null && !modoSupabase) return json({ ...(await payloadCambios(env, desdeCambios)), synced, syncMsg });
         return json(await payloadDashboard(env, synced, syncMsg));
       }
 
@@ -5787,7 +5937,15 @@ const _servidor = {
 
       // GET /?action=panel_ligero  →  refresco liviano: stock de todos los productos + ventas de los vendidos hoy.
       if (action === "panel_ligero") {
+        if (!modoSupabase && ctx && ctx.waitUntil) ctx.waitUntil(respaldoLoyverseSegundoPlano(env).catch(() => {}));
         return json(await payloadLigero(env));
+      }
+
+      // GET /?action=panel_cambios&desde=N  →  solo lo que cambió desde N (ver payloadCambios). Igual que la carga
+      // completa, repasa en segundo plano ventas y stock contra Loyverse (por si un webhook se perdió).
+      if (action === "panel_cambios") {
+        if (!modoSupabase && ctx && ctx.waitUntil) ctx.waitUntil(respaldoLoyverseSegundoPlano(env).catch(() => {}));
+        return json(await payloadCambios(env, url.searchParams.get("desde")));
       }
 
       // POST { action:'lote_nuevo', payload:{...} }  →  recibe mercadería: suma stock
@@ -6770,6 +6928,7 @@ const _servidor = {
 export default {
   async fetch(request, env, ctx) {
     const dbCruda = env.DB;                       // la D1 sin espejo: el contador no se copia a Supabase
+    await asegurarRegistroCambios(dbCruda);       // disparadores del registro de cambios del panel (una vez por instancia)
     const res = await _servidor.fetch(request, env, ctx);
     iniciarMedicion(request, res, ctx, dbCruda, "pedidos");
     return res;

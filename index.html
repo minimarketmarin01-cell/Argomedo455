@@ -4879,7 +4879,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.3';
+const APP_VERSION='2026-10-20.4';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5356,7 +5356,8 @@ async function autoSyncIfStale(){
   // el sync completo contra Loyverse tarde o falle (antes, si fallaba en silencio, la app se
   // quedaba con la copia vieja del teléfono hasta el siguiente cambio).
   await pollFondo();
-  await cloudSync(true,true);
+  // Sync con Loyverse al abrir: con registro de cambios responde solo lo que cambió (no otro panel completo).
+  if(_conCambios())await pollCambios('sync');else await cloudSync(true,true);
   iniciarPollingTiempoReal();
 }
 
@@ -5432,7 +5433,9 @@ function pollFondoSuave(completo=true){
   _pfT=setTimeout(()=>{
     _pfT=null;_pfUlt=Date.now();
     const c=_pfCompleto;_pfCompleto=false;
-    if(c||!_panelBase||Date.now()-_panelBaseTs>60*60*1000)pollFondo();else pollLigero();
+    // Con registro de cambios en el servidor: solo lo que cambió (carga completa de respaldo cada 6 horas).
+    if(_conCambios()){if(Date.now()-_panelBaseTs>6*60*60*1000)pollFondo();else pollCambios();}
+    else if(c||!_panelBase||Date.now()-_panelBaseTs>60*60*1000)pollFondo();else pollLigero();
   },espera);
 }
 function iniciarPollingTiempoReal(){
@@ -5444,7 +5447,8 @@ function iniciarPollingTiempoReal(){
   // webhook se perdió y la base quedó desactualizada sin que nadie lo note. Solo dibuja
   // si el usuario está inactivo, igual que el poll rápido.
   setInterval(()=>{
-    if(document.visibilityState==='visible'&&!usuarioActivo())cloudSync(true,true);
+    if(document.visibilityState!=='visible'||usuarioActivo())return;
+    if(_conCambios())pollCambios('sync');else cloudSync(true,true);
   },30*60*1000);
   setInterval(actualizarIndicadorEnVivo,3000);
 }
@@ -5488,6 +5492,32 @@ async function pollLigero(){
     aplicarPanelDeFondo(j);
   }catch(e){_ultimaActualizacionConocida='reintentar';}
 }
+
+// Panel de cambios (?action=panel_cambios&desde=N): con el número que trajo la última carga, el servidor devuelve solo
+// lo que cambió desde entonces (productos y ventas fila por fila, null = ya no existe; las listas chicas que cambiaron,
+// enteras) y se combina con la última carga, que se pinta por el mismo camino de siempre. Si el servidor responde
+// "completo" (cambió un proveedor, número desconocido…), o cambió el día, o desapareció una venta de hoy: carga completa.
+// Con accion='sync' el servidor además sincroniza con Loyverse antes de responder.
+async function pollCambios(accion){
+  const base=_panelBase;
+  if(!base||base.cambiosCursor==null||!base.items||!base.items.rows||!base.ventas||!base.ventas.hoy)return pollFondo();
+  try{
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action='+(accion||'panel_cambios')+'&desde='+encodeURIComponent(base.cambiosCursor));
+    if(!res.ok)return pollFondo();
+    const l=await res.json();
+    if(!l||!l.ok||l.completo||!l.items||!l.ventas||!l.ventas.hoy)return pollFondo();
+    const hoyNuevo=l.ventas.hoy.rows||{};
+    if(l.ventas.hoy.fecha!==base.ventas.hoy.fecha||Object.keys(base.ventas.hoy.rows||{}).some(k=>!hoyNuevo[k]))return pollFondo();
+    const rows=Object.assign({},base.items.rows),vrows=Object.assign({},base.ventas.rows);
+    Object.entries(l.items).forEach(([k,v])=>{if(v===null)delete rows[k];else rows[k]=v;});
+    Object.entries(l.ventas.rows||{}).forEach(([k,v])=>{if(v===null)delete vrows[k];else vrows[k]=v;});
+    const j=Object.assign({},base,l.secciones||{},{ventasHoy:l.ventasHoy,serverTime:l.serverTime,synced:false,syncMsg:'',cambiosCursor:l.cursor,
+      items:Object.assign({},base.items,{rows}),ventas:Object.assign({},base.ventas,{rows:vrows,hoy:l.ventas.hoy})});
+    _panelBase=j; // base del próximo panel de cambios (no reinicia el reloj de la carga completa)
+    aplicarPanelDeFondo(j);
+  }catch(e){_ultimaActualizacionConocida='reintentar';}
+}
+const _conCambios=()=>!!(_panelBase&&_panelBase.cambiosCursor!=null);
 
 function aplicarPanelDeFondo(j){
     _ultimoPollOk=Date.now();

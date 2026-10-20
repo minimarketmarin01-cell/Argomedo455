@@ -33,7 +33,7 @@ function combinar(base, l) {           // misma combinación que hace la app (in
   return Object.assign({}, base, { ventasHoy: l.ventasHoy, items: Object.assign({}, base.items, { rows }),
     ventas: Object.assign({}, base.ventas, { rows: Object.assign({}, base.ventas.rows, l.ventas.rows), hoy: l.ventas.hoy }) });
 }
-const sinHora = j => { const c = JSON.parse(JSON.stringify(j)); delete c.serverTime; delete c.synced; delete c.syncMsg; delete c.version; return c; };
+const sinHora = j => { const c = JSON.parse(JSON.stringify(j)); delete c.serverTime; delete c.synced; delete c.syncMsg; delete c.version; delete c.cambiosCursor; return c; };
 
 const full1 = await get("");
 const l1 = await get("?action=panel_ligero");
