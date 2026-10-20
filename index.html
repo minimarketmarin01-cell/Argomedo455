@@ -5371,7 +5371,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.5';
+const APP_VERSION='2026-10-20.6';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15457,6 +15457,34 @@ document.getElementById('mas-q-supabase').onclick=sbAbrir;
 document.getElementById('sb-revisar').onclick=sbRevisar;
 document.getElementById('sb-copiar').onclick=sbCopiar;
 document.getElementById('sb-cerrar').onclick=()=>cerrarModal('sb-ov');
+
+// Micrófono y escáner de código de barras en los buscadores de producto que no los tenían (Ventas por día, Mermas por día,
+// Resumen ABC y Lista de precios). Se copian los botones del buscador de Editar productos. Al escanear, si el código es de
+// un solo producto se busca por su nombre (estos buscadores filtran por nombre); si no, se busca el código tal cual.
+(function(){
+  const molde=['ed-mic','ed-scan'].map(i=>document.getElementById(i));
+  if(!molde[0]||!molde[1])return;
+  ['vd','mmc','abcr','pl'].forEach(pre=>{
+    const inp=document.getElementById(pre+'-search');if(!inp||document.getElementById(pre+'-scan'))return;
+    const caja=inp.closest('.mm-search');if(!caja)return;
+    inp.style.paddingRight='';
+    const poner=(modelo,id)=>{const b=modelo.cloneNode(true);b.id=id;caja.appendChild(b);return b;};
+    const mic=poner(molde[0],pre+'-mic'),scan=poner(molde[1],pre+'-scan');
+    const escribir=txt=>{inp.value=txt;inp.dispatchEvent(new Event('input',{bubbles:true}));};
+    mic.onclick=()=>voiceSearch(mic,escribir);
+    scan.onclick=()=>{
+      const ov=inp.closest('.mm-ov');
+      const reabrir=()=>{if(ov)ov.classList.remove('hidden');};
+      if(ov)ov.classList.add('hidden');
+      openScanner(code=>{
+        reabrir();
+        const lista=(typeof mmFindItems==='function')?mmFindItems(code):[];
+        escribir(lista.length===1?lista[0].nombre:code);
+        if(!lista.length)showToast('No se encontró ningún producto con ese código');
+      },reabrir);
+    };
+  });
+})();
 document.getElementById('vd-cerrar').onclick=()=>cerrarModal('vd-ov');
 (function(){
   const inp=document.getElementById('vd-search');
