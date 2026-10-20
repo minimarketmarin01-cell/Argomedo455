@@ -16,6 +16,7 @@
 import { crearDB } from "./pg/d1_compat.js";
 import { conEspejo, estadoEspejo } from "./pg/espejo.js";
 import { crearTransporteSupabase, soloLectura } from "./pg/transporte_supabase.js";
+import { iniciarMedicion, resumenUso } from "./uso.js";
 import { autorizado as migAutorizado, vaciar as migVaciar, paso as migPaso, finalizar as migFinalizar, comparar as migComparar, compararRapido as migCompararRapido, paginaMigracion } from "./pg/migrador.js";
 
 // ============================================================
@@ -5576,7 +5577,7 @@ async function accionCopiarProductoExterno(env, payload) {
   return { ok: true, creado: true, sku: creado.producto.ref, nombre: creado.producto.nombre, modo, avisoImagen };
 }
 
-export default {
+const _servidor = {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: CORS_HEADERS });
@@ -5584,6 +5585,11 @@ export default {
 
     const url = new URL(request.url);
     const accionUrl = url.searchParams.get("action") || "";
+
+    // ---------- Uso de datos para la app (Respaldo en Supabase): descargas pesadas por día; siempre lee D1 real ----------
+    if (accionUrl === "uso_diario" && request.method === "GET") {
+      try { return json(await resumenUso(env.DB)); } catch (e) { return json({ ok: false, error: e.message }, 500); }
+    }
 
     // ---------- Estado del espejo para la app (Más → Reportes → Respaldo en Supabase): solo conteos y sumas ----------
     // Van ANTES del cambio de modo: siempre leen D1 real (aunque la URL traiga ?db=supabase) y no pasan por el espejo.
@@ -6724,6 +6730,17 @@ export default {
       await logMsg(env, "❌ Error en scheduled(): " + e.message);
     }
   }
+};
+
+// Mide las descargas pesadas de cada respuesta (ver uso.js) sin demorarla: la medición corre aparte con ctx.waitUntil.
+export default {
+  async fetch(request, env, ctx) {
+    const dbCruda = env.DB;                       // la D1 sin espejo: el contador no se copia a Supabase
+    const res = await _servidor.fetch(request, env, ctx);
+    iniciarMedicion(request, res, ctx, dbCruda, "pedidos");
+    return res;
+  },
+  scheduled: (event, env, ctx) => _servidor.scheduled(event, env, ctx)
 };
 
 // ============================================================
