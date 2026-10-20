@@ -1111,9 +1111,13 @@ async function sincronizarCatalogo(env) {
 // Marca en `config` el momento del último cambio real en `productos`. El frontend
 // consulta esto cada cierto tiempo (polling liviano) para saber si debe refrescar
 // su copia local del catálogo, sin tener que revisar producto por producto.
-async function marcarCatalogoActualizado(env) {
+// Además hay una segunda marca, `version_completa`, que cambia con todo MENOS con las ventas y el stock que llegan de
+// Loyverse (lo más frecuente): si solo cambió la primera, a la app le basta el refresco liviano (?action=panel_ligero,
+// unos 70 KB) en vez del panel completo (~1,5 MB). Ante la duda se marca completo (soloStock = false).
+async function marcarCatalogoActualizado(env, soloStock = false) {
   const ahora = new Date().toISOString();
-  await run(env, "INSERT INTO config (clave, valor) VALUES ('catalogo_actualizado_en', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor", ahora);
+  if (soloStock) await run(env, "INSERT INTO config (clave, valor) VALUES ('catalogo_actualizado_en', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor", ahora);
+  else await run(env, "INSERT INTO config (clave, valor) VALUES ('catalogo_actualizado_en', ?), ('version_completa', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor", ahora, ahora);
 
   // Avisa en el momento (SSE) a todos los celulares conectados — sin esto igual se
   // enterarían en el próximo sondeo de respaldo, pero así queda instantáneo. Si el
@@ -1125,10 +1129,34 @@ async function marcarCatalogoActualizado(env) {
       const stub = env.REALTIME_HUB.get(id);
       await stub.fetch("https://internal/broadcast", {
         method: "POST",
-        body: JSON.stringify({ actualizadoEn: ahora })
+        body: JSON.stringify(soloStock ? { actualizadoEn: ahora, soloStock: true } : { actualizadoEn: ahora, versionCompleta: ahora })
       });
     } catch (e) { /* silencioso: el sondeo de respaldo cubre este caso igual */ }
   }
+}
+
+// Solo ventas nuevas (sin devoluciones ni anulaciones, que pueden tocar días anteriores) o cambios de stock: refresco liviano.
+function soloVentasNuevas(receipts) {
+  return Array.isArray(receipts) && receipts.every(r => r && r.receipt_type === "SALE" && !r.cancelled_at);
+}
+
+// Refresco liviano del panel: el stock de todos los productos y las ventas de los productos vendidos hoy (lo único que
+// cambia con una venta). Mismos cálculos que payloadDashboard; la app lo combina con su última carga completa.
+async function payloadLigero(env) {
+  const { results: stockRows } = await env.DB.prepare("SELECT sku, stock FROM productos").all();
+  const stock = {};
+  (stockRows || []).forEach(p => { stock[p.sku] = p.stock; });
+  const resumen = await ventasResumenConCache(env);
+  const hoyISO = fechaISO();
+  const { results: ventasHoyRows } = await env.DB.prepare("SELECT DISTINCT sku FROM ventas WHERE fecha_venta = ?").bind(hoyISO).all();
+  const hoyRowsObj = {};
+  (ventasHoyRows || []).forEach(r => { hoyRowsObj[r.sku] = 1; });
+  const ventasRows = {};
+  resumen.forEach(r => {
+    if (!hoyRowsObj[r.sku]) return;
+    ventasRows[r.sku] = { ref: r.sku, u_all: r.u_all || 0, u7: r.u7 || 0, u14: r.u14 || 0, u30: r.u30 || 0, u90: r.u90 || 0, rev: Math.round(r.rev || 0), prof: Math.round(r.prof || 0) };
+  });
+  return { ok: true, version: "ligero", ventasHoy: (ventasHoyRows || []).length, stock, ventas: { rows: ventasRows, hoy: { fecha: hoyISO, rows: hoyRowsObj } }, serverTime: new Date().toISOString() };
 }
 
 // ============================================================
@@ -2566,7 +2594,7 @@ async function manejarWebhookLoyverse(request, env, url) {
     } else {
       resultado.noManejado = true; // tipo recibido pero sin handler todavía (se registra igual)
     }
-    if (resultado.procesados > 0) await marcarCatalogoActualizado(env);
+    if (resultado.procesados > 0) await marcarCatalogoActualizado(env, tipo === "inventory_levels.update" || (tipo === "receipts.update" && soloVentasNuevas(evento.receipts)));
   } finally {
     await marcarEventoProcesado(env, eventId, tipo);
   }
@@ -4360,7 +4388,7 @@ async function respaldoLoyverseSegundoPlano(env) {
           if (_respVistos.size > 5000) _respVistos.clear();
           if (faltan.length) {
             await Promise.all([aplicarVentas(env, faltan), procesarFiadosDeReceipts(env, faltan)]);
-            await marcarCatalogoActualizado(env);
+            await marcarCatalogoActualizado(env, soloVentasNuevas(faltan));
             await logMsg(env, "🛟 Respaldo de ventas: " + faltan.length + " recibo(s) que el webhook no había entregado");
           }
         }
@@ -4378,7 +4406,7 @@ async function respaldoLoyverseSegundoPlano(env) {
           Number(actual[x.variant_id]) !== Number(x.in_stock));
         if (distintos.length) {
           await aplicarCambiosInventario(env, distintos);
-          await marcarCatalogoActualizado(env);
+          await marcarCatalogoActualizado(env, true);
           await logMsg(env, "🛟 Respaldo de stock: " + distintos.length + " producto(s) corregidos desde Loyverse");
         }
       } catch (e) { await logMsg(env, "⚠️ Respaldo de stock falló: " + e.message); }
@@ -5752,8 +5780,14 @@ const _servidor = {
       // pensada para que el frontend la pregunte cada 15-20s y solo pida el catálogo
       // completo si de verdad cambió algo.
       if (action === "ultima_actualizacion") {
-        const fila = await get(env, "SELECT valor FROM config WHERE clave = 'catalogo_actualizado_en'");
-        return json({ ok: true, actualizadoEn: fila ? fila.valor : null });
+        const { results: filas } = await env.DB.prepare("SELECT clave, valor FROM config WHERE clave IN ('catalogo_actualizado_en', 'version_completa')").all();
+        const m = {}; (filas || []).forEach(f => { m[f.clave] = f.valor; });
+        return json({ ok: true, actualizadoEn: m.catalogo_actualizado_en || null, versionCompleta: m.version_completa || "" });
+      }
+
+      // GET /?action=panel_ligero  →  refresco liviano: stock de todos los productos + ventas de los vendidos hoy.
+      if (action === "panel_ligero") {
+        return json(await payloadLigero(env));
       }
 
       // POST { action:'lote_nuevo', payload:{...} }  →  recibe mercadería: suma stock
