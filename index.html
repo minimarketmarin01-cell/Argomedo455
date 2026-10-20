@@ -5312,7 +5312,7 @@ async function renderInsumosChart(){
 }
 function showToast(m){
   // Error crudo de Cloudflare por límite diario gratis de D1 → mensaje claro en español.
-  if(/D1_ERROR|exceeded D1|daily row (write|read) limit|free tier/i.test(String(m))){
+  if(/exceeded D1|daily row (write|read) limit|free tier/i.test(String(m))){
     m='⛔ Cloudflare bloqueó las escrituras por hoy (límite del plan gratis). Se reactivan a las 21:00 (hora de Chile). No se guardó nada: espera hasta esa hora o hazlo directo en Loyverse.';
   }
   const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');const dur=m.length>60?4600:2600;clearTimeout(window._toastT);window._toastT=setTimeout(()=>t.classList.remove('show'),dur);}
@@ -5371,11 +5371,11 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.6';
+const APP_VERSION='2026-10-20.7';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
-    return !!document.querySelector('.mm-ov:not(.hidden)');
+    return !!document.querySelector('.mm-ov:not(.hidden):not(#mas-ov)');   // el menú Más solo no frena la actualización
   }
   async function limpiarCacheYActualizarSW(){
     try{
