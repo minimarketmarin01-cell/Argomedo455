@@ -16,7 +16,7 @@
 import { crearDB } from "./pg/d1_compat.js";
 import { conEspejo, estadoEspejo } from "./pg/espejo.js";
 import { crearTransporteSupabase, soloLectura } from "./pg/transporte_supabase.js";
-import { iniciarMedicion, resumenUso } from "./uso.js";
+import { iniciarMedicion, resumenUso, appDe } from "./uso.js";
 import { autorizado as migAutorizado, vaciar as migVaciar, paso as migPaso, finalizar as migFinalizar, comparar as migComparar, compararRapido as migCompararRapido, paginaMigracion } from "./pg/migrador.js";
 
 // ============================================================
@@ -6942,7 +6942,7 @@ export default {
     const dbCruda = env.DB;                       // la D1 sin espejo: el contador no se copia a Supabase
     await asegurarRegistroCambios(dbCruda);       // disparadores del registro de cambios del panel (una vez por instancia)
     const res = await _servidor.fetch(request, env, ctx);
-    iniciarMedicion(request, res, ctx, dbCruda, "pedidos");
+    iniciarMedicion(request, res, ctx, dbCruda, appDe(request, "pedidos"));
     return res;
   },
   scheduled: (event, env, ctx) => _servidor.scheduled(event, env, ctx)
