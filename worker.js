@@ -6228,6 +6228,17 @@ const _servidor = {
         return json({ ok: true, llegadas: lista });
       }
 
+      // GET /?action=productos_por_revisar → productos a los que les falta proveedor y/o sector
+      // (misma lista que usa Marín en Recién llegado para clasificarlos uno tras otro).
+      if (action === "productos_por_revisar") {
+        const { results } = await env.DB.prepare(
+          `SELECT p.sku, p.nombre, p.categoria, p.proveedor_id, pr.nombre AS proveedor_nombre, p.sector
+           FROM productos p LEFT JOIN proveedores pr ON pr.id = p.proveedor_id
+           WHERE p.proveedor_id IS NULL OR p.sector IS NULL ORDER BY p.nombre LIMIT 3000`
+        ).all();
+        return json({ ok: true, productos: results, total: results.length });
+      }
+
       // POST { action:'asignar_llegada', payload:{filaIndex,fechaVencimiento} } →
       // crea el lote de vencimiento para esa llegada (el stock ya estaba sumado).
       if (action === "asignar_llegada") {
