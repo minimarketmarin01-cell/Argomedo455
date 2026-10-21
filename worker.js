@@ -17,6 +17,7 @@ import { crearDB } from "./pg/d1_compat.js";
 import { conEspejo, estadoEspejo } from "./pg/espejo.js";
 import { crearTransporteSupabase, soloLectura } from "./pg/transporte_supabase.js";
 import { iniciarMedicion, resumenUso, appDe } from "./uso.js";
+import { atenderEtiquetas } from "./etiquetas.js";
 import { autorizado as migAutorizado, vaciar as migVaciar, paso as migPaso, finalizar as migFinalizar, comparar as migComparar, compararRapido as migCompararRapido, paginaMigracion } from "./pg/migrador.js";
 
 // ============================================================
@@ -5939,6 +5940,16 @@ const _servidor = {
         const { results: filas } = await env.DB.prepare("SELECT clave, valor FROM config WHERE clave IN ('catalogo_actualizado_en', 'version_completa')").all();
         const m = {}; (filas || []).forEach(f => { m[f.clave] = f.valor; });
         return json({ ok: true, actualizadoEn: m.catalogo_actualizado_en || null, versionCompleta: m.version_completa || "" });
+      }
+
+      // App de etiquetas del POS: catálogo liviano y por cambios, búsqueda a pedido y ficha corta (ver etiquetas.js).
+      if (request.method === "GET" && /^(catalogo_etiquetas|categorias_etiquetas|buscar_etiquetas|ficha_etiqueta)$/.test(action)) {
+        const db = {
+          todas: async (sql, ...p) => ((await (p.length ? env.DB.prepare(sql).bind(...p) : env.DB.prepare(sql)).all()).results) || [],
+          uno: (sql, ...p) => get(env, sql, ...p)
+        };
+        const r = await atenderEtiquetas(action, url, db, "prioridad");   // lote "más urgente", como ficha_producto de Argomedo
+        return json(r, r.ok === false ? 400 : 200);
       }
 
       // GET /?action=panel_ligero  →  refresco liviano: stock de todos los productos + ventas de los vendidos hoy.
