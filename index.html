@@ -5385,7 +5385,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.11';
+const APP_VERSION='2026-10-20.12';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -7179,6 +7179,48 @@ function pcRedondeoComercialSuperior(precio){
 //               borrador, actualizar textos fuera del widget, etc.),
 //   onAplicar(precioFinal): solo si mostrarBotonAplicar — al tocar "Aplicar precio".
 // }
+// ---- Casillas de costo/precio en pesos chilenos: se ven como $12.990 (puntos de miles, coma decimal) pero para el resto
+// del código siguen siendo un número normal: `.value` devuelve "12990" (o "1290.5") y al asignarle un número lo muestra con formato.
+const _inpValor=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
+function _pesosFmt(raw){
+  if(raw===''||raw==null)return '';
+  const p=String(raw).split('.');
+  return '$'+p[0].replace(/\B(?=(\d{3})+(?!\d))/g,'.')+(p.length>1?','+p[1]:'');
+}
+function pesosCL(el){
+  if(!el||el._pesos)return;
+  el._pesos=true;
+  try{el.type='text';}catch(e){}
+  el.setAttribute('inputmode','decimal');el.setAttribute('autocomplete','off');
+  let raw='';
+  const norm=v=>{v=String(v==null?'':v).trim();return /^-?\d*\.?\d*$/.test(v)?v.replace(/^-/,''):'';};
+  Object.defineProperty(el,'value',{configurable:true,
+    get(){return raw;},
+    set(v){raw=norm(v);_inpValor.set.call(el,_pesosFmt(raw));}});
+  el._pesosEscribio=()=>{   // el usuario escribió: se reinterpreta lo que hay en pantalla (punto = miles, coma = decimal)
+    const txt=_inpValor.get.call(el);
+    const sel=el.selectionStart==null?txt.length:el.selectionStart;
+    const derecha=txt.slice(sel).replace(/[^\d,]/g,'').length;   // dígitos a la derecha del cursor, para no saltar al final
+    const m=/^([^,]*)(?:,(.*))?$/.exec(txt.replace(/\$/g,'').replace(/\./g,'').replace(/\s/g,''))||[];
+    const ent=(m[1]||'').replace(/\D/g,'').replace(/^0+(?=\d)/,'');
+    const dec=m[2]==null?null:m[2].replace(/\D/g,'');
+    raw=ent+(dec!=null?'.'+dec:'');
+    if(raw==='.')raw='';
+    const f=_pesosFmt(raw);
+    _inpValor.set.call(el,f);
+    let pos=f.length,cont=0;
+    for(let i=f.length;i>0&&cont<derecha;i--){pos=i-1;if(/[\d,]/.test(f[i-1]))cont++;}
+    if(!derecha)pos=f.length;
+    try{el.setSelectionRange(pos,pos);}catch(e){}
+  };
+  raw=norm(el.getAttribute('value')!=null?el.getAttribute('value'):_inpValor.get.call(el));
+  _inpValor.set.call(el,_pesosFmt(raw));
+}
+// Antes que cualquier otro listener: actualiza el valor interno de la casilla en cuanto se escribe en ella.
+document.addEventListener('input',e=>{const t=e.target;if(t&&t._pesos&&t._pesosEscribio)t._pesosEscribio();},true);
+function pesosCLEn(raiz){(raiz||document).querySelectorAll('input[data-pesos]').forEach(pesosCL);}
+new MutationObserver(()=>pesosCLEn()).observe(document.documentElement,{childList:true,subtree:true});
+
 const PcWidget=(function(){
   function render(cfg){
     const pfx=cfg.prefix;
@@ -7201,7 +7243,7 @@ const PcWidget=(function(){
       '<div class="pc-row2">'+
         '<div class="mm-field" style="margin-bottom:0">'+
           '<label id="'+pfx+'-costo-lbl">'+costoLabel+'</label>'+
-          '<input id="'+pfx+'-costo" type="number" inputmode="decimal" value="'+(cfg.costo!=null?cfg.costo:'')+'" placeholder="$" class="pc-input pc-input-lg">'+
+          '<input id="'+pfx+'-costo" data-pesos="1" type="text" inputmode="decimal" value="'+(cfg.costo!=null?cfg.costo:'')+'" placeholder="$" class="pc-input pc-input-lg">'+
           '<div id="'+pfx+'-costo-explica" class="pc-hint"></div>'+
           (cfg.costoUnitarioHint?'<div id="'+pfx+'-costo-unitario-hint" class="pc-hint" style="font-weight:700"></div>':'')+
         '</div>'+
@@ -7236,7 +7278,7 @@ const PcWidget=(function(){
       '<div class="pc-venta-box" style="margin-top:10px">'+
         '<div class="pc-venta-top">'+
           '<div><div class="pc-venta-lbl">Precio de venta <span>(se guardará)</span></div>'+
-            '<input id="'+pfx+'-precio" type="number" inputmode="decimal" value="'+(cfg.precio!=null?cfg.precio:'')+'" placeholder="$" class="pc-venta-input">'+
+            '<input id="'+pfx+'-precio" data-pesos="1" type="text" inputmode="decimal" value="'+(cfg.precio!=null?cfg.precio:'')+'" placeholder="$" class="pc-venta-input">'+
           '</div>'+
           (cfg.mostrarBotonAplicar?'<button type="button" class="pc-aplicar-btn" id="'+pfx+'-aplicar-btn"><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px" fill="currentColor"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg> Aplicar precio</button>':'')+
         '</div>'+
@@ -7247,6 +7289,7 @@ const PcWidget=(function(){
   function wire(cfg){
     const pfx=cfg.prefix;
     const $=id=>document.getElementById(pfx+'-'+id);
+    pesosCL($('costo'));pesosCL($('precio'));   // casillas en pesos chilenos ($12.990)
     const state=cfg.state; // objeto mutable del llamador: {modo,ivaModo,ilaAplica,precioTocado}
     function ilaMarcado(){const el=$('ila');return !!(el&&el.checked);}
     function ila10Marcado(){const el=$('ila10');return !!(el&&el.checked);}
@@ -8389,7 +8432,7 @@ function plRender(){
       </div>
       <div style="display:flex;align-items:center;gap:3px">
         <span style="font-size:14px;color:var(--muted)">$</span>
-        <input type="number" step="any" inputmode="decimal" value="${p.precio!=null?p.precio:''}"
+        <input type="text" data-pesos="1" inputmode="decimal" value="${p.precio!=null?p.precio:''}"
           data-pl-input="${p.ref}"
           style="width:90px;padding:8px;border-radius:8px;border:1px solid var(--borde);text-align:center;font-size:16px">
       </div>
