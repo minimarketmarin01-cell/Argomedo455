@@ -715,7 +715,10 @@ html.carrito-fijo #rc-ov .mm-sections{
 .calc-top{display:flex;justify-content:space-between;align-items:center;padding:4px 2px;color:#6b6b6b;font-size:16px;font-weight:500}
 .calc-top button{background:#f0f0f2;color:#111;border:none;border-radius:50%;width:42px;height:42px;font-size:20px;cursor:pointer}
 .calc-screen{flex:1;min-height:90px;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-end;padding:6px 6px 10px;overflow:hidden}
-.calc-expr{max-width:100%;text-align:right;font-weight:400;line-height:1.12;word-break:break-all;overflow-y:auto;color:#111;font-size:64px}
+.calc-expr span[data-i]{cursor:text}
+.calc-caret{display:inline-block;width:0;height:.95em;border-right:2px solid #12a88a;vertical-align:-.1em;margin:0 -1px;animation:calcCaret 1s steps(1) infinite}
+@keyframes calcCaret{50%{border-color:transparent}}
+.calc-expr{-webkit-user-select:none;user-select:none;min-height:1.1em;width:100%;max-width:100%;text-align:right;font-weight:400;line-height:1.12;word-break:break-all;overflow-y:auto;color:#111;font-size:64px}
 .calc-prev{min-height:38px;margin-top:6px;text-align:right;font-size:30px;color:#8a8a8f;font-weight:400;word-break:break-all}
 .calc-prev.err{color:#d93025;font-size:20px}
 .calc-bar{width:100%;display:flex;justify-content:space-between;align-items:center;margin-top:6px}
@@ -5382,7 +5385,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.10';
+const APP_VERSION='2026-10-20.11';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -11798,7 +11801,7 @@ wireFechaSegmentada('cp-fecha-dd','cp-fecha-mm','cp-fecha-aaaa','cp-fecha','cp-f
    (no usa abrirModal, que esconde las demás), así al cerrarla se vuelve exactamente a lo que se
    estaba haciendo. Porcentaje como en Samsung: 200+10% = 220, 200×10% = 20. */
 const Calc=(function(){
-  let expr='',anterior='',msg='',done=false;
+  let expr='',anterior='',msg='',done=false,pos=0;   // pos: posición del cursor dentro de expr (se mueve tocando un dígito)
   const el=id=>document.getElementById(id);
   const OPS='+-*/';
   const esDig=c=>c>='0'&&c<='9';
@@ -11874,11 +11877,36 @@ const Calc=(function(){
     if(!t||t==='()')return '';
     try{return fmtExpr(resStr(evaluar(t)));}catch(e){return '';}
   }
+  // Cada carácter escrito se dibuja en su propio <span data-i> (i = cursor justo después de él) para poder tocar un
+  // dígito u operador y editar ahí; los puntos de miles son solo visuales y viajan con su dígito.
+  function itemsVista(){
+    const out=[];let k=0;
+    while(k<expr.length){
+      const m=/^(\d+\.?\d*|\.\d+)/.exec(expr.slice(k));
+      if(m){
+        const t=m[1],ip=t.split('.')[0];
+        for(let j=0;j<t.length;j++){
+          const c=t[j];let txt;
+          if(c==='.')txt=',';
+          else{txt=c;if(j<ip.length&&j>0&&(ip.length-j)%3===0)txt='.'+c;}
+          out.push({t:txt,i:k+j+1});
+        }
+        k+=t.length;
+      }else{
+        const c=expr[k];
+        out.push({t:c==='*'?'×':c==='/'?'÷':c==='-'?'−':c,i:k+1});k++;
+      }
+    }
+    return out;
+  }
   function pintar(){
     const ex=el('calc-expr'),pv=el('calc-prev');
     if(!ex||!pv)return;
+    if(pos>expr.length)pos=expr.length;
     const txt=expr===''?'0':fmtExpr(expr);
-    ex.textContent=txt;
+    const caret='<span class="calc-caret"></span>';
+    if(expr==='')ex.innerHTML='0'+caret;
+    else ex.innerHTML=(pos===0?caret:'')+itemsVista().map(it=>'<span data-i="'+it.i+'">'+it.t+'</span>'+(it.i===pos?caret:'')).join('');
     const n=txt.length;
     ex.style.fontSize=(n<=7?64:n<=10?54:n<=14?44:n<=20?36:28)+'px';
     pv.className='calc-prev'+(msg?' err':'');
@@ -11953,6 +11981,27 @@ const Calc=(function(){
   }
   function tecla(k){
     msg='';
+    if(done||k==='=')pos=expr.length;
+    // Las operaciones razonan desde el final del texto: se aplican a lo que hay antes del cursor y lo de después se conserva.
+    const der=(k==='c'||k==='=')?'':expr.slice(pos);
+    if(k!=='c'&&k!=='=')expr=expr.slice(0,pos);
+    tecla2(k);
+    pos=expr.length;
+    expr+=der;
+    pintar();
+  }
+  // Toque sobre la expresión: deja el cursor antes o después del carácter tocado (según la mitad), o al final si toca vacío.
+  function tocar(ev){
+    msg='';
+    if(done){done=false;anterior='';}
+    const sp=ev.target.closest&&ev.target.closest('#calc-expr [data-i]');
+    if(sp){
+      const i=Number(sp.dataset.i),r=sp.getBoundingClientRect();
+      pos=ev.clientX<r.left+r.width/2?i-1:i;
+    }else pos=expr.length;
+    pintar();
+  }
+  function tecla2(k){
     if(esDig(k)&&k.length===1)digito(k);
     else if(k==='.')punto();
     else if(OPS.indexOf(k)>=0&&k.length===1)operador(k);
@@ -11962,7 +12011,6 @@ const Calc=(function(){
     else if(k==='sign')signo();
     else if(k==='back')atras();
     else if(k==='c'){expr='';anterior='';done=false;}
-    pintar();
   }
   function abierta(){const o=el('calc-ov');return !!o&&!o.classList.contains('hidden');}
   // `destino`: casilla de costo de la calculadora de precio desde la que se abrió; con ella aparece "Usar como costo".
@@ -11971,6 +12019,7 @@ const Calc=(function(){
     const o=el('calc-ov');if(!o)return;
     destino=dest||null;
     const u=el('calc-usar');if(u)u.classList.toggle('hidden',!destino);
+    pos=expr.length;
     o.classList.remove('hidden');pintar();
   }
   function cerrar(){const o=el('calc-ov');if(o)o.classList.add('hidden');destino=null;}
@@ -11988,9 +12037,9 @@ const Calc=(function(){
     showToast('Costo: $'+fmtNum(String(v)));
     try{d.scrollIntoView({block:'center'});}catch(e){}
   }
-  return {tecla,abrir,cerrar,abierta,estado,usarComoCosto};
+  return {tecla,tocar,abrir,cerrar,abierta,estado,usarComoCosto};
   // Estado visible para pruebas.
-  function estado(){return {expr:el('calc-expr').textContent,prev:el('calc-prev').textContent,err:el('calc-prev').classList.contains('err')};}
+  function estado(){return {expr:el('calc-expr').textContent,pos,prev:el('calc-prev').textContent,err:el('calc-prev').classList.contains('err')};}
 })();
 function calcAbierta(){return Calc.abierta();}
 function calcCerrar(){Calc.cerrar();}
@@ -12001,6 +12050,7 @@ document.addEventListener('click',e=>{
   if(!ov||ov.classList.contains('hidden'))return;
   if(e.target===ov||e.target.closest('#calc-cerrar')){Calc.cerrar();return;}
   if(e.target.closest('[data-usar]')){Calc.usarComoCosto();return;}
+  if(e.target.closest('#calc-expr')){Calc.tocar(e);return;}
   const k=e.target.closest('[data-k]');
   if(k&&ov.contains(k))Calc.tecla(k.dataset.k);
 });
