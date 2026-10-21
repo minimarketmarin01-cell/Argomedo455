@@ -78,6 +78,8 @@ function calificarUpsert(sql) {
 
 export function traducirSql(sqlOriginal) {
   let sql = String(sqlOriginal).trim().replace(/;\s*$/, "");
+  // Supabase rechaza DELETE sin WHERE ("DELETE requires a WHERE clause"): un borrado total se manda con WHERE true.
+  sql = sql.replace(/^(\s*DELETE\s+FROM\s+"?\w+"?)\s*$/i, "$1 WHERE true");
   const mUpd = /^\s*UPDATE\s+OR\s+IGNORE\s+(\w+)\s+SET\s+(\w+)\s*=\s*\?\s+WHERE\s+(\w+)\s*=\s*\?\s*$/i.exec(sql);
   if (mUpd) {
     const [, tabla, colSet, colWhere] = mUpd;
