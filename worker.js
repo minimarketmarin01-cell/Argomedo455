@@ -3567,6 +3567,8 @@ async function recalcularVencimientosD1(env) {
 
   const stmts = [];
   for (const row of rows) {
+    // Producto sin stock: el lote se cierra solo y no se vuelve a calcular encima de ese cierre.
+    if (await autoResolverSiSinStock(env, row.id, prodMap[row.sku], row.estado)) continue;
     const calc = await calcularLote(env, { categoria: row.categoria, fechaVencimiento: row.fecha_vencimiento },
       prodMap[row.sku], ventaMap[row.sku], tablaVidaUtil, true);
     stmts.push(env.DB.prepare(
@@ -3606,6 +3608,20 @@ function urgenciaDe(dias) {
 // Por defecto trae los lotes "activos" (Pendiente / Revisado / Sin fecha),
 // ordenados por fecha de vencimiento más próxima primero. Si se pasa
 // estado=todos, trae también los ya cerrados (Cambiado/Descuento recibido/Desechado).
+// Si el producto de un lote ya no tiene stock (se vendió todo), no queda nada físico que retirar/gestionar para NINGÚN lote
+// activo de ese SKU — vencido o no. Se cierra solo como "Revisado" con motivo 'sin_stock' (igual que en Marín). Solo si el
+// producto lleva control de stock (track_stock): sin eso un 0 no es una señal confiable. Un lote "Retirado" nunca se pisa:
+// retirarlo deja el stock en 0 y sigue en Pendientes hasta confirmar el cambio o la merma.
+async function autoResolverSiSinStock(env, filaId, productoRow, estadoActual) {
+  if (estadoActual === "Retirado") return false;
+  const sinStock = productoRow && productoRow.track_stock && productoRow.stock != null && Number(productoRow.stock) <= 0;
+  if (!sinStock) return false;
+  await run(env,
+    "UPDATE vencimientos SET estado='Revisado', motivo_cierre='sin_stock', accion=?, fecha_revision=?, revisado_por='sistema' WHERE id=?",
+    "Sin stock — ya no hay nada que retirar", fechaHoraDDMMAAAA(), filaId);
+  return true;
+}
+
 async function listaVencimientos(env, { estado, sku } = {}) {
   let sql = "SELECT * FROM vencimientos WHERE 1=1";
   const params = [];
@@ -3613,7 +3629,25 @@ async function listaVencimientos(env, { estado, sku } = {}) {
   if (estado && estado !== "todos") { sql += " AND estado = ?"; params.push(estado); }
   else if (!estado) { sql += " AND estado NOT IN ('Cambiado','Descuento recibido','Desechado','Revisado')"; }
   sql += " ORDER BY (fecha_vencimiento = '') ASC, id DESC";
-  const { results } = await env.DB.prepare(sql).bind(...params).all();
+  let { results } = await env.DB.prepare(sql).bind(...params).all();
+  if (!estado) {
+    // Lista activa por defecto: los lotes de productos sin stock se cierran solos y no se muestran (ver autoResolverSiSinStock).
+    // Los que ya tienen un descuento activo siguen su propio flujo de gestión y no se tocan.
+    const skus = [...new Set(results.filter(r => r.sku && !r.descuento_activo && r.estado !== "Retirado").map(r => r.sku))];
+    const prodMap = {};
+    for (let i = 0; i < skus.length; i += 90) {
+      const lote = skus.slice(i, i + 90);
+      const { results: pr } = await env.DB.prepare(
+        `SELECT sku, stock, track_stock FROM productos WHERE sku IN (${lote.map(() => "?").join(",")})`).bind(...lote).all();
+      pr.forEach(p => { prodMap[p.sku] = p; });
+    }
+    const activos = [];
+    for (const r of results) {
+      if (r.sku && !r.descuento_activo && await autoResolverSiSinStock(env, r.id, prodMap[r.sku], r.estado)) continue;
+      activos.push(r);
+    }
+    results = activos;
+  }
   return results.map(r => {
     const dias = diasRestantes(r.fecha_vencimiento);
     return { ...r, diasRestantes: dias, urgencia: urgenciaDe(dias) };
