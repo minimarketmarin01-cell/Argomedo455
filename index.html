@@ -718,7 +718,10 @@ html.carrito-fijo #rc-ov .mm-sections{
 .calc-expr{max-width:100%;text-align:right;font-weight:400;line-height:1.12;word-break:break-all;overflow-y:auto;color:#111;font-size:64px}
 .calc-prev{min-height:38px;margin-top:6px;text-align:right;font-size:30px;color:#8a8a8f;font-weight:400;word-break:break-all}
 .calc-prev.err{color:#d93025;font-size:20px}
-.calc-bar{width:100%;display:flex;justify-content:flex-end;margin-top:6px}
+.calc-bar{width:100%;display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+.calc-usar{background:#12a88a!important;color:#fff!important;font-weight:700;font-size:16px;padding:10px 18px!important;border-radius:999px!important}
+.calc-usar:active{filter:brightness(.9)}
+.calc-usar.hidden{display:none}
 .calc-bar button{background:none;border:none;color:#12a88a;padding:8px 10px;cursor:pointer;border-radius:12px}
 .calc-bar button:active{background:#f0f0f2}
 .calc-keys{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding-top:10px;border-top:1px solid #ececef}
@@ -2578,7 +2581,7 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
         <div class="calc-screen">
           <div class="calc-expr" id="calc-expr">0</div>
           <div class="calc-prev" id="calc-prev"></div>
-          <div class="calc-bar"><button type="button" data-k="back" aria-label="Borrar"><svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 12.59L17.59 17 14 13.41 10.41 17 9 15.59 12.59 12 9 8.41 10.41 7 14 10.59 17.59 7 19 8.41 15.41 12 19 15.59z"/></svg></button></div>
+          <div class="calc-bar"><button type="button" class="calc-usar hidden" id="calc-usar" data-usar="1">Usar como costo</button><button type="button" data-k="back" aria-label="Borrar"><svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 12.59L17.59 17 14 13.41 10.41 17 9 15.59 12.59 12 9 8.41 10.41 7 14 10.59 17.59 7 19 8.41 15.41 12 19 15.59z"/></svg></button></div>
         </div>
         <div class="calc-keys" id="calc-keys">
           <button type="button" class="ck ck-f" data-k="c">C</button>
@@ -5379,7 +5382,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.9';
+const APP_VERSION='2026-10-20.10';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -11962,20 +11965,42 @@ const Calc=(function(){
     pintar();
   }
   function abierta(){const o=el('calc-ov');return !!o&&!o.classList.contains('hidden');}
-  function abrir(){const o=el('calc-ov');if(!o)return;o.classList.remove('hidden');pintar();}
-  function cerrar(){const o=el('calc-ov');if(o)o.classList.add('hidden');}
+  // `destino`: casilla de costo de la calculadora de precio desde la que se abrió; con ella aparece "Usar como costo".
+  let destino=null;
+  function abrir(dest){
+    const o=el('calc-ov');if(!o)return;
+    destino=dest||null;
+    const u=el('calc-usar');if(u)u.classList.toggle('hidden',!destino);
+    o.classList.remove('hidden');pintar();
+  }
+  function cerrar(){const o=el('calc-ov');if(o)o.classList.add('hidden');destino=null;}
+  // Resultado actual (lo ya calculado con "=" o la operación escrita, aunque falte pulsar "=") para llenar el costo de un toque.
+  function usarComoCosto(){
+    if(!destino)return;
+    let v;
+    try{v=evaluar(limpio());}catch(e){msg='Escribe primero el valor o la operación';pintar();return;}
+    if(!isFinite(v)||v<=0){msg='El costo debe ser mayor a cero';pintar();return;}
+    v=Math.round(v*100)/100;
+    const d=destino;
+    cerrar();
+    d.value=String(v);
+    d.dispatchEvent(new Event('input',{bubbles:true}));
+    showToast('Costo: $'+fmtNum(String(v)));
+    try{d.scrollIntoView({block:'center'});}catch(e){}
+  }
+  return {tecla,abrir,cerrar,abierta,estado,usarComoCosto};
   // Estado visible para pruebas.
   function estado(){return {expr:el('calc-expr').textContent,prev:el('calc-prev').textContent,err:el('calc-prev').classList.contains('err')};}
-  return {tecla,abrir,cerrar,abierta,estado};
 })();
 function calcAbierta(){return Calc.abierta();}
 function calcCerrar(){Calc.cerrar();}
 document.addEventListener('click',e=>{
   const ab=e.target.closest('.pc-calc-open');
-  if(ab){e.preventDefault();Calc.abrir();return;}
+  if(ab){e.preventDefault();const caja=ab.closest('.pc-calc-box');Calc.abrir(caja?caja.querySelector('input[id$="-costo"]'):null);return;}
   const ov=document.getElementById('calc-ov');
   if(!ov||ov.classList.contains('hidden'))return;
   if(e.target===ov||e.target.closest('#calc-cerrar')){Calc.cerrar();return;}
+  if(e.target.closest('[data-usar]')){Calc.usarComoCosto();return;}
   const k=e.target.closest('[data-k]');
   if(k&&ov.contains(k))Calc.tecla(k.dataset.k);
 });
