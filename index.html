@@ -2916,6 +2916,15 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
           <input id="pr-costo" inputmode="decimal" placeholder="$0" style="width:100%;height:38px;padding:0 10px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:'JetBrains Mono';box-sizing:border-box">
         </div>
 
+        <button type="button" class="loadbtn" id="pr-agregar" disabled style="width:100%;margin-bottom:8px">＋ Agregar a la lista</button>
+        </div>
+
+        <div id="pr-lista-box" class="hidden" style="margin-bottom:10px">
+          <label style="display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px">Lista a registrar (<span id="pr-lista-n">0</span>)</label>
+          <div id="pr-lista"></div>
+        </div>
+
+        <div id="pr-final" class="hidden">
         <div class="mm-field" style="margin-bottom:8px">
           <label>Responsable</label>
           <div class="mm-resp" id="pr-resp">
@@ -5385,7 +5394,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.12';
+const APP_VERSION='2026-10-20.13';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -13667,9 +13676,10 @@ document.getElementById('in-guardar').onclick=async()=>{
 // dirección contraria — restando stock en vez de sumarlo. Ahora hay que elegir sí o sí antes de
 // poder guardar (ver prValidar), no hay dirección "por defecto" que se pueda pasar por alto.
 const prState={item:null,dir:null,resp:''};
+let prLista=[];   // varios productos a registrar de una vez: cada uno guarda su propia dirección
 function prAbrir(){
   document.getElementById('mas-ov').classList.add('hidden');
-  prState.item=null;prState.resp='';
+  prState.item=null;prState.resp='';prLista=[];prPintarLista();
   document.getElementById('pr-search').value='';
   document.getElementById('pr-results').innerHTML='';
   document.getElementById('pr-picked').classList.remove('on');
@@ -13758,40 +13768,88 @@ document.querySelectorAll('#pr-resp button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#pr-resp button').forEach(x=>x.classList.remove('sel'));
   b.classList.add('sel');prState.resp=b.dataset.r;prValidar();
 });
-function prValidar(){
+// El producto que se está llenando ahora, listo para agregar/registrar (o null si falta algo).
+function prActual(){
   const cant=Number(document.getElementById('pr-cantidad').value)||0;
-  const costoFieldVisible=!document.getElementById('pr-costo-field').classList.contains('hidden');
+  const cf=document.getElementById('pr-costo-field');
+  const costoFieldVisible=!!cf&&!cf.classList.contains('hidden');
   const costoOk=!costoFieldVisible||Number(document.getElementById('pr-costo').value)>0;
-  document.getElementById('pr-guardar').disabled=!(prState.item&&prState.dir&&cant>0&&costoOk);
+  if(!(prState.item&&prState.dir&&cant>0&&costoOk))return null;
+  const it=prState.item;
+  return {ref:it.ref,nombre:it.nombre,unidad:it.peso?'kg':'u',dir:prState.dir,cantidad:cant,
+    costoManual:Number(document.getElementById('pr-costo').value)||0,
+    fechaVencimiento:prState.dir==='entrada'?fmtDateInputToDDMMAAAA((document.getElementById('pr-fecha')||{}).value):''};
 }
+function prValidar(){
+  const actual=prActual();
+  document.getElementById('pr-agregar').disabled=!actual;
+  document.getElementById('pr-guardar').disabled=!(actual||prLista.length);
+  document.getElementById('pr-final').classList.toggle('hidden',!(prState.item||prLista.length));
+  const n=prLista.length+(actual?1:0);
+  document.getElementById('pr-guardar').textContent=n>1?'Registrar '+n+' productos':'Registrar préstamo';
+}
+function prLimpiarProducto(){
+  prState.item=null;
+  document.getElementById('pr-search').value='';
+  document.getElementById('pr-results').innerHTML='';
+  document.getElementById('pr-picked').classList.remove('on');
+  document.getElementById('pr-detalle').classList.add('hidden');
+  document.getElementById('pr-cantidad').value='';
+  document.getElementById('pr-costo').value='';
+  const cf=document.getElementById('pr-costo-field');if(cf)cf.classList.add('hidden');
+  if(typeof prLimpiarFecha==='function')prLimpiarFecha();
+}
+function prPintarLista(){
+  const box=document.getElementById('pr-lista-box'),lst=document.getElementById('pr-lista');
+  if(!box||!lst)return;
+  box.classList.toggle('hidden',!prLista.length);
+  document.getElementById('pr-lista-n').textContent=prLista.length;
+  lst.innerHTML=prLista.map((p,i)=>`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:8px 10px;margin-bottom:6px">
+    <div style="min-width:0"><div style="font-size:13px;font-weight:700;color:var(--ink)">${p.nombre}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:1px">${p.dir==='salida'?'Le prestamos':'Nos prestaron'} · ${p.cantidad}${p.unidad||''}${p.fechaVencimiento?' · vence '+p.fechaVencimiento:''}</div></div>
+    <button type="button" data-pr-quitar="${i}" aria-label="Quitar de la lista" style="flex:none;border:none;background:none;color:var(--rojo,#E53935);font-size:20px;padding:4px 8px;cursor:pointer">✕</button></div>`).join('');
+  lst.querySelectorAll('[data-pr-quitar]').forEach(b=>b.onclick=()=>{prLista.splice(Number(b.dataset.prQuitar),1);prPintarLista();prValidar();});
+}
+document.getElementById('pr-agregar').onclick=()=>{
+  const a=prActual();if(!a)return;
+  prLista.push(a);
+  prLimpiarProducto();prPintarLista();prValidar();
+  setTimeout(()=>document.getElementById('pr-search').focus(),150);
+};
 document.getElementById('pr-guardar').onclick=async()=>{
   const btn=document.getElementById('pr-guardar');
   btn.disabled=true;btn.textContent='Guardando…';
-  try{
-    const payload={
-      sku:prState.item.ref, direccion:prState.dir, cantidad:Number(document.getElementById('pr-cantidad').value)||0,
-      costoManual:Number(document.getElementById('pr-costo').value)||0, responsable:prState.resp
-    };
-    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'registrar_prestamo',payload})});
-    const j=await res.json();
-    if(j&&j.ok){
-      let msg=(prState.dir==='salida'?'Salida registrada: ':'Entrada registrada: ')+j.nombre+' · '+j.cantidad+(j.unidad||'');
-      if(j.avisoStock)msg+=' · '+j.avisoStock;
-      sonidoGuardado();
-      showToast(msg);
-      prState.item=null;
-      document.getElementById('pr-search').value='';
-      document.getElementById('pr-picked').classList.remove('on');
-      document.getElementById('pr-detalle').classList.add('hidden');
-      document.getElementById('pr-cantidad').value='';
-      document.getElementById('pr-costo').value='';
-      document.querySelectorAll('#pr-resp button').forEach(x=>x.classList.remove('sel'));
-      prState.resp='';
-      prCargarPendientes();
-      setTimeout(()=>document.getElementById('pr-search').focus(),150);
-    }else{showToast('Error: '+((j&&j.error)||'no se pudo guardar'));}
-  }catch(e){showToast('Error de conexión al registrar el préstamo');}
-  btn.disabled=false;btn.textContent='Registrar préstamo';prValidar();
+  const actual=prActual();
+  const cola=prLista.slice();
+  if(actual)cola.push(actual);
+  const hechos=[],fallas=[];
+  let avisos=[];
+  for(const p of cola){
+    try{
+      const payload={sku:p.ref,direccion:p.dir,cantidad:p.cantidad,costoManual:p.costoManual,responsable:prState.resp,fechaVencimiento:p.fechaVencimiento};
+      const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'registrar_prestamo',payload})});
+      const j=await res.json();
+      if(j&&j.ok){hechos.push(p);if(j.avisoStock)avisos.push(j.avisoStock);if(j.avisoLote)avisos.push(j.avisoLote);}
+      else fallas.push({p,error:(j&&j.error)||'no se pudo guardar'});
+    }catch(e){fallas.push({p,error:'error de conexión'});}
+  }
+  if(hechos.length){
+    sonidoGuardado();
+    showToast(hechos.length===1
+      ?((hechos[0].dir==='salida'?'Salida registrada: ':'Entrada registrada: ')+hechos[0].nombre+' · '+hechos[0].cantidad+hechos[0].unidad+(avisos.length?' · '+avisos[0]:''))
+      :('Registrados '+hechos.length+' préstamos'+(fallas.length?' · fallaron '+fallas.length:'')));
+  }
+  // Lo registrado sale de la lista; lo que falló se queda para reintentar (y el producto en pantalla, si falló, también).
+  prLista=fallas.map(f=>f.p).filter(p=>p!==actual);
+  if(!actual||hechos.includes(actual)){
+    prLimpiarProducto();
+    if(!fallas.length){document.querySelectorAll('#pr-resp button').forEach(x=>x.classList.remove('sel'));prState.resp='';}
+  }
+  if(fallas.length)showToast('No se pudo registrar '+fallas[0].p.nombre+': '+fallas[0].error);
+  prPintarLista();
+  prCargarPendientes();
+  setTimeout(()=>document.getElementById('pr-search').focus(),150);
+  btn.disabled=false;prValidar();
 };
 async function prCargarPendientes(){
   const box=document.getElementById('pr-pend-list');
