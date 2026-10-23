@@ -718,7 +718,8 @@ html.carrito-fijo #rc-ov .mm-sections{
 .calc-expr span[data-i]{cursor:text}
 .calc-caret{display:inline-block;width:0;height:.95em;border-right:2px solid #12a88a;vertical-align:-.1em;margin:0 -1px;animation:calcCaret 1s steps(1) infinite}
 @keyframes calcCaret{50%{border-color:transparent}}
-.calc-expr{-webkit-user-select:none;user-select:none;min-height:1.1em;width:100%;max-width:100%;text-align:right;font-weight:400;line-height:1.12;word-break:break-all;overflow-y:auto;color:#111;font-size:64px}
+.calc-op{color:#12a88a;padding:0 .1em}
+.calc-expr{-webkit-user-select:none;user-select:none;min-height:1.1em;width:100%;max-width:100%;text-align:right;font-weight:400;line-height:1.18;word-break:normal;overflow-wrap:normal;overflow-y:auto;color:#111;font-size:64px}
 .calc-prev{min-height:38px;margin-top:6px;text-align:right;font-size:30px;color:#8a8a8f;font-weight:400;word-break:break-all}
 .calc-prev.err{color:#d93025;font-size:20px}
 .calc-bar{width:100%;display:flex;justify-content:space-between;align-items:center;margin-top:6px}
@@ -5394,7 +5395,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.13';
+const APP_VERSION='2026-10-20.14';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -11946,7 +11947,7 @@ const Calc=(function(){
         k+=t.length;
       }else{
         const c=expr[k];
-        out.push({t:c==='*'?'×':c==='/'?'÷':c==='-'?'−':c,i:k+1});k++;
+        out.push({t:c==='*'?'×':c==='/'?'÷':c==='-'?'−':c,i:k+1,op:'+-*/'.indexOf(c)>=0});k++;
       }
     }
     return out;
@@ -11958,9 +11959,11 @@ const Calc=(function(){
     const txt=expr===''?'0':fmtExpr(expr);
     const caret='<span class="calc-caret"></span>';
     if(expr==='')ex.innerHTML='0'+caret;
-    else ex.innerHTML=(pos===0?caret:'')+itemsVista().map(it=>'<span data-i="'+it.i+'">'+it.t+'</span>'+(it.i===pos?caret:'')).join('');
+    else ex.innerHTML=(pos===0?caret:'')+itemsVista().map(it=>'<span data-i="'+it.i+'"'+(it.op?' class="calc-op"':'')+'>'+it.t+'</span>'+(it.op?'<wbr>':'')+(it.i===pos?caret:'')).join('');
+    // Un número nunca se parte entre dos renglones (solo se corta después de un operador) y, escribiendo al final, se ve siempre lo último.
+    if(pos>=expr.length)ex.scrollTop=ex.scrollHeight;
     const n=txt.length;
-    ex.style.fontSize=(n<=7?64:n<=10?54:n<=14?44:n<=20?36:28)+'px';
+    ex.style.fontSize=(n<=7?64:n<=10?54:n<=14?44:n<=20?36:n<=32?34:n<=60?30:26)+'px';
     pv.className='calc-prev'+(msg?' err':'');
     pv.textContent=msg||(done?anterior:vistaPrevia());
   }
