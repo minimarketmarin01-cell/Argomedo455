@@ -5372,6 +5372,15 @@ function showToast(m,tipo){   // tipo opcional: 'ok' (verde, se guardó), 'error
     m='⛔ Cloudflare bloqueó las escrituras por hoy (límite del plan gratis). Se reactivan a las 21:00 (hora de Chile). No se guardó nada: espera hasta esa hora o hazlo directo en Loyverse.';
   }
   const t=document.getElementById('toast');t.textContent=m;
+  // Color del aviso: verde = se guardó, rojo = no se guardó, naranja = se guardó pero con una advertencia. Si quien llama no lo
+  // indica, se deduce: sonidoGuardado()/sonidoError() justo antes (solo suenan en un guardado/fallo real) y el texto del aviso.
+  if(!tipo){
+    const ahora=Date.now(),txt=String(m);
+    const esError=/^(Error|No se pudo|No se pudieron|El guardado tardó|⛔|❌)/i.test(txt)||/NO quedó guardada|no se pudo guardar/i.test(txt);
+    if(esError||ahora-(window._tgErr||0)<3000)tipo='error';
+    else if(ahora-(window._tgOk||0)<3000)tipo=/⚠️|no se pudo/i.test(txt)?'aviso':'ok';
+    else if(/^⚠️/.test(txt))tipo='aviso';
+  }
   t.classList.remove('ok','error','aviso');if(tipo)t.classList.add(tipo);
   try{
     const a=document.activeElement,vv=window.visualViewport;
@@ -5393,6 +5402,7 @@ function _getAudioCtx(){
 ['pointerdown','touchstart','click','keydown'].forEach(ev=>document.addEventListener(ev,()=>{const ctx=_getAudioCtx();if(ctx&&ctx.state==='suspended')ctx.resume().catch(()=>{});},{passive:true}));
 // Sonido de error: dos tonos graves descendentes (distinto al "ding" de éxito).
 function sonidoError(){
+  window._tgErr=Date.now();   // el aviso que sale junto a este sonido va en rojo (ver showToast)
   try{
     const ctx=_getAudioCtx();
     if(!ctx)return;
@@ -5411,6 +5421,7 @@ function sonidoError(){
   }catch(e){}
 }
 function sonidoGuardado(){
+  window._tgOk=Date.now();   // el aviso que sale junto a este sonido va en verde (ver showToast)
   try{
     const ctx=_getAudioCtx();
     if(!ctx)return;
@@ -5434,7 +5445,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-25.3';
+const APP_VERSION='2026-10-25.4';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
