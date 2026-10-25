@@ -4258,8 +4258,10 @@ async function cargarVencidosPendientes(forzar){
   if(!forzar&&(_vencPendEnCurso||Date.now()-_vencPendTs<10*60*1000))return;
   _vencPendEnCurso=true;
   try{
-    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=vencimientos&compacto=1');
-    const j=await res.json();
+    const dia=vencDiaLeer();
+    let j;
+    if(dia)j={ok:true,lotes:dia.lotes};
+    else{const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=vencimientos&compacto=1');j=await res.json();}
     if(j&&j.ok){
       const mapVenc={}, mapRet={};
       (j.lotes||[]).forEach(l=>{
@@ -4592,6 +4594,28 @@ function render(){
 // Cada tarjeta/fila navega llamando a la MISMA función que usa su acceso original (openRecibir,
 // showScreen, abrirModal+vcLoad, rzAbrir, rkAbrir, cpAbrir, smAbrir) — cero lógica de
 // navegación duplicada.
+// Datos "del día" (vencimientos y ABC): se bajan una vez por equipo y por día y se guardan también en el teléfono. Se vuelven
+// a pedir solo si se edita un lote (vcRefreshCurrentView / vcLoad) o si pasó el cierre nocturno del servidor (06:30).
+// Antes Inicio bajaba todos los lotes (≈0,5 MB) cada 15 s mientras hubiera ventas: ≈200 pedidos al día solo por eso.
+function _cacheDelDiaVigente(ts){
+  const a=new Date(ts),n=new Date();
+  if(a.toDateString()!==n.toDateString())return false;
+  const h=x=>x.getHours()+x.getMinutes()/60;
+  return h(a)>=6.5||h(n)<6.5;
+}
+let _vencDia=null;
+function vencDiaLeer(){
+  if(_vencDia&&_cacheDelDiaVigente(_vencDia.ts))return _vencDia;
+  try{
+    const g=JSON.parse(localStorage.getItem('venc_dia:'+SYNC_URL)||'null');
+    if(g&&Array.isArray(g.lotes)&&_cacheDelDiaVigente(g.ts)){_vencDia=g;return g;}
+  }catch(e){}
+  return null;
+}
+function vencDiaGuardar(lotes){
+  _vencDia={ts:Date.now(),lotes};
+  try{localStorage.setItem('venc_dia:'+SYNC_URL,JSON.stringify(_vencDia));}catch(e){}
+}
 let _in2VencCache=null;
 let _in2VencUltimo=null; // último conteo REAL conocido (vencidos/d7/d15/d30) — se reutiliza para
 // pintar la tarjeta sin dejarla en "—"/0 mientras se espera una red nueva, si ya hubo una carga
@@ -4682,7 +4706,8 @@ async function renderInicio2(){
   // repetir la llamada si se vuelve a Inicio varias veces seguidas en pocos segundos. Si la
   // caché sigue fresca, se usa tal cual sin ir a la red (recalculo sincrónico, instantáneo). ---
   let vencidos=_in2VencUltimo?_in2VencUltimo.vencidos:0;
-  const cacheFresca=_in2VencCache&&(Date.now()-_in2VencCache.ts)<=15000;
+  const diaVenc=vencDiaLeer();
+  const cacheFresca=!!diaVenc;
   const aplicarLotes=(lotes)=>{
     const c=in2CalcVenc(lotes);
     vencidos=c.vencidos;
@@ -4691,12 +4716,13 @@ async function renderInicio2(){
     in2PintarAtencion({riesgoNum,sinMovNum,vencidos});
   };
   if(cacheFresca){
-    aplicarLotes(_in2VencCache.lotes||[]);
+    aplicarLotes(diaVenc.lotes||[]);
   }else{
     try{
       const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=vencimientos');
       const j=await res.json();
       const lotes=(j&&j.ok)?j.lotes:[];
+      if(j&&j.ok)vencDiaGuardar(lotes);
       _in2VencCache={ts:Date.now(),lotes};
       aplicarLotes(lotes);
     }catch(e){}
@@ -5395,7 +5421,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-20.14';
+const APP_VERSION='2026-10-25.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5480,15 +5506,26 @@ function aplicarListasCompartidas(j){
   if(j&&Array.isArray(j.riesgoExcluidos)){RIESGO_EXCLUIDOS=new Set(j.riesgoExcluidos);_guardarCacheSet('rz_excluidos_cache',RIESGO_EXCLUIDOS);}
   if(j&&Array.isArray(j.favoritos)){FAVORITOS=new Set(j.favoritos);_guardarCacheSet('favoritos_cache',FAVORITOS);}
 }
-// La clasificación ABC solo cambia al recalcularla (a mano o por la tarea diaria): se pide como máximo cada hora.
+// La clasificación ABC solo cambia al recalcularla (a mano o por la tarea diaria de las 06:00): se pide una vez al día y se
+// guarda también en el teléfono (ver _cacheDelDiaVigente). "forzar" (recalcular a mano) siempre la vuelve a pedir.
 let _abcTs=0;
 async function cargarABC(forzar){
-  if(!forzar&&Date.now()-_abcTs<60*60*1000)return;
+  let j=null;
+  if(!forzar){
+    if(_abcTs&&_cacheDelDiaVigente(_abcTs))return;
+    try{
+      const g=JSON.parse(localStorage.getItem('abc_dia:'+SYNC_URL)||'null');
+      if(g&&Array.isArray(g.abc)&&_cacheDelDiaVigente(g.ts))j={ok:true,abc:g.abc,_ts:g.ts};
+    }catch(e){}
+  }
   try{
-    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=abc');
-    const j=await res.json();
+    if(!j){
+      const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=abc');
+      j=await res.json();
+      if(j&&j.ok&&Array.isArray(j.abc)){try{localStorage.setItem('abc_dia:'+SYNC_URL,JSON.stringify({ts:Date.now(),abc:j.abc}));}catch(e){}}
+    }
     if(j&&j.ok&&Array.isArray(j.abc)){
-      _abcTs=Date.now();
+      _abcTs=j._ts||Date.now();
       const map={};
       j.abc.forEach(r=>{map[r.sku]={clase:r.clase,pct:r.pct_participacion,venta:r.venta_total};});
       ABC_BY_SKU=map;
@@ -11787,7 +11824,7 @@ async function vcRefreshCurrentView(){
   try{
     const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=vencimientos');
     const j=await res.json();
-    if(j&&j.ok)_vcTodos=j.lotes.filter(l=>!!l.fechaVencimiento);   // mismo filtro que vcLoad — solo lotes con fecha registrada
+    if(j&&j.ok){_vcTodos=j.lotes.filter(l=>!!l.fechaVencimiento);vencDiaGuardar(j.lotes);}   // mismo filtro que vcLoad — solo lotes con fecha registrada
   }catch(e){/* si falla la recarga, se repinta igual con los datos que ya había en memoria */}
   const activo=document.querySelector('#vc-viewseg button.active');
   const v=activo?activo.dataset.view:'lista';
@@ -12141,6 +12178,7 @@ async function vcLoad(){
     // acá todavía, así que no debe aparecer en "Revisión de vencimientos" hasta que se le
     // cargue una fecha real. Sigue existiendo en la base de datos, solo queda fuera de esta
     // vista mientras tanto.
+    if(j&&j.ok)vencDiaGuardar(j.lotes);
     _vcTodos=(j&&j.ok)?j.lotes.filter(l=>!!l.fechaVencimiento):[];
     vcRecalcularProgTotal();   // punto de partida de la barra de progreso para esta sesión del módulo
     vcAplicarFiltro();   // pinta ya filtrado por lo que haya escrito en el buscador y/o el proveedor elegido

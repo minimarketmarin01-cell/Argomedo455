@@ -5793,6 +5793,10 @@ async function accionCopiarProductoExterno(env, payload) {
   return { ok: true, creado: true, sku: creado.producto.ref, nombre: creado.producto.nombre, modo, avisoImagen };
 }
 
+// Interruptor de los avisos push automáticos (riesgo de quiebre y vencimientos). Apagados: nadie los revisa y cada chequeo
+// leía las tablas completas. El resto de la app (contadores y listas dentro de la web) no depende de esto.
+const AVISOS_PUSH = false;
+
 const _servidor = {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
@@ -6977,15 +6981,27 @@ const _servidor = {
   async scheduled(event, env, ctx) {
     env = conEspejo(env, ctx); // las tareas programadas también se copian a Supabase
     try {
-      await asegurarTablas(env);
-      // Recalcula la clasificación ABC antes de los demás chequeos: tanto el badge
-      // ABC de Armar pedido/Precio sugerido como Riesgo de quiebre dependen de que
-      // `clasificacion_abc` tenga datos — antes solo se llenaba si alguien tocaba
-      // "Recalcular" a mano en el módulo, así que quedaba vacía indefinidamente.
-      try { await calcularABC(env, 30); } catch (e) { await logMsg(env, "⚠️ No se pudo recalcular ABC: " + e.message); }
-      await chequearYNotificarVencimientos(env);
-      await chequearYRevertirDescuentosVencidos(env);
-      await chequearYNotificarRiesgoQuiebre(env);
+      // El cron dispara cada hora, pero lo que depende del día (ABC, descuentos vencidos) se hace una vez:
+      // antes recalculaba el ABC y leía vencimientos y ventas las 24 horas, con 0 celulares suscritos a los avisos.
+      const hh = chileNowParts().hh;
+      if (hh === "00" || hh === "06") {
+        await asegurarTablas(env);
+        // Revierte los descuentos de lotes que ya vencieron: a las 00:00 (apenas empieza el día) y de respaldo a las 06:00.
+        await chequearYRevertirDescuentosVencidos(env);
+      }
+      if (hh === "06") {
+        // Recalcula la clasificación ABC antes de que abra la tienda: tanto el badge
+        // ABC de Armar pedido/Precio sugerido como Riesgo de quiebre dependen de que
+        // `clasificacion_abc` tenga datos — antes solo se llenaba si alguien tocaba
+        // "Recalcular" a mano en el módulo, así que quedaba vacía indefinidamente.
+        try { await calcularABC(env, 30); } catch (e) { await logMsg(env, "⚠️ No se pudo recalcular ABC: " + e.message); }
+      }
+      // Avisos al celular apagados (nadie los revisa y cada chequeo leía vencimientos y ventas completos).
+      // Para reactivarlos, AVISOS_PUSH = true: vuelven a las 08:00 y 15:00.
+      if (AVISOS_PUSH && (hh === "08" || hh === "15")) {
+        await chequearYNotificarVencimientos(env);
+        await chequearYNotificarRiesgoQuiebre(env);
+      }
     } catch (e) {
       await logMsg(env, "❌ Error en scheduled(): " + e.message);
     }
