@@ -10,6 +10,28 @@ export function appDe(request, porDefecto) {
   try { return new URL(request.url).searchParams.get("app") === APP_ETIQUETAS ? APP_ETIQUETAS : porDefecto; } catch (e) { return porDefecto; }
 }
 const LIMITE_GB = 5;
+// Las respuestas chicas (<50 KB) no se anotan una por una (cada una sería una escritura en D1, y el aviso de cambios llega cada
+// 5 s por equipo): se suman en memoria y se anotan juntas cada 15 minutos, con el nombre de la acción + " <50KB". Es una medición
+// aproximada: lo que sume una instancia del Worker y se apague antes de anotarlo se pierde. Sirve para ver cuánto pesa el "ruido de fondo".
+const chicas = new Map();   // "fecha\u0001app\u0001accion" -> { n, bytes }
+let _ultimoVolcado = Date.now();
+const VOLCAR_CADA_MS = 15 * 60 * 1000;
+const SUMAR = "INSERT INTO uso_diario (fecha, app, accion, n, bytes) VALUES (?,?,?,?,?) " +
+  "ON CONFLICT(fecha, app, accion) DO UPDATE SET n = n + excluded.n, bytes = bytes + excluded.bytes";
+export async function volcarChicas(db, forzar) {
+  try {
+    if (!db || !chicas.size) return;
+    if (!forzar && Date.now() - _ultimoVolcado < VOLCAR_CADA_MS) return;
+    _ultimoVolcado = Date.now();
+    const lote = [...chicas]; chicas.clear();
+    await asegurarTabla(db);
+    for (const [clave, v] of lote) {
+      const [fecha, app, accion] = clave.split("\u0001");
+      await db.prepare(SUMAR).bind(fecha, app, accion, v.n, v.bytes).run();
+    }
+  } catch (e) { /* medir nunca debe romper una respuesta */ }
+}
+
 const CREAR = "CREATE TABLE IF NOT EXISTS uso_diario (fecha TEXT NOT NULL, app TEXT NOT NULL, accion TEXT NOT NULL, " +
   "n INTEGER NOT NULL DEFAULT 0, bytes INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (fecha, app, accion))";
 let _tablaLista = false;
@@ -45,8 +67,14 @@ export async function medirUso(request, res, db, app) {
     if (accionUrl === "stream" || accionUrl === "uso_diario" || accionUrl === "espejo_comparar") return;
     if (!(res.headers.get("content-type") || "").includes("json")) return;
     const bytes = (await res.arrayBuffer()).byteLength;
-    if (bytes < (app === APP_ETIQUETAS ? 0 : UMBRAL_BYTES)) return;
     const accion = (request.method === "GET" ? (accionUrl || "(panel)") : "POST") + (url.searchParams.get("db") === "supabase" ? " [prueba Supabase]" : "");
+    if (bytes < (app === APP_ETIQUETAS ? 0 : UMBRAL_BYTES)) {
+      const clave = dia(Date.now()) + "\u0001" + app + "\u0001" + accion + " <" + (UMBRAL_BYTES / 1000) + "KB";
+      const v = chicas.get(clave) || { n: 0, bytes: 0 };
+      v.n++; v.bytes += bytes; chicas.set(clave, v);
+      await volcarChicas(db);
+      return;
+    }
     await asegurarTabla(db);
     await db.prepare("INSERT INTO uso_diario (fecha, app, accion, n, bytes) VALUES (?,?,?,1,?) " +
       "ON CONFLICT(fecha, app, accion) DO UPDATE SET n = n + 1, bytes = bytes + excluded.bytes").bind(dia(Date.now()), app, accion, bytes).run();
