@@ -34,18 +34,29 @@ export function incrustar(text, params) {
   return out;
 }
 
-export function crearTransporteSupabase({ url, key, fetchFn }) {
+// Con `columnar`, las consultas se piden a public.ejecutar_sql_col_argomedo (ver migracion/funcion_ejecutar_sql_col.sql): cada resultado
+// llega como { cols, rows: [[...]], rowCount } (los nombres de columna una sola vez, ≈44 % menos bytes) y aquí se rearma en objetos, así
+// que quien llama recibe lo mismo de siempre. Si la función todavía no existe en Supabase (404), se usa ejecutar_sql_argomedo sin molestar.
+export function expandirColumnar(res) {
+  if (!res || !Array.isArray(res.cols)) return res;
+  const cols = res.cols;
+  const rows = (res.rows || []).map(fila => { const o = {}; for (let i = 0; i < cols.length; i++) o[cols[i]] = fila[i]; return o; });
+  return { rows, rowCount: res.rowCount };
+}
+export function crearTransporteSupabase({ url, key, fetchFn, columnar = false }) {
   const f = fetchFn || fetch;
+  let usarColumnar = !!columnar;
   async function rpc(sentencias) {
-    const r = await f(url.replace(/\/$/, "") + "/rest/v1/rpc/ejecutar_sql_argomedo", {
+    const r = await f(url.replace(/\/$/, "") + "/rest/v1/rpc/" + (usarColumnar ? "ejecutar_sql_col_argomedo" : "ejecutar_sql_argomedo"), {
       method: "POST",
       headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
       body: JSON.stringify({ sentencias })
     });
     const txt = await r.text();
     let j; try { j = JSON.parse(txt); } catch (_) { throw new Error("Supabase respondió algo inesperado (HTTP " + r.status + "): " + txt.slice(0, 200)); }
+    if (!r.ok && usarColumnar && r.status === 404 && /ejecutar_sql_col_argomedo/.test(txt)) { usarColumnar = false; return rpc(sentencias); } // aún no existe: nada se ejecutó
     if (!r.ok) throw new Error("Supabase: " + (j.message || j.error || txt).toString().slice(0, 300));
-    return j;
+    return usarColumnar ? j.map(expandirColumnar) : j;
   }
   return {
     async query(text, params) { const [res] = await rpc([incrustar(text, params)]); return res; },
