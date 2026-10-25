@@ -65,7 +65,10 @@ export async function catalogoEtiquetas(db, desdeRaw, cats) {
 /** ?action=categorias_etiquetas → [[categoría, cantidad], …] (para elegir cuáles guardar en el equipo). */
 export async function categoriasEtiquetas(db) {
   const filas = await db.todas("SELECT " + CAT + " AS categoria, COUNT(*) AS n FROM productos WHERE sku IS NOT NULL AND sku <> '' GROUP BY 1 ORDER BY 1");
-  return { lite: true, ok: true, categorias: filas.map((f) => [f.categoria, Number(f.n)]) };
+  // Se ordenan aquí, byte a byte (mayúsculas antes que minúsculas), para que D1 y Supabase entreguen exactamente el mismo orden.
+  const cats = filas.map((f) => [f.categoria, Number(f.n)]);
+  cats.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
+  return { lite: true, ok: true, categorias: cats };
 }
 
 const ACENTOS = [["á", "a"], ["é", "e"], ["í", "i"], ["ó", "o"], ["ú", "u"], ["ü", "u"], ["ñ", "n"],

@@ -76,6 +76,20 @@ function calificarUpsert(sql) {
   return sql.replace(md[1], nuevo);
 }
 
+// SQLite compara los textos byte a byte (BINARY: MAYÚSCULAS antes que minúsculas, tildes al final); Postgres usa el idioma de la base
+// (diccionario: "Biscomund" va junto a "BI…"). Para que las listas salgan en el mismo orden que en D1, los ORDER BY por columnas de
+// texto conocidas (nombre, categoría, proveedor, producto, sku) se piden con COLLATE "C" (byte a byte, como SQLite).
+const ORDEN_TEXTO = /^((?:\w+\.)?(?:nombre|categoria|proveedor|producto|sku)|lower\((?:\w+\.)?(?:nombre|categoria|proveedor|producto)\))(\s+(?:ASC|DESC))?$/i;
+function ordenBinario(sql) {
+  return sql.replace(/\bORDER\s+BY\s+((?:[^;()]|\([^()]*\))*?)(?=\s+LIMIT\b|\s+OFFSET\b|\)|;|$)/gi, (todo, lista) => {
+    const items = lista.split(",").map(it => {
+      const m = ORDEN_TEXTO.exec(it.trim());
+      return m ? m[1] + ' COLLATE "C"' + (m[2] || "") : it.trim();
+    });
+    return "ORDER BY " + items.join(", ");
+  });
+}
+
 export function traducirSql(sqlOriginal) {
   let sql = String(sqlOriginal).trim().replace(/;\s*$/, "");
   // Supabase rechaza DELETE sin WHERE ("DELETE requires a WHERE clause"): un borrado total se manda con WHERE true.
@@ -103,6 +117,9 @@ export function traducirSql(sqlOriginal) {
     .replace(/\bAUTOINCREMENT\b/gi, "")
   );
   sql = fueraDeTextosGlob(sql);
+  // Con SELECT DISTINCT, o si el SELECT le pone a otra expresión el nombre de la columna (AS categoria), Postgres no acepta
+  // ordenar por "columna COLLATE": en esos casos se deja como estaba.
+  if (/^\s*(SELECT|WITH)\b/i.test(sql) && !/\bDISTINCT\b/i.test(sql) && !/\bAS\s+(nombre|categoria|proveedor|producto|sku)\b/i.test(sql)) sql = fueraDeTextos(sql, ordenBinario);
   sql = aliasEnHaving(sql);
   sql = calificarUpsert(sql);
   // Fechas: datetime('now') y date('now') (el 'now' de SQLite es UTC) — van con texto entre comillas, así que se hacen antes.
