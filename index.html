@@ -1501,6 +1501,9 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
 .toast{position:fixed;bottom:92px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:10px;font-weight:500;font-size:14px;box-shadow:0 8px 30px rgba(0,0,0,.25);transition:.3s;z-index:260;opacity:0;max-width:90vw;text-align:center;pointer-events:none}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 /* Con el teclado abierto el aviso de abajo quedaba tapado: mientras se escribe en una casilla, sale arriba (bajo la cabecera). */
+.toast.ok{background:#2E7D32}
+.toast.error{background:#C62828}
+.toast.aviso{background:#E65100}
 .toast.arriba{top:calc(88px + env(safe-area-inset-top));bottom:auto;transform:translateX(-50%) translateY(-120px)}
 .toast.arriba.show{transform:translateX(-50%) translateY(0)}
 .cloudpanel{background:var(--ink2);width:100%;padding:12px max(16px,env(safe-area-inset-right)) 12px max(16px,env(safe-area-inset-left));border-bottom:1px solid #454C39;display:flex;flex-direction:column;gap:9px}
@@ -5363,12 +5366,13 @@ async function renderInsumosChart(){
     cc.innerHTML=r.cats.map(c=>`<div class="cbar-row"><span class="cbar-lbl" title="${c.categoria}">${c.categoria}</span><span class="cbar-track"><span class="cbar-fill" style="width:${Math.max(3,Math.round(c.total/max*100))}%;background:var(--rojo)"></span></span><span class="cbar-val">${peso(c.total)}</span></div>`).join('');
   }catch(e){cc.innerHTML='<div class="cc-empty">Error de conexión.</div>';}
 }
-function showToast(m){
+function showToast(m,tipo){   // tipo opcional: 'ok' (verde, se guardó), 'error' (rojo, no se guardó) o 'aviso' (naranja, se guardó con una advertencia)
   // Error crudo de Cloudflare por límite diario gratis de D1 → mensaje claro en español.
   if(/exceeded D1|daily row (write|read) limit|free tier/i.test(String(m))){
     m='⛔ Cloudflare bloqueó las escrituras por hoy (límite del plan gratis). Se reactivan a las 21:00 (hora de Chile). No se guardó nada: espera hasta esa hora o hazlo directo en Loyverse.';
   }
   const t=document.getElementById('toast');t.textContent=m;
+  t.classList.remove('ok','error','aviso');if(tipo)t.classList.add(tipo);
   try{
     const a=document.activeElement,vv=window.visualViewport;
     const escribiendo=!!a&&(a.tagName==='TEXTAREA'||a.tagName==='SELECT'||a.isContentEditable||(a.tagName==='INPUT'&&!/^(checkbox|radio|button|submit|range|file|color)$/i.test(a.type||'')));
@@ -5430,7 +5434,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-25.2';
+const APP_VERSION='2026-10-25.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15161,26 +15165,28 @@ document.getElementById('rc-guardar').onclick=async()=>{
       if(rcCambios.length)msg+=' · '+rcCambios.join(', ')+' actualizado'+(rcCambios.length>1?'s':'');
       if(j.fila.avisoStock)msg+=' · '+j.fila.avisoStock;
       sonidoGuardado();
-      showToast(msg);
+      // Verde: se guardó bien. Rojo: el stock no se sumó (la recepción NO quedó guardada o hay que revisar el stock). Naranja: se guardó, pero algo menor falló (p. ej. costo/precio).
+      const tipoMsg=j.fila.avisoStock?(/NO quedó guardada|sumar el stock|no respondió a tiempo/i.test(j.fila.avisoStock)?'error':'aviso'):'ok';
+      showToast(msg,tipoMsg);
       // No cerramos: reseteamos y dejamos la ventana lista para el siguiente producto,
       // así puedes recibir varios seguidos sin tener que reabrir Recepción.
       // Si mientras se guardaba ya empezaste con OTRO producto, no se borra lo que escribiste: solo se
       // limpia el formulario cuando sigue siendo el producto que se acaba de guardar.
       if(rcState.item&&rcState.item.ref!==it.ref){
-        showToast(msg+' — sigues con "'+rcState.item.nombre+'"');
+        showToast(msg+' — sigues con "'+rcState.item.nombre+'"',tipoMsg);
       }else{
         rcReset();
         rcLimpiarBorrador(); // ya se guardó de verdad — un F5 después de esto no debe revivirlo
         document.getElementById('rc-search').focus();
       }
-    }else{showToast('Error: '+((j&&j.error)||'no se pudo guardar'));}
+    }else{showToast('Error: '+((j&&j.error)||'no se pudo guardar'),'error');}
   }catch(e){
-    if(e.name==='AbortError')showToast('El guardado tardó demasiado. Revisa tu conexión y vuelve a intentar (el stock pudo haberse guardado — verifica antes de repetir).');
+    if(e.name==='AbortError')showToast('El guardado tardó demasiado. Revisa tu conexión y vuelve a intentar (el stock pudo haberse guardado — verifica antes de repetir).','error');
     // Antes esto siempre mostraba el mismo texto genérico "Error de conexión", sin importar
     // si de verdad no había red o si el servidor respondió pero con algo raro (ver el
     // try/catch de arriba, que ahora arma un mensaje más específico en ese segundo caso) —
     // se muestra el mensaje real cuando existe, en vez de siempre el mismo texto ciego.
-    else showToast(e&&e.message?e.message:'Error de conexión al recibir la mercadería');
+    else showToast(e&&e.message?e.message:'Error de conexión al recibir la mercadería','error');
   }finally{
     clearTimeout(to);
     rcGuardando=false;
