@@ -854,15 +854,22 @@ async function loyverseGetAll(env, endpoint, key, extra) {
 // ============================================================
 //  LOYVERSE — helpers de ESCRITURA (afectan datos reales de la tienda)
 // ============================================================
+// /inventory manda el stock ABSOLUTO que debe quedar (stock_after), así que repetir la llamada es seguro: ante un 429 o un
+// error 5xx pasajero de Loyverse se reintenta hasta 3 veces (antes, un solo 500 dejaba la recepción sin sumar el stock y había
+// que repetirla a mano). El resto de los endpoints (crear/editar artículos) NO se reintentan: repetirlos podría duplicar.
 async function loyversePost(env, endpoint, body) {
-  const res = await fetch(LOYVERSE_API + endpoint, {
-    method: "POST",
-    headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(LOYVERSE_TIMEOUT_MS)
-  });
-  if (!res.ok) throw new Error(endpoint + " HTTP " + res.status + ": " + (await res.text()).slice(0, 200));
-  return res.json();
+  const intentos = endpoint === "/inventory" ? 3 : 1;
+  for (let i = 1; ; i++) {
+    const res = await fetch(LOYVERSE_API + endpoint, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + env.LOYVERSE_API_TOKEN, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(LOYVERSE_TIMEOUT_MS)
+    });
+    if (res.ok) return res.json();
+    if (i < intentos && (res.status === 429 || res.status >= 500)) { await new Promise(r => setTimeout(r, 700 * i)); continue; }
+    throw new Error(endpoint + " HTTP " + res.status + ": " + (await res.text()).slice(0, 200));
+  }
 }
 
 // Stock fresco de UNA variante — se usa antes de sumar/restar, para no trabajar
@@ -3278,10 +3285,10 @@ async function accionLoteNuevo(env, payload) {
           "Recepción de mercadería: +" + cantidad + " " + unidad + " (" + res.antes + " → " + res.despues + ")" +
           (tieneFecha ? " · vence " + fechaTxt : ""), payload.responsable || "", cantidad);
       } else {
-        avisoStockMsg = "⚠️ No se pudo sumar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+        avisoStockMsg = "⚠️ No se pudo sumar el stock en Loyverse (" + res.motivo + ")." + " El lote YA quedó registrado: no repitas la recepción, corrige el stock con «Recontar stock».";
       }
     } catch (e) {
-      avisoStockMsg = "⚠️ No se pudo sumar el stock en Loyverse: " + e.message;
+      avisoStockMsg = "⚠️ No se pudo sumar el stock en Loyverse: " + e.message + " El lote YA quedó registrado: no repitas la recepción, corrige el stock con «Recontar stock».";
     }
 
     // 2b) Si este producto tenía un pedido confirmado sin recibir ("Ya pedido a
