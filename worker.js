@@ -5838,7 +5838,7 @@ const _servidor = {
       if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) return json({ ok: false, error: "Supabase no está configurado en el servidor" }, 500);
       if (url.pathname === "/webhook/loyverse") return json({ ok: true, ignorado: "modo de prueba Supabase" });
       if (request.method === "POST") return json({ ok: false, error: "El modo de prueba (Supabase) es solo para mirar. Para guardar usa la app normal: se guarda en las dos bases." }, 403);
-      env = { ...env, DB: crearDB(soloLectura(crearTransporteSupabase({ url: env.SUPABASE_URL, key: env.SUPABASE_SERVICE_KEY }))), __modo: "supabase" };
+      env = { ...env, DB: crearDB(soloLectura(crearTransporteSupabase({ url: env.SUPABASE_URL, key: env.SUPABASE_SERVICE_KEY, columnar: String(env.COLUMNAR || "1") !== "0" }))), __modo: "supabase" };
     } else {
       env = conEspejo(env, ctx); // cada escritura en D1 se repite en Supabase en segundo plano
     }
