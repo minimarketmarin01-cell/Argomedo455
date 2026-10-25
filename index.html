@@ -1500,6 +1500,9 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
 .method b{color:#fff}.method .f{font-family:'JetBrains Mono';background:#22261B;border:1px solid #454C39;border-radius:6px;padding:2px 6px;font-size:12px;color:#B8C49A}
 .toast{position:fixed;bottom:92px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:10px;font-weight:500;font-size:14px;box-shadow:0 8px 30px rgba(0,0,0,.25);transition:.3s;z-index:260;opacity:0;max-width:90vw;text-align:center;pointer-events:none}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+/* Con el teclado abierto el aviso de abajo quedaba tapado: mientras se escribe en una casilla, sale arriba (bajo la cabecera). */
+.toast.arriba{top:calc(88px + env(safe-area-inset-top));bottom:auto;transform:translateX(-50%) translateY(-120px)}
+.toast.arriba.show{transform:translateX(-50%) translateY(0)}
 .cloudpanel{background:var(--ink2);width:100%;padding:12px max(16px,env(safe-area-inset-right)) 12px max(16px,env(safe-area-inset-left));border-bottom:1px solid #454C39;display:flex;flex-direction:column;gap:9px}
 .cp-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .cp-url{flex:1;min-width:220px;padding:9px 11px;border-radius:8px;border:1px solid #4E5540;background:#3A3E2E;color:#fff;font-size:12px;font-family:'JetBrains Mono'}
@@ -5365,7 +5368,13 @@ function showToast(m){
   if(/exceeded D1|daily row (write|read) limit|free tier/i.test(String(m))){
     m='⛔ Cloudflare bloqueó las escrituras por hoy (límite del plan gratis). Se reactivan a las 21:00 (hora de Chile). No se guardó nada: espera hasta esa hora o hazlo directo en Loyverse.';
   }
-  const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');const dur=m.length>60?4600:2600;clearTimeout(window._toastT);window._toastT=setTimeout(()=>t.classList.remove('show'),dur);}
+  const t=document.getElementById('toast');t.textContent=m;
+  try{
+    const a=document.activeElement,vv=window.visualViewport;
+    const escribiendo=!!a&&(a.tagName==='TEXTAREA'||a.tagName==='SELECT'||a.isContentEditable||(a.tagName==='INPUT'&&!/^(checkbox|radio|button|submit|range|file|color)$/i.test(a.type||'')));
+    t.classList.toggle('arriba',escribiendo||!!(vv&&window.innerHeight-vv.height>150));
+  }catch(e){}
+  t.classList.add('show');const dur=m.length>60?4600:2600;clearTimeout(window._toastT);window._toastT=setTimeout(()=>t.classList.remove('show'),dur);}
 // Sonido corto de confirmación al guardar — Web Audio generado en código, sin archivos externos
 // (coherente con que este archivo no carga nada por <script src>, funciona sin conexión). Se
 // llama SOLO en la rama de éxito real de cada "Guardar"/"Confirmar"/"Aplicar", nunca en errores.
@@ -5421,7 +5430,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-25.1';
+const APP_VERSION='2026-10-25.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -6711,8 +6720,9 @@ function fpPintar(f){
   const nLotes=(f.lotes&&f.lotes.length)||0;
   const stockTotalLotes=hayLotes?f.lotes.reduce((s,l)=>s+(Number(l.cantidad)||0),0):0;
   const lotesToggle=document.getElementById('fp-lotes-toggle');
-  document.getElementById('fp-lotes-toggle-lbl').textContent='Lotes ('+nLotes+')'+(hayLotes?' · '+fmt1(stockTotalLotes)+' u en total':'');
-  lotesToggle.classList.toggle('hidden',!hayLotes);
+  const nCerrados=(f.lotesCerrados&&f.lotesCerrados.length)||0;
+  document.getElementById('fp-lotes-toggle-lbl').textContent='Lotes ('+nLotes+')'+(hayLotes?' · '+fmt1(stockTotalLotes)+' u en total':'')+(nCerrados?' · '+nCerrados+' cerrado'+(nCerrados===1?'':'s'):'');
+  lotesToggle.classList.toggle('hidden',!(hayLotes||nCerrados));
   lotesToggle.setAttribute('aria-expanded','false');
   const lotesPane=document.getElementById('fp-pane-lotes');
   lotesPane.classList.add('hidden');
@@ -7702,10 +7712,25 @@ function fpPaneSector(f){
 }
 
 // ==== PESTAÑA LOTES (solo si el producto tiene lotes de vencimiento) ====
+// Lotes ya cerrados (Revisado), solo informativos: dejan rastro de cuándo y por qué se cerró cada uno (p. ej. "sin stock",
+// cuando el sistema los cierra porque el producto quedó en 0 — también tras una recepción que falló en Loyverse).
+const FP_MOTIVO_CIERRE={sin_stock:'sin stock',vendido:'se vendió todo',descuento_agotado:'descuento agotado',descuento_cerrado_manual:'gestión cerrada a mano'};
+function fpHtmlLotesCerrados(f){
+  const c=f.lotesCerrados||[];
+  if(!c.length)return '';
+  return '<div class="in2-section-title" style="margin:14px 0 6px">Cerrados ('+c.length+')</div>'+c.map(l=>{
+    const por=(l.revisadoPor==='sistema')?'el sistema':(l.revisadoPor||'una persona');
+    const mot=FP_MOTIVO_CIERRE[l.motivoCierre]||l.motivoCierre||'';
+    return `<div class="sm-row" style="opacity:.75"><div class="sm-info">
+      <div class="nom">${l.lote?('Lote '+l.lote):'Sin lote'} · ${fmt1(l.cantidad)} u</div>
+      <div class="meta">Cerrado por ${por}${mot?': '+mot:''}${l.fechaRevision?' · '+l.fechaRevision:''}</div>
+      <div class="meta">${l.fechaIngreso?('Ingresó '+l.fechaIngreso+' · '):''}${l.fechaVencimiento?('Vence '+l.fechaVencimiento):'Sin fecha de vencimiento'}</div>
+    </div></div>`;}).join('');
+}
 function fpPaneLotes(f){
   const paneLotes=document.getElementById('fp-pane-lotes');
   if(!f.lotes||!f.lotes.length){
-    paneLotes.innerHTML='<div class="vc-empty">Este producto no tiene lotes de vencimiento activos.</div>';
+    paneLotes.innerHTML='<div class="vc-empty">Este producto no tiene lotes de vencimiento activos.</div>'+fpHtmlLotesCerrados(f);
     return;
   }
   // Acciones "Editar fecha"/"Eliminar lote" por lote — para corregir un vencimiento mal
@@ -7735,7 +7760,7 @@ function fpPaneLotes(f){
         <button type="button" class="btn-ok" data-fp-savef="${l.filaIndex}" style="white-space:nowrap">Guardar</button>
       </div>
     </div>
-  </div>`).join('');
+  </div>`).join('')+fpHtmlLotesCerrados(f);
   fpWireLotes(paneLotes);
 }
 // Cablea los botones "Fecha"/"Eliminar lote" recién pintados por fpPaneLotes.

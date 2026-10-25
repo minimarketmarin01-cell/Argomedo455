@@ -5194,6 +5194,12 @@ async function repFichaProducto(env, sku) {
       filaIndex: l.id, lote: l.lote, cantidad: l.cantidad, fechaVencimiento: l.fecha_vencimiento,
       estado: l.estado, prioridad: l.prioridad, accion: l.accion, precioRecomendado: l.precio_recomendado
     })),
+    // Últimos lotes ya cerrados (Revisado): los cierra el sistema cuando el producto queda sin stock, o una persona al revisarlos.
+    // La Ficha los muestra aparte para dejar rastro (p. ej. un intento de recepción que falló en Loyverse).
+    lotesCerrados: lotes.filter(l => l.estado === "Revisado").sort((a, b) => b.id - a.id).slice(0, 10).map(l => ({
+      filaIndex: l.id, lote: l.lote, cantidad: l.cantidad, fechaVencimiento: l.fecha_vencimiento, fechaIngreso: l.fecha_ingreso,
+      estado: l.estado, accion: l.accion, motivoCierre: l.motivo_cierre, fechaRevision: l.fecha_revision, revisadoPor: l.revisado_por
+    })),
     mermasRecientes: mermas.map(m => ({ fecha: m.fecha, cantidad: m.cantidad, motivo: m.motivo, costoTotal: m.costo_total, responsable: m.responsable })),
     movimientos: auditoria.map(a => ({ id: a.id, fecha: a.fecha, accion: a.accion, stock: a.stock, cantidad: a.cantidad, motivo: a.motivo, responsable: a.responsable })),
     ventasDiarias: ventasDiarias.map(v => ({ fecha: v.fecha, unidades: v.unidades, venta: v.venta, utilidad: v.utilidad })),
