@@ -3246,6 +3246,7 @@ async function accionLoteNuevo(env, payload) {
   // variable LOCAL (no directo en out.avisoStock) para no pisarse si ambas fallan
   // a la vez; se combinan al final en el mismo orden que antes (stock primero).
   let avisoStockMsg = null, avisoPrecioMsg = null;
+  let revertirLote = false;   // el stock NO se sumó en Loyverse: el lote recién creado se borra para poder repetir la recepción limpia
 
   const tareaStock = (async () => {
     if (cantidad <= 0) return;
@@ -3285,10 +3286,16 @@ async function accionLoteNuevo(env, payload) {
           "Recepción de mercadería: +" + cantidad + " " + unidad + " (" + res.antes + " → " + res.despues + ")" +
           (tieneFecha ? " · vence " + fechaTxt : ""), payload.responsable || "", cantidad);
       } else {
-        avisoStockMsg = "⚠️ No se pudo sumar el stock en Loyverse (" + res.motivo + ")." + " El lote YA quedó registrado: no repitas la recepción, corrige el stock con «Recontar stock».";
+        revertirLote = true;
+        avisoStockMsg = "⚠️ No se pudo sumar el stock en Loyverse (" + res.motivo + "). Esta recepción NO quedó guardada: vuelve a ingresarla por Recepción.";
       }
     } catch (e) {
-      avisoStockMsg = "⚠️ No se pudo sumar el stock en Loyverse: " + e.message + " El lote YA quedó registrado: no repitas la recepción, corrige el stock con «Recontar stock».";
+      if (/HTTP \d{3}/.test(e.message)) {   // Loyverse respondió con error: el stock seguro no se movió
+        revertirLote = true;
+        avisoStockMsg = "⚠️ No se pudo sumar el stock en Loyverse (" + e.message + "). Esta recepción NO quedó guardada: vuelve a ingresarla por Recepción.";
+      } else {   // sin respuesta (tiempo agotado): no se sabe si el stock llegó a sumarse
+        avisoStockMsg = "⚠️ Loyverse no respondió a tiempo: puede que el stock sí se haya sumado. Revisa el stock del producto antes de repetir la recepción.";
+      }
     }
 
     // 2b) Si este producto tenía un pedido confirmado sin recibir ("Ya pedido a
@@ -3342,6 +3349,12 @@ async function accionLoteNuevo(env, payload) {
   })();
 
   await Promise.allSettled([tareaStock, tareaPrecio]);
+  if (revertirLote && out.filaIndex) {
+    try {
+      await run(env, "DELETE FROM vencimientos WHERE id = ?", out.filaIndex);
+      out.loteRevertido = true;
+    } catch (e) { /* si no se pudo quitar, el lote queda y se ve en la Ficha */ }
+  }
   if (avisoStockMsg || avisoPrecioMsg) out.avisoStock = [avisoStockMsg, avisoPrecioMsg].filter(Boolean).join(" ");
 
   // 4) Proveedor y/o sector (opcional): son campos solo locales (no existen en Loyverse),
