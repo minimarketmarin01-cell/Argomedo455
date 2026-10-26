@@ -923,6 +923,9 @@ input[type=number]{width:64px;font-family:'JetBrains Mono';font-weight:500}
 #vc-viewseg{position:sticky;top:-12px;z-index:7;background:var(--card,#fff);box-shadow:0 10px 0 var(--card,#fff)}
 #vc-ov .vc-sticky-h{position:sticky;top:calc(var(--vc-seg-h,62px) - 12px);z-index:6;background:var(--card,#fff);padding-top:2px}
 #vc-ov .vc-sticky-h.prov-combo{position:sticky}
+/* Las pestañas y el buscador fijos deben tapar lo que pasa por debajo: la regla `:is(.mm-ov,#__lv) .seg{background:transparent}` (más específica) las dejaba transparentes. */
+#vc-ov #vc-viewseg{background:var(--card,#fff)!important}
+#vc-ov .vc-sticky-h{background:var(--card,#fff)!important}
 /* Vista compacta de Revisión de vencimientos: tarjetas más bajas para ver más lotes a la vez (sin quitar datos ni botones). */
 #vc-ov .vc-sticky-h{padding-bottom:2px;box-shadow:0 12px 0 var(--card,#fff)}
 #vc-ov .vc-sticky-h .prov-combo{margin-bottom:6px!important}
@@ -5445,7 +5448,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-25.4';
+const APP_VERSION='2026-10-25.5';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
