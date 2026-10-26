@@ -4305,7 +4305,10 @@ function rcExigeVencimiento(it){
 function vencidoDe(it){return VENCIDOS_POR_SKU[it.ref]||0;}
 function retiradoDe(it){return RETIRADOS_POR_SKU[it.ref]||0;}
 
-function analyze(it){const rate=rateOf(it),tracked=it.track&&it.stock!=null,esCambio=esCategoriaCambio(it.prov),vencidoResta=esCambio?vencidoDe(it):0,paraCambioTotal=esCambio?(vencidoDe(it)+retiradoDe(it)):0,stock=tracked?Math.max(0,it.stock-vencidoResta):it.stock,lead=state.lead,cover=state.cover;const target=rate*(lead+cover);let cov=null,status,sug=0;const M=multOf(it);
+// Las unidades vencidas aún sin retirar (vencidoDe) salen de la CANTIDAD ORIGINAL del lote, que no baja con las ventas: si el lote
+// era de 10 y hoy quedan 2 en el estante, no hay 10 para cambiar sino 2. Por eso en productos con control de stock se limita a
+// lo que realmente hay (nunca más que el stock). Antes mostraba "STK -10 / Cambio: -10" con 2 unidades reales.
+function analyze(it){const rate=rateOf(it),tracked=it.track&&it.stock!=null,esCambio=esCategoriaCambio(it.prov),vencidoResta=esCambio?(tracked?Math.min(vencidoDe(it),Math.max(0,it.stock)):vencidoDe(it)):0,paraCambioTotal=esCambio?(vencidoResta+retiradoDe(it)):0,stock=tracked?Math.max(0,it.stock-vencidoResta):it.stock,lead=state.lead,cover=state.cover;const target=rate*(lead+cover);let cov=null,status,sug=0;const M=multOf(it);
   if(!tracked){status='sinstock';sug=rate>0?roundPack(target,M):0;}
   else{cov=rate>0?stock/rate:(stock>0?Infinity:0);
     if(rate<=0){status=stock>0?'sobre':'ok';sug=0;}
@@ -5448,7 +5451,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-25.5';
+const APP_VERSION='2026-10-25.6';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
