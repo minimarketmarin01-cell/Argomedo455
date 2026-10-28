@@ -3398,9 +3398,22 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
         </select>
       </div>
       <div class="seg" id="vd-modo" style="display:flex;width:100%;margin-bottom:10px">
-        <button type="button" data-modo="dow" class="active" style="flex:1">Promedio día de semana</button>
-        <button type="button" data-modo="semana" style="flex:1">Últimos 7 días</button>
+        <button type="button" data-modo="dow" class="active" style="flex:1">Promedio día</button>
+        <button type="button" data-modo="semana" style="flex:1">Semana</button>
+        <button type="button" data-modo="mes" style="flex:1">Mes</button>
       </div>
+      <!-- Navegar semanas atrás (pedido explícito) — solo visible en modo "semana". El rango
+           mostrado ya no es siempre "los últimos 7 días": con Anterior/Siguiente se puede ver
+           cualquier semana calendario dentro de los datos cargados (ver vdSemanaVentana). -->
+      <div id="vd-semana-nav" class="hidden" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <button type="button" id="vd-semana-prev" class="loadbtn" style="padding:7px 12px;flex:none;width:auto">‹ Anterior</button>
+        <span class="cat" id="vd-semana-rango" style="font-weight:700;text-align:center;flex:1"></span>
+        <button type="button" id="vd-semana-next" class="loadbtn" style="padding:7px 12px;flex:none;width:auto" disabled>Siguiente ›</button>
+      </div>
+      <!-- Elegir mes (pedido explícito: "cuántos se vendieron en el mes") — solo visible en
+           modo "mes". Arranca en el mes actual si hay datos de ese mes, si no en el más reciente
+           disponible (ver vdPoblarSelects). -->
+      <select id="vd-mes" class="hidden" style="width:100%;margin-bottom:8px;padding:8px;border-radius:10px;border:1px solid var(--borde);background:#fff;font-size:12.5px"></select>
       <div class="hm-summary"><span class="lbl" id="vd-lbl">—</span></div>
       <div class="catchart" id="vd-chart"></div>
       <div class="cat" style="margin:10px 0 6px;font-weight:700">Por producto</div>
@@ -5451,7 +5464,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-25.6';
+const APP_VERSION='2026-10-28.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15644,12 +15657,13 @@ document.getElementById('rz-clase').onchange=rzRender;
 document.getElementById('rz-ver-excluidos').onclick=rzMostrarExcluidos;
 
 // ===================== VENTAS POR DÍA (gráfico interactivo, filtrable) =====================
-// Trae ventas_series una sola vez por apertura (90 días desde la tabla permanente
-// ventas_diarias_historico, ver backend) y cachea el crudo en _vdFilas — todo el
-// filtrado/agregado (búsqueda, sector, proveedor, promedio por día de semana vs últimos 7
-// días) es 100% client-side para que sea instantáneo, sin volver a pedirle nada al backend en
-// cada cambio de filtro.
-let _vdFilas=null,_vdFiltro={search:'',sector:'',proveedor:'',modo:'dow'};
+// Trae ventas_series una sola vez por apertura (180 días — antes 90, se amplía para que el modo
+// "Mes" y "Semana atrás" tengan margen real de historia para navegar, ver backend) y cachea el
+// crudo en _vdFilas — todo el filtrado/agregado (búsqueda, sector, proveedor, promedio por día
+// de semana vs semana vs mes) es 100% client-side para que sea instantáneo, sin volver a
+// pedirle nada al backend en cada cambio de filtro.
+const VD_MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+let _vdFilas=null,_vdFiltro={search:'',sector:'',proveedor:'',modo:'dow',semanaOffset:0,mes:''};
 function vdAbrir(){
   document.getElementById('mas-ov').classList.add('hidden');
   abrirModal('vd-ov');
@@ -15660,7 +15674,7 @@ async function vdCargar(){
   document.getElementById('vd-chart').innerHTML='<div class="cc-empty">Cargando…</div>';
   document.getElementById('vd-list').innerHTML='';
   try{
-    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=ventas_series&dias=90');
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=ventas_series&dias=180');
     const j=await res.json();
     _vdFilas=(j&&j.ok&&Array.isArray(j.filas))?j.filas:[];
   }catch(e){_vdFilas=[];}
@@ -15672,6 +15686,17 @@ function vdPoblarSelects(){
   const proveedores=[...new Set((_vdFilas||[]).map(f=>f.proveedor).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
   document.getElementById('vd-sector').innerHTML='<option value="">Todos los sectores</option>'+sectores.map(s=>`<option value="${s.replace(/"/g,'&quot;')}">${s}</option>`).join('');
   document.getElementById('vd-proveedor').innerHTML='<option value="">Todos los proveedores</option>'+proveedores.map(p=>`<option value="${p.replace(/"/g,'&quot;')}">${p}</option>`).join('');
+  // Meses disponibles (fecha viene ISO "AAAA-MM-DD", así que slice(0,7) da "AAAA-MM" — ordena
+  // bien como texto sin parsear). Arranca en el mes actual si hay datos de ese mes; si no, en el
+  // más reciente disponible (ej. recién empezó el mes y todavía no hay ninguna venta registrada).
+  const meses=[...new Set((_vdFilas||[]).map(f=>f.fecha.slice(0,7)))].sort().reverse();
+  document.getElementById('vd-mes').innerHTML=meses.map(m=>{
+    const mm=+m.slice(5,7),y=m.slice(0,4);
+    return `<option value="${m}">${VD_MESES[mm-1]||m} ${y}</option>`;
+  }).join('');
+  const hoyMes=new Date().toISOString().slice(0,7);
+  _vdFiltro.mes=meses.includes(hoyMes)?hoyMes:(meses[0]||'');
+  document.getElementById('vd-mes').value=_vdFiltro.mes;
 }
 function vdFiltrados(){
   if(!_vdFilas)return [];
@@ -15679,6 +15704,11 @@ function vdFiltrados(){
   return _vdFilas.filter(f=>{
     if(_vdFiltro.sector&&f.sector!==_vdFiltro.sector)return false;
     if(_vdFiltro.proveedor&&f.proveedor!==_vdFiltro.proveedor)return false;
+    // El filtro de mes solo se aplica EN modo "mes" — en "semana"/"dow" la lista "Por producto"
+    // sigue mostrando el total de todo el rango cargado, igual que antes (comportamiento ya
+    // existente, no se tocó) — el total del mes es nuevo y solo tiene sentido cuando se está
+    // mirando ese mes específico.
+    if(_vdFiltro.modo==='mes'&&_vdFiltro.mes&&f.fecha.slice(0,7)!==_vdFiltro.mes)return false;
     if(q&&!normTxt(f.nombre||'').includes(q))return false;
     return true;
   });
@@ -15694,18 +15724,59 @@ function vdPromedioSemana(filas){
   filas.forEach(f=>{const idx=(new Date(f.fecha+'T00:00:00').getDay()+6)%7;sumaPorDia[idx]+=f.unidades||0;});
   return DIAS.map((label,idx)=>({label,valor:fechasPorDia[idx].size?Math.round(sumaPorDia[idx]/fechasPorDia[idx].size*10)/10:0}));
 }
-// Últimos 7 días CALENDARIO presentes en el dataset completo (no en el filtrado, para que el
-// eje de fechas no salte al filtrar) — suma unidades del filtro actual en cada una.
+// Todas las fechas calendario presentes en el dataset completo (no en el filtrado, para que el
+// eje de fechas no salte al filtrar), ordenadas. Base de la navegación de semanas de abajo.
+function vdFechasDisponibles(){
+  return [...new Set((_vdFilas||[]).map(f=>f.fecha))].sort();
+}
+// Ventana de 7 días calendario según _vdFiltro.semanaOffset: 0 = los 7 más recientes (como
+// antes), 1 = los 7 anteriores a esos, etc. — pedido explícito: "dame la opción de poder ir a
+// semanas atrás". Las semanas se arman desde el final de la lista hacia atrás de a 7, no por
+// semana calendario real (lunes-domingo) — más simple y suficiente para "ver la semana pasada".
+function vdSemanaVentana(){
+  const fechas=vdFechasDisponibles();
+  const offset=Math.max(0,_vdFiltro.semanaOffset||0);
+  const fin=fechas.length-7*offset;
+  const inicio=Math.max(0,fin-7);
+  return fechas.slice(inicio,Math.max(inicio,fin));
+}
+// Última semana offset con al menos 1 fecha — límite para "Anterior" (no dejar ir más atrás de
+// donde hay datos cargados).
+function vdMaxOffsetSemana(){
+  const n=vdFechasDisponibles().length;
+  return n?Math.ceil(n/7)-1:0;
+}
+function vdActualizarNavSemana(){
+  const prevBtn=document.getElementById('vd-semana-prev'),nextBtn=document.getElementById('vd-semana-next'),rangoEl=document.getElementById('vd-semana-rango');
+  if(!prevBtn||!rangoEl)return;
+  const fechas=vdSemanaVentana();
+  const fmt=f=>f.slice(5).replace('-','/');
+  rangoEl.textContent=fechas.length?(fechas.length>1?fmt(fechas[0])+' – '+fmt(fechas[fechas.length-1]):fmt(fechas[0])):'—';
+  prevBtn.disabled=(_vdFiltro.semanaOffset||0)>=vdMaxOffsetSemana();
+  nextBtn.disabled=(_vdFiltro.semanaOffset||0)<=0;
+}
 function vdUltimaSemana(filas){
-  const fechas=[...new Set((_vdFilas||[]).map(f=>f.fecha))].sort().slice(-7);
+  const fechas=vdSemanaVentana();
   const sumaPorFecha={};
   fechas.forEach(f=>{sumaPorFecha[f]=0;});
   filas.forEach(f=>{if(sumaPorFecha[f.fecha]!=null)sumaPorFecha[f.fecha]+=f.unidades||0;});
   return fechas.map(f=>({label:f.slice(5).replace('-','/'),valor:Math.round((sumaPorFecha[f]||0)*10)/10}));
 }
+// Barra por cada día del mes elegido (ver vd-mes) — pedido explícito: "cuántos se vendieron en
+// el mes". fecha ISO "AAAA-MM-DD" ordena bien como texto, sin parsear.
+function vdPorMes(filas){
+  if(!_vdFiltro.mes)return [];
+  const fechas=[...new Set((_vdFilas||[]).filter(f=>f.fecha.slice(0,7)===_vdFiltro.mes).map(f=>f.fecha))].sort();
+  const sumaPorFecha={};
+  fechas.forEach(f=>{sumaPorFecha[f]=0;});
+  filas.forEach(f=>{if(sumaPorFecha[f.fecha]!=null)sumaPorFecha[f.fecha]+=f.unidades||0;});
+  return fechas.map(f=>({label:f.slice(8,10),valor:Math.round((sumaPorFecha[f]||0)*10)/10}));
+}
 function vdRenderChart(){
-  const datos=_vdFiltro.modo==='semana'?vdUltimaSemana(vdFiltrados()):vdPromedioSemana(vdFiltrados());
+  const filtrados=vdFiltrados();
+  const datos=_vdFiltro.modo==='semana'?vdUltimaSemana(filtrados):_vdFiltro.modo==='mes'?vdPorMes(filtrados):vdPromedioSemana(filtrados);
   const box=document.getElementById('vd-chart');
+  if(!datos.length){box.innerHTML='<div class="cc-empty">Sin datos para este filtro.</div>';return;}
   const max=Math.max(...datos.map(d=>d.valor),0.1);
   box.innerHTML=datos.map(d=>`<div class="cbar-row"><span class="cbar-lbl">${d.label}</span><span class="cbar-track"><span class="cbar-fill" style="width:${Math.max(3,Math.round(d.valor/max*100))}%"></span></span><span class="cbar-val">${d.valor} u</span></div>`).join('');
 }
@@ -15718,12 +15789,17 @@ function vdRenderLista(){
     porSku[f.sku].total+=f.unidades||0;
   });
   const lista=Object.keys(porSku).map(sku=>({sku,...porSku[sku]})).sort((a,b)=>b.total-a.total);
-  document.getElementById('vd-lbl').textContent=lista.length+' producto'+(lista.length===1?'':'s')+' vendido'+(lista.length===1?'':'s')+' en el rango';
-  if(!lista.length){box.innerHTML='<div class="vc-empty">Sin ventas para este filtro en los últimos 90 días.</div>';return;}
+  let rangoLbl=' en el rango';
+  if(_vdFiltro.modo==='mes'&&_vdFiltro.mes){
+    const mm=+_vdFiltro.mes.slice(5,7),y=_vdFiltro.mes.slice(0,4);
+    rangoLbl=' en '+(VD_MESES[mm-1]||'').toLowerCase()+' de '+y;
+  }
+  document.getElementById('vd-lbl').textContent=lista.length+' producto'+(lista.length===1?'':'s')+' vendido'+(lista.length===1?'':'s')+rangoLbl;
+  if(!lista.length){box.innerHTML='<div class="vc-empty">Sin ventas para este filtro.</div>';return;}
   const max=Math.max(...lista.map(l=>l.total),0.1);
   box.innerHTML=lista.slice(0,100).map(l=>`<div class="cbar-row" data-vd-sku="${l.sku}" style="cursor:pointer"><span class="cbar-lbl" title="${(l.nombre||'').replace(/"/g,'&quot;')}">${l.nombre||l.sku}</span><span class="cbar-track"><span class="cbar-fill" style="width:${Math.max(3,Math.round(l.total/max*100))}%;background:var(--rojo)"></span></span><span class="cbar-val">${Math.round(l.total*10)/10} u</span></div>`).join('');
 }
-function vdRender(){vdRenderChart();vdRenderLista();}
+function vdRender(){vdActualizarNavSemana();vdRenderChart();vdRenderLista();}
 document.getElementById('mas-q-ventasdia').onclick=vdAbrir;
 
 // ===================== RESPALDO EN SUPABASE (estado del espejo) =====================
@@ -15841,14 +15917,27 @@ document.getElementById('vd-cerrar').onclick=()=>cerrarModal('vd-ov');
 })();
 document.getElementById('vd-sector').onchange=e=>{_vdFiltro.sector=e.target.value;vdRender();};
 document.getElementById('vd-proveedor').onchange=e=>{_vdFiltro.proveedor=e.target.value;vdRender();};
+document.getElementById('vd-mes').onchange=e=>{_vdFiltro.mes=e.target.value;vdRender();};
 document.getElementById('vd-modo').addEventListener('click',ev=>{
   const btn=ev.target.closest('button[data-modo]');
   if(!btn)return;
   document.querySelectorAll('#vd-modo button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   _vdFiltro.modo=btn.dataset.modo;
-  vdRenderChart();
+  document.getElementById('vd-semana-nav').classList.toggle('hidden',_vdFiltro.modo!=='semana');
+  document.getElementById('vd-mes').classList.toggle('hidden',_vdFiltro.modo!=='mes');
+  vdRender(); // el total "Por producto" cambia con el modo (mes vs. rango completo) — ver vdFiltrados
 });
+document.getElementById('vd-semana-prev').onclick=()=>{
+  if((_vdFiltro.semanaOffset||0)>=vdMaxOffsetSemana())return;
+  _vdFiltro.semanaOffset=(_vdFiltro.semanaOffset||0)+1;
+  vdActualizarNavSemana();vdRenderChart();
+};
+document.getElementById('vd-semana-next').onclick=()=>{
+  if((_vdFiltro.semanaOffset||0)<=0)return;
+  _vdFiltro.semanaOffset=(_vdFiltro.semanaOffset||0)-1;
+  vdActualizarNavSemana();vdRenderChart();
+};
 document.getElementById('vd-list').addEventListener('click',ev=>{
   const row=ev.target.closest('[data-vd-sku]');
   if(!row)return;
