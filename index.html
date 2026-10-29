@@ -2489,6 +2489,7 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
             <button class="mm-motivo" data-m="consumo_interno">Consumo interno</button>
             <button class="mm-motivo" data-m="cambio_proveedor">Cambio con proveedor</button>
           </div>
+          <div id="mm-pend-hint" class="hidden" style="margin-top:8px;padding:8px 10px;border-radius:9px;background:var(--gold-bg,#F3F0E2);border:1px solid var(--gold,#8A7A4E);font-size:12px;font-weight:600;color:var(--ink)"></div>
         </div>
 
         <div class="mm-field">
@@ -5509,7 +5510,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.9';
+const APP_VERSION='2026-10-28.10';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -11142,9 +11143,16 @@ function mmUpdateTotal(){
   const total=mmCart.reduce((s,c)=>s+(c.cantidad*mmCostoUnit(c)),0);
   document.getElementById('mm-total-val').textContent=peso(total);
 }
+// Dañado / cambio con proveedor de un proveedor que hace cambio (Ideal, Pan Castaño, San Jorge): no se registra como merma (pérdida) sino
+// que el servidor lo manda a Pendientes, esperando el cambio. Ahí no hace falta costo.
+function mmVaAPendientes(c){
+  return (mmState.motivo==='dañado'||mmState.motivo==='cambio_proveedor')&&c.origen!=='vencimiento'&&esCategoriaCambio(c.prov);
+}
 function mmValidar(){
-  const ok=mmCart.length>0&&mmState.motivo&&mmState.resp&&mmCart.every(c=>c.cantidad>0&&mmCostoUnit(c)>0);
+  const ok=mmCart.length>0&&mmState.motivo&&mmState.resp&&mmCart.every(c=>c.cantidad>0&&(mmVaAPendientes(c)||mmCostoUnit(c)>0));
   document.getElementById('mm-save').disabled=!ok;
+  const nP=mmCart.filter(mmVaAPendientes).length,h=document.getElementById('mm-pend-hint');
+  if(h){h.classList.toggle('hidden',!nP);h.textContent=nP?('📥 '+nP+' producto'+(nP===1?'':'s')+' de proveedor con cambio: '+(nP===1?'irá':'irán')+' a Pendientes para el cambio (no cuenta como merma)'):'';}
 }
 function mmReset(){
   mmCart=[];mmState.motivo=null;mmState.resp=null;
@@ -11220,7 +11228,11 @@ document.getElementById('mm-save').onclick=async()=>{
         }
       });
       persist();
-      let msg='Merma registrada: '+j.resumen.n+' producto'+(j.resumen.n===1?'':'s')+' · '+peso(j.resumen.total);
+      const nPend=j.resumen.aPendientes||0,nMerma=j.resumen.n-nPend;
+      const partes=[];
+      if(nMerma>0)partes.push('Merma registrada: '+nMerma+' producto'+(nMerma===1?'':'s')+' · '+peso(j.resumen.total));
+      if(nPend>0)partes.push(nPend+' producto'+(nPend===1?'':'s')+' enviado'+(nPend===1?'':'s')+' a Pendientes para cambio');
+      let msg=partes.join(' · ');
       if((j.filas||[]).some(f=>f.costoDesdeLoyverse===false&&!f.costoUnitario))msg+=' · ⚠️ revisar costo';
       if(j.resumen.avisoStock)msg+=' · '+j.resumen.avisoStock;
       sonidoGuardado();
