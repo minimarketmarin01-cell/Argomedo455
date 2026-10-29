@@ -5505,7 +5505,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.7';
+const APP_VERSION='2026-10-28.8';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -17216,6 +17216,8 @@ function renderRecepcionarHoy(elId){
   const enRecepcion=el.id==='rc-pend';
   const filas=calcularRecepcionarHoy();
   if(enRecepcion){const n=document.getElementById('rc-pend-n');if(n)n.textContent=filas.length?'('+filas.length+')':'';}
+  // El número rojo de la barra de abajo (Recepción) usa esta misma cuenta: se actualiza cada vez que cambia la lista, no solo al abrir Inicio.
+  try{actualizarBadgeBn('bn-recepcion-badge',filas.length);}catch(e){}
   if(!filas.length){
     el.innerHTML='<div class="pd-empty-row">Nada pendiente de recepcionar por ahora</div>';
     return;
