@@ -2972,9 +2972,9 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
         <div class="mm-sections">
           <section class="mm-section mm-section--bare">
             <div class="mm-section-head"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1 0-2 .9-2 2v3.01c0 .72.43 1.34 1 1.69V20c0 1.1 1.1 2 2 2h14c.9 0 2-.9 2-2V8.7c.57-.35 1-.97 1-1.69V4c0-1.1-1-2-2-2zm-5 12H9v-2h6v2zm5-7H4V4l16-.02V7z"/></svg>Producto</div>
-            <div class="provday" id="rc-pend-wrap" style="margin-bottom:12px">
-              <div class="pd-mod-hdr" id="rc-pend-hdr" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between"><span class="pd-mod-title">📥 Pedidos por recibir <span id="rc-pend-n" class="cat"></span></span><span class="pd-prov-caret" id="rc-pend-caret">▾</span></div>
-              <div id="rc-pend" style="max-height:42vh;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
+            <div class="provday" id="rc-pend-wrap" style="margin-bottom:10px;padding:0;background:none;border:none;box-shadow:none">
+              <div class="pd-mod-hdr" id="rc-pend-hdr" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card,#fff)"><span class="pd-mod-title" style="font-size:14px">📥 Pedidos por recibir <span id="rc-pend-n" class="cat"></span></span><span class="pd-prov-caret" id="rc-pend-caret">▸</span></div>
+              <div id="rc-pend" class="hidden" style="max-height:50vh;overflow-y:auto;-webkit-overflow-scrolling:touch;margin-top:6px"></div>
             </div>
             <div class="mm-field" style="margin-bottom:8px">
               <div class="mm-search">
@@ -5500,7 +5500,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.2';
+const APP_VERSION='2026-10-28.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14658,6 +14658,7 @@ document.getElementById('rc-ajustar-guardar').onclick=rcAjustarGuardar;
 function openRecibir(){
   try{rcReset();}catch(e){}
   try{renderRecepcionarHoy('rc-pend');}catch(e){}
+  try{rcPendPlegar(true);}catch(e){}
   abrirModal('rc-ov');
   try{const d=rcCargarBorrador();if(d)rcAplicarBorrador(d);}catch(e){}
 }
@@ -14670,10 +14671,13 @@ function openRecibir(){
 // casualidad junto a Guardar y descartaba la recepción a medio cargar, mismo criterio que
 // Marín Pedidos). Queda para "Descartar" (tras confirmar) y para el escáner, que cierra y
 // reabre la pantalla alrededor de la cámara.
-document.getElementById('rc-pend-hdr').onclick=()=>{
+// Acordeón: la lista de pedidos por recibir arranca plegada (una sola fila) y se abre al tocarla.
+function rcPendPlegar(plegar){
   const l=document.getElementById('rc-pend'),c=document.getElementById('rc-pend-caret');
-  const oculto=l.classList.toggle('hidden');c.textContent=oculto?'▸':'▾';
-};
+  if(!l)return;
+  l.classList.toggle('hidden',!!plegar);if(c)c.textContent=plegar?'▸':'▾';
+}
+document.getElementById('rc-pend-hdr').onclick=()=>rcPendPlegar(!document.getElementById('rc-pend').classList.contains('hidden'));
 function closeRecibir(){
   rcReset();
   rcLimpiarBorrador(); // se canceló a propósito — un F5 después no debe revivir este borrador
@@ -17225,7 +17229,7 @@ function renderRecepcionarHoy(elId){
       detalle.querySelectorAll('.pd-recep-btn').forEach(b=>{
         b.onclick=(ev)=>{
           ev.stopPropagation();
-          if(enRecepcion){try{rcPick(b.dataset.sku);}catch(e){} const bs=document.getElementById('rc-search');if(bs&&bs.scrollIntoView)bs.scrollIntoView({block:'center'});return;}
+          if(enRecepcion){try{rcPick(b.dataset.sku);}catch(e){} try{rcPendPlegar(true);}catch(e){} const bs=document.getElementById('rc-search');if(bs&&bs.scrollIntoView)bs.scrollIntoView({block:'center'});return;}
           cerrarOverlays();openRecibir();try{rcPick(b.dataset.sku);}catch(e){}};
       });
       if(enRecepcion)detalle.querySelectorAll('.pd-prod-row').forEach(r=>{const b=r.querySelector('.pd-recep-btn');if(b){r.style.cursor='pointer';r.onclick=()=>b.click();}});
