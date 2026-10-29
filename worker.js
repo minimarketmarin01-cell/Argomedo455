@@ -4921,14 +4921,57 @@ async function accionConsumoInterno(env, payload) {
 // item falla (SKU inexistente, cantidad inválida), se corta ahí: los anteriores del lote ya
 // quedaron guardados con su stock ya descontado (mismo comportamiento ya aceptado en
 // accionConsumoInterno, no es nuevo de esta función).
+// Mercadería dañada de un proveedor que hace CAMBIO (Ideal, Pan Castaño…): no es una pérdida sino algo por cobrarle al proveedor,
+// así que en vez de una merma se crea un lote ya "Retirado" (queda en Pendientes esperando el cambio) y se descuenta el stock,
+// igual que retirar un lote desde Vencimientos. La fecha de vencimiento del lote es la de hoy: así aparece en Pendientes.
+async function accionDanadoAPendientes(env, payload) {
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", String(payload.sku || "").trim());
+  if (!it) throw new Error("SKU no encontrado en el catálogo: " + payload.sku);
+  const cantidad = Number(payload.cantidad);
+  if (!cantidad || cantidad <= 0) throw new Error("Cantidad inválida para " + it.nombre);
+  const unidad = it.sold_by_weight ? "kg" : "un";
+  const hoy = fechaDDMMAAAA(), ahora = fechaHoraDDMMAAAA();
+  const ins = await run(env,
+    `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, prioridad, accion, fecha_revision, revisado_por, fecha_retiro)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    hoy, it.sku, it.nombre, it.categoria, unidad, "", cantidad, hoy, "Retirado", "⚫",
+    "Dañado — esperando cambio con proveedor", ahora, payload.responsable || "", ahora);
+  const out = { filaIndex: ins.meta.last_row_id, sku: it.sku, nombre: it.nombre, categoria: it.categoria, unidad, cantidad,
+    costoTotal: 0, aPendientes: true, estado: "Retirado" };
+  const res = await sumarStockLoyverse(env, it, -cantidad);
+  if (res.ok) {
+    out.nuevoStock = res.despues;
+    await run(env,
+      `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      ahora, "retiro_gondola", it.sku, it.nombre, it.categoria, it.id_loyverse, res.despues,
+      "Dañado (pendiente de cambio): -" + cantidad + " " + unidad + " (" + res.antes + " → " + res.despues + ")", payload.responsable || "");
+  } else {
+    out.avisoStock = "⚠️ No se pudo descontar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
+  }
+  return out;
+}
+
 async function accionMermaLote(env, payload) {
   payload = payload || {};
   const items = Array.isArray(payload.items) ? payload.items : [];
   if (!items.length) throw new Error("No hay productos para registrar");
   if (!MOTIVOS_MERMA_VALIDOS.includes(payload.motivo)) throw new Error("Motivo inválido");
-  let total = 0, n = 0, avisoStock = "";
+  let total = 0, n = 0, nPend = 0, avisoStock = "";
   const filas = [];
+  // Dañado o "cambio con proveedor" de un proveedor que hace cambio: va a Pendientes, no a Mermas.
+  const aPendientesPosible = payload.motivo === "dañado" || payload.motivo === "cambio_proveedor";
+  const tablaVida = aPendientesPosible ? await getVidaUtilTabla(env) : null;
   for (const it of items) {
+    if (aPendientesPosible && it.origen !== "vencimiento") {
+      const prod = await get(env, "SELECT categoria FROM productos WHERE sku = ?", String(it.sku || "").trim());
+      if (prod && vidaUtilCat(prod.categoria, tablaVida).tipo === "cambio") {
+        const r = await accionDanadoAPendientes(env, { sku: it.sku, cantidad: it.cantidad, responsable: payload.responsable });
+        n++; nPend++; filas.push(r);
+        if (r.avisoStock) avisoStock = r.avisoStock;
+        continue;
+      }
+    }
     // origen/lote son por ítem, no por lote entero: solo el producto agregado desde "Es
     // merma"/"Consumo interno" en Vencimientos trae esos datos, el resto del carrito se guarda
     // como origen manual normal.
@@ -4943,7 +4986,7 @@ async function accionMermaLote(env, payload) {
     filas.push(r);
     if (r.avisoStock) avisoStock = r.avisoStock;
   }
-  return { resumen: { n, total, avisoStock }, filas };
+  return { resumen: { n, total, avisoStock, aPendientes: nPend }, filas };
 }
 
 // POST { action:'marcar_descuento_factura', payload:{filaIndex,montoDescuento,revisadoPor} }
