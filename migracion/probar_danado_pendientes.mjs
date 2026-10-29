@@ -41,4 +41,24 @@ j = await post("merma_lote", { items: [{ sku: "K1", cantidad: 3 }], motivo: "da�
 assert(j.resumen.aPendientes === 0 && mermas("K1").length === 1 && lotes("K1").length === 0 && stockLoy.v2 === 7); ok("dañado de un proveedor sin cambio (Coca) sigue siendo merma normal");
 j = await post("merma_lote", { items: [{ sku: "K1", cantidad: 1 }, { sku: "C1", cantidad: 1 }], motivo: "dañado", responsable: "Rossy" });
 assert(j.resumen.n === 2 && j.resumen.aPendientes === 1 && mermas("K1").length === 2 && lotes("C1").length === 3); ok("carrito mixto: Coca a merma y Castaño a Pendientes en el mismo guardado");
+
+// --- Elegir de qué lote salen las dañadas ---
+stockLoy.v1 = 10;
+const insL = sq.prepare("INSERT INTO vencimientos(fecha_ingreso,sku,producto,categoria,unidad,lote,cantidad,fecha_vencimiento,estado) VALUES (?,?,?,?,?,?,?,?,?)");
+const idA = Number(insL.run("01/11/2026", "C1", "Hamburguesa 4und", "PAN CASTAÑO", "un", "", 5, "12/11/2026", "Vigente").lastInsertRowid);
+const idB = Number(insL.run("02/11/2026", "C1", "Hamburguesa 4und", "PAN CASTAÑO", "un", "", 3, "05/11/2026", "Vigente").lastInsertRowid);
+let g = await (await worker.fetch(new Request("https://x/?action=lotes_abiertos&sku=C1"), env, ctx)).json();
+assert(g.ok && g.lotes.length >= 2 && g.lotes[0].filaIndex === idB && g.lotes.some(l => l.filaIndex === idA)); ok("lotes_abiertos lista los lotes abiertos (más nuevo primero)");
+const antes = lotes("C1").length;
+j = await post("merma_lote", { items: [{ sku: "C1", cantidad: 2, loteId: idA }], motivo: "dañado", responsable: "Rossy" });
+assert(j.ok && j.filas[0].loteDescontado === idA && stockLoy.v1 === 8, JSON.stringify(j).slice(0, 300));
+const a = sq.prepare("SELECT estado,cantidad FROM vencimientos WHERE id=?").get(idA);
+assert.strictEqual(a.estado, "Retirado"); assert.strictEqual(a.cantidad, 2);
+assert.strictEqual(lotes("C1").length, antes + 1);
+assert(sq.prepare("SELECT 1 FROM vencimientos WHERE sku='C1' AND estado='Vigente' AND cantidad=3 AND fecha_vencimiento='12/11/2026'").get());
+ok("loteId: 2 u salen del lote A (queda Retirado de 2 y Vigente de 3), stock 10 → 8");
+j = await post("merma_lote", { items: [{ sku: "C1", cantidad: 5, loteId: idB }], motivo: "dañado", responsable: "Rossy" });
+assert(j.ok && stockLoy.v1 === 3 && sq.prepare("SELECT estado,cantidad FROM vencimientos WHERE id=?").get(idB).estado === "Retirado"); ok("más dañadas que el lote: 3 del lote B + 2 aparte, stock 8 → 3");
+j = await post("merma_lote", { items: [{ sku: "C1", cantidad: 1, loteId: 99999 }], motivo: "dañado", responsable: "Rossy" });
+assert(j.ok && j.resumen.aPendientes === 1 && stockLoy.v1 === 2); ok("lote inexistente: cae al lote nuevo en Pendientes");
 console.log("Todas las pruebas pasaron:", n);

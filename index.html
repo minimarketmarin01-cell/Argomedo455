@@ -5510,7 +5510,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.10';
+const APP_VERSION='2026-10-28.11';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -11129,8 +11129,10 @@ function mmRenderCart(){
           <span style="margin-left:auto;font-weight:700;font-family:'JetBrains Mono';font-size:14px">${peso(c.cantidad*mmCostoUnit(c))}</span>
         </div>
         ${sinCosto?`<input class="costo-warn" placeholder="⚠️ Sin costo en Loyverse — escribe costo${c.peso?'/kg':''} ($)" data-costo="${c.ref}" value="${c.costoManual}">`:''}
+        ${mmSelectorLote(c)}
       </div>`;
     }).join('');
+    box.querySelectorAll('[data-lote]').forEach(sel=>sel.onchange=()=>{const c=mmCart.find(x=>x.ref===sel.dataset.lote);c.loteId=sel.value;});
     box.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>mmRemove(b.dataset.x));
     box.querySelectorAll('[data-menos]').forEach(b=>b.onclick=()=>{const c=mmCart.find(x=>x.ref===b.dataset.menos);const st=c.peso?0.05:1;c.cantidad=Math.max(st,+(c.cantidad-st).toFixed(c.peso?3:0));mmRenderCart();});
     box.querySelectorAll('[data-mas]').forEach(b=>b.onclick=()=>{const c=mmCart.find(x=>x.ref===b.dataset.mas);const st=c.peso?0.05:1;c.cantidad=+(c.cantidad+st).toFixed(c.peso?3:0);mmRenderCart();});
@@ -11145,6 +11147,28 @@ function mmUpdateTotal(){
 }
 // Dañado / cambio con proveedor de un proveedor que hace cambio (Ideal, Pan Castaño, San Jorge): no se registra como merma (pérdida) sino
 // que el servidor lo manda a Pendientes, esperando el cambio. Ahí no hace falta costo.
+// Lotes abiertos por producto (para elegir de cuál salen las dañadas): se piden al servidor una vez por producto.
+const mmLotes={};   // ref -> array de lotes, o 'cargando'
+function mmCargarLotes(c){
+  if(mmLotes[c.ref])return;
+  mmLotes[c.ref]='cargando';
+  fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=lotes_abiertos&sku='+encodeURIComponent(c.ref)).then(r=>r.json()).then(j=>{
+    mmLotes[c.ref]=(j&&j.ok&&Array.isArray(j.lotes))?j.lotes:[];
+    // Por defecto, el lote más nuevo (de donde suelen venir las dañadas); el usuario puede cambiarlo.
+    mmCart.forEach(x=>{if(x.ref===c.ref&&x.loteId==null&&mmLotes[c.ref].length)x.loteId=String(mmLotes[c.ref][0].filaIndex);});
+    mmRenderCart();
+  }).catch(()=>{mmLotes[c.ref]=[];});
+}
+function mmSelectorLote(c){
+  if(!mmVaAPendientes(c))return '';
+  mmCargarLotes(c);
+  const ls=Array.isArray(mmLotes[c.ref])?mmLotes[c.ref]:null;
+  if(!ls)return '<div class="cat" style="margin-top:4px">Buscando lotes…</div>';
+  if(ls.length<2)return ls.length?'<div class="cat" style="margin-top:4px">Se descuenta del lote que vence '+(ls[0].fechaVencimiento||'sin fecha')+'</div>':'';
+  return '<div style="margin-top:6px"><div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:3px">¿De qué lote salen?</div><select data-lote="'+c.ref+'" style="width:100%;padding:9px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;background:#fff">'+
+    ls.map(l=>'<option value="'+l.filaIndex+'"'+(String(l.filaIndex)===String(c.loteId)?' selected':'')+'>Vence '+(l.fechaVencimiento||'sin fecha')+' · '+l.cantidad+' u</option>').join('')+
+    '<option value=""'+(c.loteId===''?' selected':'')+'>No sé / otro</option></select></div>';
+}
 function mmVaAPendientes(c){
   return (mmState.motivo==='dañado'||mmState.motivo==='cambio_proveedor')&&c.origen!=='vencimiento'&&esCategoriaCambio(c.prov);
 }
@@ -11202,7 +11226,7 @@ document.getElementById('mm-mic').onclick=()=>voiceSearch(document.getElementByI
 });
 document.querySelectorAll('.mm-motivo[data-m]').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.mm-motivo[data-m]').forEach(x=>x.classList.remove('sel'));
-  b.classList.add('sel');mmState.motivo=b.dataset.m;mmValidar();
+  b.classList.add('sel');mmState.motivo=b.dataset.m;mmRenderCart();mmValidar();
 });
 document.querySelectorAll('#mm-resp button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#mm-resp button').forEach(x=>x.classList.remove('sel'));
@@ -11214,7 +11238,8 @@ document.getElementById('mm-save').onclick=async()=>{
   try{
     const items=mmCart.map(c=>({
       sku:c.ref,cantidad:c.cantidad,costoManual:c.coste>0?undefined:(Number(c.costoManual)||0),
-      origen:c.origen,lote:c.lote,vencFilaIndex:c.vencFilaIndex||undefined
+      origen:c.origen,lote:c.lote,vencFilaIndex:c.vencFilaIndex||undefined,
+      loteId:(mmVaAPendientes(c)&&c.loteId)?Number(c.loteId):undefined
     }));
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'merma_lote',payload:{items:items,motivo:mmState.motivo,responsable:mmState.resp}})});
     const j=await res.json();

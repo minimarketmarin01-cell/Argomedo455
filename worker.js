@@ -3872,7 +3872,7 @@ async function accionRevisarLote(env, payload) {
               `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable, cantidad)
                VALUES (?,?,?,?,?,?,?,?,?,?)`,
               fechaHoraDDMMAAAA(), "retiro_vencimiento", row.sku, row.producto, row.categoria, it.id_loyverse, res.despues,
-              "Retiro por vencimiento (pendiente de cambio): -" + cantidadRetirada + " " + row.unidad + " (" + res.antes + " → " + res.despues + ")",
+              (payload.motivoTexto || "Retiro por vencimiento (pendiente de cambio)") + ": -" + cantidadRetirada + " " + row.unidad + " (" + res.antes + " → " + res.despues + ")",
               responsable, cantidadRetirada);
           } else {
             out.avisoStock = "⚠️ No se pudo descontar el stock en Loyverse (" + res.motivo + "). Revísalo a mano.";
@@ -4966,7 +4966,21 @@ async function accionMermaLote(env, payload) {
     if (aPendientesPosible && it.origen !== "vencimiento") {
       const prod = await get(env, "SELECT categoria FROM productos WHERE sku = ?", String(it.sku || "").trim());
       if (prod && vidaUtilCat(prod.categoria, tablaVida).tipo === "cambio") {
-        const r = await accionDanadoAPendientes(env, { sku: it.sku, cantidad: it.cantidad, responsable: payload.responsable });
+        // Si se indicó de qué lote salen las unidades dañadas, se retiran de ESE lote (parte el lote: lo dañado queda Retirado y el
+        // resto sigue abierto); si hay más dañadas que unidades en el lote, el sobrante va como lote aparte. Sin lote, se crea uno nuevo.
+        let r;
+        const lote = it.loteId ? await get(env, "SELECT * FROM vencimientos WHERE id = ?", Number(it.loteId)) : null;
+        if (lote && String(lote.sku) === String(it.sku) && !["Revisado", "Retirado", "Cambiado", "Descuento recibido", "Desechado"].includes(lote.estado)) {
+          const k = Number(it.cantidad), enLote = Number(lote.cantidad) || 0, dentro = Math.min(k, enLote);
+          const r1 = await accionRevisarLote(env, { filaIndex: lote.id, resultado: "retirado", cantidad: dentro,
+            revisadoPor: payload.responsable || "", motivoTexto: "Dañado (pendiente de cambio)" });
+          const r2 = k > dentro ? await accionDanadoAPendientes(env, { sku: it.sku, cantidad: k - dentro, responsable: payload.responsable }) : null;
+          r = { filaIndex: lote.id, sku: it.sku, nombre: r1.nombre, categoria: r1.categoria, unidad: r1.unidad, cantidad: k, costoTotal: 0,
+            aPendientes: true, estado: "Retirado", loteDescontado: lote.id,
+            nuevoStock: (r2 && r2.nuevoStock != null) ? r2.nuevoStock : r1.nuevoStock, avisoStock: (r2 && r2.avisoStock) || r1.avisoStock };
+        } else {
+          r = await accionDanadoAPendientes(env, { sku: it.sku, cantidad: it.cantidad, responsable: payload.responsable });
+        }
         n++; nPend++; filas.push(r);
         if (r.avisoStock) avisoStock = r.avisoStock;
         continue;
@@ -6379,6 +6393,16 @@ const _servidor = {
         const limite = url.searchParams.get("limite") || "";
         const resultado = await repHistorialPrestamos(env, Number(limite) || undefined);
         return json({ ok: true, ...resultado });
+      }
+
+      // GET /?action=lotes_abiertos&sku=… → lotes todavía abiertos de un producto (más nuevo primero), para elegir
+      // de cuál salen las unidades dañadas en Merma.
+      if (action === "lotes_abiertos") {
+        const sku = String(url.searchParams.get("sku") || "").trim();
+        const { results: filas } = await env.DB.prepare(
+          "SELECT id, cantidad, fecha_vencimiento, fecha_ingreso, estado FROM vencimientos WHERE sku = ? " +
+          "AND estado NOT IN ('Revisado','Retirado','Cambiado','Descuento recibido','Desechado') AND COALESCE(descuento_activo,0) = 0 ORDER BY id DESC").bind(sku).all();
+        return json({ ok: true, lotes: filas.map(f => ({ filaIndex: f.id, cantidad: f.cantidad, fechaVencimiento: f.fecha_vencimiento, fechaIngreso: f.fecha_ingreso, estado: f.estado })) });
       }
 
       // POST { action:'registrar_prestamo', payload:{sku,direccion,cantidad,costoManual,responsable,nota} }
