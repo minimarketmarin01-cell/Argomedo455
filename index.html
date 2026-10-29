@@ -3052,6 +3052,10 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
                 </div>
               </div>
               <div class="cat" id="rc-stock-total-hint" style="margin-top:5px"></div>
+              <div id="rc-danadas-box" class="hidden" style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;border:1.5px solid var(--rojo,#C62828);border-radius:9px;background:var(--rojo-bg,#FBEDED)">
+                <label for="rc-danadas" style="font-size:13px;font-weight:700;color:var(--rojo,#C62828);flex:1">⚠️ ¿Cuántas llegaron dañadas?<span style="display:block;font-weight:400;font-size:11px;color:var(--muted)">Van directo a Pendientes para cambio</span></label>
+                <input id="rc-danadas" inputmode="numeric" placeholder="0" autocomplete="off" style="width:64px;height:38px;text-align:center;font-size:16px;border:1.5px solid var(--line);border-radius:9px;background:#fff">
+              </div>
             </div>
           </section>
 
@@ -5505,7 +5509,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.8';
+const APP_VERSION='2026-10-28.9';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14495,6 +14499,7 @@ document.getElementById('rc-nombre-guardar').onclick=async()=>{
   }
 };
 function rcValidar(){
+  try{const caja=document.getElementById('rc-danadas-box');if(caja)caja.classList.toggle('hidden',!(rcState.item&&esCategoriaCambio(rcState.item.prov)));}catch(e){}
   const btn=document.getElementById('rc-guardar');
   if(rcGuardando)return; // no tocar disabled/texto mientras hay un guardado en curso
   if(!rcState.item){btn.disabled=true;return;}
@@ -14573,6 +14578,7 @@ function rcReset(){
   document.getElementById('rc-cantidad-field').classList.remove('hidden');
   document.getElementById('rc-sin-track-msg').classList.add('hidden');
   const cIn=document.getElementById('rc-cantidad');cIn.value='';cIn.disabled=true;cIn.placeholder='0';
+  {const dn=document.getElementById('rc-danadas');if(dn)dn.value='';}
   document.getElementById('rc-unidad').textContent='u';
   document.getElementById('rc-fecha').value='';
   document.getElementById('rc-fecha-dd').value='';
@@ -14962,6 +14968,7 @@ document.getElementById('rc-qty-mas').onclick=rcQtyMas;
     btn.addEventListener('pointercancel',detenerHold);
   });
 })();
+{const dn=document.getElementById('rc-danadas');if(dn)dn.oninput=()=>{rcValidar();};}
 document.getElementById('rc-cantidad').oninput=()=>{rcValidar();rcSincronizarCostoPresentacion();rcRenderResumen();rcRecalcularCostoConModo();};
 document.getElementById('rc-fecha').oninput=()=>{rcValidar();rcGuardarBorrador();};
 
@@ -15208,6 +15215,10 @@ document.getElementById('rc-guardar').onclick=async()=>{
   const cantidad=(rcState.modo==='caja'&&uCaja>0)?(cantIngresada*uCaja):cantIngresada;
   if(cantidad<0){showToast('Cantidad inválida');return;}
   const fecha=fmtDateInputToDDMMAAAA(document.getElementById('rc-fecha').value);
+  // Unidades que llegaron dañadas (solo proveedores con cambio): se reciben y de inmediato se retiran a Pendientes (ver más abajo).
+  const danadas=Math.round(Number((document.getElementById('rc-danadas')||{}).value)||0);
+  if(danadas<0||danadas>cantidad){showToast('Las dañadas no pueden ser más que las recibidas ('+fmt1(cantidad)+')','error');return;}
+  if(danadas>0&&!fecha){showToast('Para mandar las dañadas a Pendientes carga la fecha de vencimiento','error');const cf=document.getElementById('rc-fecha-dd');if(cf){cf.focus();cf.scrollIntoView({block:'center',behavior:'smooth'});}return;}
   // Requisito (portado de Marín 376): los proveedores que manejan vencimiento (misma lista
   // CATEGORIAS_CAMBIO que ya usa Vencimientos/San Jorge/Ideal/Pan Castaño) no pueden quedar sin
   // fecha cargada — reportado un caso real: un producto de San Jorge se recibió sin fecha y se
@@ -15227,7 +15238,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
   // accidentales (doble tap sin querer) que sumaban stock de más. Solo se pregunta cuando
   // realmente va a sumar stock (cantidad>0) — guardar solo precio/costo/proveedor/sector
   // (cantidad=0, ver más abajo) no toca stock y no tiene ese riesgo.
-  if(cantidad>0&&!await dlgConfirm('¿Confirmar recepción en '+LOCAL_NOMBRE+' de '+fmt1(cantidad)+' '+(it.peso?'kg':'u')+' de "'+it.nombre+'"?\n\nEl stock quedará en '+fmt1(Math.max(0,Number(it.stock)||0)+cantidad)+'.'))return;
+  if(cantidad>0&&!await dlgConfirm('¿Confirmar recepción en '+LOCAL_NOMBRE+' de '+fmt1(cantidad)+' '+(it.peso?'kg':'u')+' de "'+it.nombre+'"?'+(danadas>0?'\n\n⚠️ '+fmt1(danadas)+' llegaron dañadas: se reciben y pasan a Pendientes para cambio.':'')+'\n\nEl stock quedará en '+fmt1(Math.max(0,Number(it.stock)||0)+cantidad-danadas)+'.'))return;
   const provInput=(document.getElementById('rc-prov-input').value||'').trim().toUpperCase();
   const provActual=(it.prov&&it.prov!=='SIN PROVEEDOR')?it.prov:'';
   const provCambio=provInput!==provActual;
@@ -15277,6 +15288,20 @@ document.getElementById('rc-guardar').onclick=async()=>{
         if(j.fila.sectorAplicado!=null)itLocal.sector=j.fila.sectorAplicado;
         persist();
       }
+      // Dañadas: el lote ya está creado y el stock sumado; se retiran de inmediato (misma acción que el botón "Retirar" de Vencimientos:
+      // parte el lote, descuenta el stock y deja esas unidades en Pendientes esperando el cambio del proveedor).
+      let msgDan='',falloDan=false;
+      if(danadas>0&&j.fila&&j.fila.filaIndex!=null){
+        try{
+          const r2=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'revisar_lote',payload:{filaIndex:j.fila.filaIndex,revisadoPor:'',resultado:'retirado',cantidad:danadas}})});
+          const j2=await r2.json();
+          if(j2&&j2.ok){
+            if(itLocal&&j2.fila&&j2.fila.nuevoStock!=null)itLocal.stock=j2.fila.nuevoStock;
+            persist();
+            msgDan=' · '+fmt1(danadas)+' dañada'+(danadas===1?'':'s')+' enviada'+(danadas===1?'':'s')+' a Pendientes';
+          }else{falloDan=true;msgDan=' · ⚠️ NO se pudieron enviar las '+fmt1(danadas)+' dañadas a Pendientes ('+((j2&&j2.error)||'error')+'): retíralas desde Vencimientos';}
+        }catch(e){falloDan=true;msgDan=' · ⚠️ NO se pudieron enviar las '+fmt1(danadas)+' dañadas a Pendientes (sin conexión): retíralas desde Vencimientos';}
+      }
       // La mercadería ya llegó — quita el aviso "ya pedido" para que el resumen de
       // "Proveedores de hoy" deje de mostrarlo como pendiente dentro de esta misma sesión
       // (mismo criterio que ya usa el flujo de factura escaneada).
@@ -15296,7 +15321,8 @@ document.getElementById('rc-guardar').onclick=async()=>{
       sonidoGuardado();
       // Verde: se guardó bien. Rojo: el stock no se sumó (la recepción NO quedó guardada o hay que revisar el stock). Naranja: se guardó, pero algo menor falló (p. ej. costo/precio).
       const tipoMsg=j.fila.avisoStock?(/NO quedó guardada|sumar el stock|no respondió a tiempo/i.test(j.fila.avisoStock)?'error':'aviso'):'ok';
-      showToast(msg,tipoMsg);
+      msg+=msgDan;
+      showToast(msg,falloDan?'error':tipoMsg);
       // No cerramos: reseteamos y dejamos la ventana lista para el siguiente producto,
       // así puedes recibir varios seguidos sin tener que reabrir Recepción.
       // Si mientras se guardaba ya empezaste con OTRO producto, no se borra lo que escribiste: solo se
