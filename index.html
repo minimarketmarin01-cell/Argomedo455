@@ -4360,13 +4360,15 @@ function analyze(it){const rate=rateOf(it),tracked=it.track&&it.stock!=null,esCa
   else if(bas){cov=stock/bas.d;
     if(stock<=bas.rop){status='urgente';sug=roundPack(Math.max(0,bas.target-stock),M);}
     else if(stock<bas.target){status='pedir';sug=roundPack(Math.max(0,bas.target-stock),M);}
-    else if(stock>bas.target*2.5){status='sobre';sug=0;}else{status='ok';sug=0;}
-    if(stock<=0&&(it.u90||0)>=BASICOS_PISO_VENTAS_90){status='urgente';sug=Math.max(sug,roundPack(1,M));}}   // piso: nunca se queda fuera del pedido
+    else if(stock>bas.target*2.5){status='sobre';sug=0;}else{status='ok';sug=0;}}
   else{cov=rate>0?stock/rate:(stock>0?Infinity:0);
     if(rate<=0){status=stock>0?'sobre':'ok';sug=0;}
     else if(stock<=0||cov<lead){status='urgente';sug=roundPack(Math.max(0,target-stock),M);}
     else if(cov<lead+cover){status='pedir';sug=roundPack(Math.max(0,target-stock),M);}
     else if(cov>(lead+cover)*2.5){status='sobre';sug=0;}else{status='ok';sug=0;}}
+  // Piso (todo el catálogo con stock controlado): con stock 0 y 8+ ventas en 90 días el producto siempre entra al pedido, mínimo 1.
+  // Sin esto, un producto agotado deja de venderse, su tasa de 7 días cae a cero y el sugerido desaparece justo cuando falta.
+  if(tracked&&stock<=0&&(it.u90||0)>=BASICOS_PISO_VENTAS_90){status='urgente';sug=Math.max(sug,roundPack(1,M));}
   // 'vencido' (total "para cambio", vencidoDe+retiradoDe) sigue siendo el número informativo del
   // badge "Cambio: -N" — eso no cambia. 'vencidoNoDescontadoAun' es SOLO la porción que Loyverse
   // todavía no refleja (estado='Vencido', sin retirar de la góndola todavía): la porción ya
@@ -5503,7 +5505,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.6';
+const APP_VERSION='2026-10-28.7';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
