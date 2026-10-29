@@ -1993,6 +1993,9 @@ html.carrito-fijo #cp-ov .mm-card,html.carrito-fijo #ed-ov .mm-card{
    en mayúsculas, campos planos con línea inferior y etiqueta pequeña arriba, secciones blancas
    separadas por una franja gris, títulos de sección en verde, botones rectangulares.
    TODO escopado a esos ids: no cambia ids, textos ni lógica, y el resto de la app queda igual. */
+/* Los diálogos chicos (precio, nombre, Corregir stock) no entran en el estilo Loyverse de arriba, pero sus botones usan las mismas variables
+   --lv: sin definirlas, el fondo del botón quedaba sin color y 'Guardar stock' se veía como una caja blanca vacía (texto blanco sobre blanco). */
+#pv-ov,#rn-ov,#stk-ov{--lv:#4CAF50;--lv-d:#388E3C;--lv-txt:#212121;--lv-sub:#757575;--lv-line:#BDBDBD;--lv-gris:#F2F2F2}
 :is(.mm-ov:not(#pv-ov):not(#rn-ov):not(#stk-ov),#__lv){
   --lv:#4CAF50;--lv-d:#388E3C;--lv-txt:#212121;--lv-sub:#757575;--lv-line:#BDBDBD;--lv-gris:#F2F2F2;
   padding:0;align-items:stretch;background:#fff;font-family:Roboto,'Segoe UI',system-ui,sans-serif;color:var(--lv-txt)
@@ -5500,7 +5503,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.4';
+const APP_VERSION='2026-10-28.5';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
