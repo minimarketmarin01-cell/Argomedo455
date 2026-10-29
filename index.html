@@ -2966,6 +2966,7 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
 
         <div class="seg" id="rc-modo-seg" style="width:100%;margin-bottom:10px">
           <button type="button" class="active" data-modo="recibir" style="flex:1">Recibir</button>
+          <button type="button" id="rc-pend-tab" style="flex:1">📥 Pedidos <span id="rc-pend-n"></span></button>
           <button type="button" data-modo="ajustar" style="flex:1">Ajustar stock</button>
         </div>
 
@@ -2973,7 +2974,6 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
           <section class="mm-section mm-section--bare">
             <div class="mm-section-head"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1 0-2 .9-2 2v3.01c0 .72.43 1.34 1 1.69V20c0 1.1 1.1 2 2 2h14c.9 0 2-.9 2-2V8.7c.57-.35 1-.97 1-1.69V4c0-1.1-1-2-2-2zm-5 12H9v-2h6v2zm5-7H4V4l16-.02V7z"/></svg>Producto</div>
             <div class="provday" id="rc-pend-wrap" style="margin-bottom:10px;padding:0;background:none;border:none;box-shadow:none">
-              <div class="pd-mod-hdr" id="rc-pend-hdr" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card,#fff)"><span class="pd-mod-title" style="font-size:14px">📥 Pedidos por recibir <span id="rc-pend-n" class="cat"></span></span><span class="pd-prov-caret" id="rc-pend-caret">▸</span></div>
               <div id="rc-pend" class="hidden" style="max-height:50vh;overflow-y:auto;-webkit-overflow-scrolling:touch;margin-top:6px"></div>
             </div>
             <div class="mm-field" style="margin-bottom:8px">
@@ -5500,7 +5500,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.3';
+const APP_VERSION='2026-10-28.4';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14592,6 +14592,7 @@ function rcReset(){
 // reinicia la búsqueda, solo qué bloque de campos se muestra debajo.
 function rcSetModoPantalla(modo){
   rcModoPantalla=modo;
+  try{rcPendPlegar(true);}catch(e){}
   document.querySelectorAll('#rc-modo-seg button').forEach(b=>b.classList.toggle('active',b.dataset.modo===modo));
   document.getElementById('rc-titulo').textContent=modo==='ajustar'?'Ajustar stock':'Recibir mercadería';
   rcAplicarVisibilidad();
@@ -14616,8 +14617,13 @@ function rcAplicarVisibilidad(){
   }
 }
 document.querySelectorAll('#rc-modo-seg button').forEach(btn=>{
+  if(!btn.dataset.modo)return;   // la pestaña de pedidos no cambia de modo: solo abre/pliega la lista
   btn.onclick=()=>rcSetModoPantalla(btn.dataset.modo);
 });
+document.getElementById('rc-pend-tab').onclick=()=>{
+  rcSetModoPantalla('recibir');
+  rcPendPlegar(!document.getElementById('rc-pend').classList.contains('hidden'));
+};
 // Corrige un stock mal ingresado sin pasar por el flujo de "sumar mercadería recibida" —
 // reutiliza exactamente la misma acción de backend que ya usa "Recontar stock" en la Ficha.
 async function rcAjustarGuardar(){
@@ -14671,13 +14677,13 @@ function openRecibir(){
 // casualidad junto a Guardar y descartaba la recepción a medio cargar, mismo criterio que
 // Marín Pedidos). Queda para "Descartar" (tras confirmar) y para el escáner, que cierra y
 // reabre la pantalla alrededor de la cámara.
-// Acordeón: la lista de pedidos por recibir arranca plegada (una sola fila) y se abre al tocarla.
+// La lista de pedidos por recibir sale de la pestaña "📥 Pedidos (N)" de la barra superior: arranca plegada y se abre al tocarla.
 function rcPendPlegar(plegar){
-  const l=document.getElementById('rc-pend'),c=document.getElementById('rc-pend-caret');
+  const l=document.getElementById('rc-pend');
   if(!l)return;
-  l.classList.toggle('hidden',!!plegar);if(c)c.textContent=plegar?'▸':'▾';
+  l.classList.toggle('hidden',!!plegar);
+  const t=document.getElementById('rc-pend-tab');if(t)t.style.color=plegar?'':'var(--lv-d,#2E7D32)';
 }
-document.getElementById('rc-pend-hdr').onclick=()=>rcPendPlegar(!document.getElementById('rc-pend').classList.contains('hidden'));
 function closeRecibir(){
   rcReset();
   rcLimpiarBorrador(); // se canceló a propósito — un F5 después no debe revivir este borrador
