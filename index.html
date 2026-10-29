@@ -5503,7 +5503,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.5';
+const APP_VERSION='2026-10-28.6';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14862,10 +14862,13 @@ document.getElementById('rc-search').oninput=e=>{
   }
 };
 document.getElementById('rc-lx').onclick=()=>{
-  const inp=document.getElementById('rc-search');
-  inp.value='';
-  inp.dispatchEvent(new Event('input',{bubbles:true}));
-  inp.focus();
+  // La X deja la recepción en blanco de verdad: además de vaciar el buscador, quita el producto elegido y borra el borrador guardado,
+  // para que al volver a abrir Recepción no reaparezca el producto de antes. Se mantiene la pestaña en la que estabas (Recibir/Ajustar).
+  const modo=rcModoPantalla;
+  rcReset();
+  rcLimpiarBorrador();
+  try{rcSetModoPantalla(modo);}catch(e){}
+  document.getElementById('rc-search').focus();
 };
 document.getElementById('rc-scan').onclick=()=>{
   const reopen=()=>{document.getElementById('rc-ov').classList.remove('hidden');};
