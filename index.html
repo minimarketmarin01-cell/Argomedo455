@@ -1504,6 +1504,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
 .toast{position:fixed;bottom:92px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:10px;font-weight:500;font-size:14px;box-shadow:0 8px 30px rgba(0,0,0,.25);transition:.3s;z-index:260;opacity:0;max-width:90vw;text-align:center;pointer-events:none}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 /* Con el teclado abierto el aviso de abajo quedaba tapado: mientras se escribe en una casilla, sale arriba (bajo la cabecera). */
+.mas-oculto{display:none!important}
 .toast.ok{background:#2E7D32}
 .toast.error{background:#C62828}
 .toast.aviso{background:#E65100}
@@ -2971,6 +2972,10 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
         <div class="mm-sections">
           <section class="mm-section mm-section--bare">
             <div class="mm-section-head"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1 0-2 .9-2 2v3.01c0 .72.43 1.34 1 1.69V20c0 1.1 1.1 2 2 2h14c.9 0 2-.9 2-2V8.7c.57-.35 1-.97 1-1.69V4c0-1.1-1-2-2-2zm-5 12H9v-2h6v2zm5-7H4V4l16-.02V7z"/></svg>Producto</div>
+            <div class="provday" id="rc-pend-wrap" style="margin-bottom:12px">
+              <div class="pd-mod-hdr" id="rc-pend-hdr" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between"><span class="pd-mod-title">📥 Pedidos por recibir <span id="rc-pend-n" class="cat"></span></span><span class="pd-prov-caret" id="rc-pend-caret">▾</span></div>
+              <div id="rc-pend" style="max-height:42vh;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
+            </div>
             <div class="mm-field" style="margin-bottom:8px">
               <div class="mm-search">
                 <input id="rc-search" placeholder="Buscar por nombre, REF o código…" autocomplete="off" style="padding-right:132px">
@@ -3222,6 +3227,11 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
     <div class="mm-head"><h3><svg width="18" height="18" viewBox="0 0 24 24" class="mm-head-ic" fill="currentColor"><path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>Más</h3></div>
     <div class="mm-topbar"><button class="loadbtn" id="mas-cerrar" style="width:100%">Cerrar</button></div>
     <div class="mm-body">
+      <div class="mas-buscar" style="position:sticky;top:0;z-index:5;background:var(--paper,#fff);padding:2px 0 10px;margin-top:-2px">
+        <div class="mm-search"><input id="mas-buscar" type="search" placeholder="Buscar una función… (ej. merma, fiados, etiquetas)" autocomplete="off" style="padding-right:40px">
+          <button class="mm-x" id="mas-buscar-x" type="button" aria-label="Limpiar" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
+        <div id="mas-buscar-vacio" class="cat hidden" style="margin-top:8px;text-align:center">Ninguna función coincide con tu búsqueda.</div>
+      </div>
       <div class="mas-grp hidden" id="mas-pos">
         <div class="mas-grp-head" style="cursor:default"><span class="mas-grp-t"><span class="ic">📲</span> App del POS</span></div>
         <div style="padding:4px 14px 14px">
@@ -4321,8 +4331,34 @@ function retiradoDe(it){return RETIRADOS_POR_SKU[it.ref]||0;}
 // Las unidades vencidas aún sin retirar (vencidoDe) salen de la CANTIDAD ORIGINAL del lote, que no baja con las ventas: si el lote
 // era de 10 y hoy quedan 2 en el estante, no hay 10 para cambiar sino 2. Por eso en productos con control de stock se limita a
 // lo que realmente hay (nunca más que el stock). Antes mostraba "STK -10 / Cambio: -10" con 2 unidades reales.
+// Reposición por fórmula (punto de reposición + stock de seguridad) para TODO el pan de Ideal y de Pan Castaño (sector PANADERÍA;
+// los dulces, tortillas y snacks de esos proveedores siguen con el cálculo general). El cálculo general usa las ventas de los
+// últimos 7 días: un pan agotado vende cero, su tasa cae a cero y el sugerido desaparece justo cuando más falta hace (pasó con el
+// pan blanco de Ideal: agotado el 18/10 y sin sugerencia). Acá la demanda diaria es la mayor entre ventas de 30 y de 90 días, el
+// objetivo cubre plazo de entrega + ciclo entre pedidos y suma un colchón del 95 % (1,65 × raíz de la demanda del período).
+// Ambos proveedores cambian el producto vencido o con moho, así que sobrar cuesta poco al lado de quedarse sin pan.
+// lead = días entre pedir y recibir; ciclo = días entre pedidos. Ideal: se pide el jueves y llega el lunes (4 días), pedido
+// semanal. Pan Castaño: se pide el miércoles y llega el jueves (se usa 2 por seguridad), visita cada ~15 días.
+// No resta "lo ya pedido" (decisión del dueño). Stock negativo cuenta como 0 (analyze ya lo recorta).
+const BASICOS_REPOSICION={'IDEAL':{lead:4,ciclo:7},'PAN CASTAÑO':{lead:2,ciclo:15}};
+const BASICOS_MIN_VENTAS_90=4;     // con menos ventas en 90 días no se aplica la fórmula (productos casi sin rotación generan vencidos)
+const BASICOS_PISO_VENTAS_90=8;    // stock 0 y esta rotación o más: siempre entra al pedido
+function formulaBasico(it){
+  const cfg=BASICOS_REPOSICION[String(it.proveedorNombre||it.prov||'').toUpperCase()];
+  if(!cfg||it.sector!=='PANADERIA'||(it.u90||0)<BASICOS_MIN_VENTAS_90)return null;
+  const d=Math.max((it.u30||0)/30,(it.u90||0)/90);
+  if(!(d>0))return null;
+  const base=d*(cfg.lead+cfg.ciclo),colchon=1.65*Math.sqrt(base);
+  return{d,rop:d*cfg.lead+colchon,target:base+colchon};
+}
 function analyze(it){const rate=rateOf(it),tracked=it.track&&it.stock!=null,esCambio=esCategoriaCambio(it.prov),vencidoResta=esCambio?(tracked?Math.min(vencidoDe(it),Math.max(0,it.stock)):vencidoDe(it)):0,paraCambioTotal=esCambio?(vencidoResta+retiradoDe(it)):0,stock=tracked?Math.max(0,it.stock-vencidoResta):it.stock,lead=state.lead,cover=state.cover;const target=rate*(lead+cover);let cov=null,status,sug=0;const M=multOf(it);
+  const bas=tracked?formulaBasico(it):null;
   if(!tracked){status='sinstock';sug=rate>0?roundPack(target,M):0;}
+  else if(bas){cov=stock/bas.d;
+    if(stock<=bas.rop){status='urgente';sug=roundPack(Math.max(0,bas.target-stock),M);}
+    else if(stock<bas.target){status='pedir';sug=roundPack(Math.max(0,bas.target-stock),M);}
+    else if(stock>bas.target*2.5){status='sobre';sug=0;}else{status='ok';sug=0;}
+    if(stock<=0&&(it.u90||0)>=BASICOS_PISO_VENTAS_90){status='urgente';sug=Math.max(sug,roundPack(1,M));}}   // piso: nunca se queda fuera del pedido
   else{cov=rate>0?stock/rate:(stock>0?Infinity:0);
     if(rate<=0){status=stock>0?'sobre':'ok';sug=0;}
     else if(stock<=0||cov<lead){status='urgente';sug=roundPack(Math.max(0,target-stock),M);}
@@ -5464,7 +5500,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.1';
+const APP_VERSION='2026-10-28.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14023,6 +14059,46 @@ async function prCorregirDireccion(id,btn,direccionActual,sku,cantidad,costoUnit
   }catch(e){showToast('Error de conexión al corregir');btn.disabled=false;}
 }
 
+// ===================== BUSCADOR DE FUNCIONES EN "MÁS" =====================
+// Filtra los botones de todos los grupos de Más mientras se escribe (sin tildes ni mayúsculas, cada palabra debe aparecer).
+// Con texto, los grupos se abren solos y se esconden los vacíos; al borrar, cada grupo vuelve a como estaba.
+(function(){
+  const inp=document.getElementById('mas-buscar'),x=document.getElementById('mas-buscar-x'),vacio=document.getElementById('mas-buscar-vacio'),ov=document.getElementById('mas-ov');
+  if(!inp||!ov)return;
+  const guardado=new Map();   // cuerpo de grupo -> estaba plegado antes de buscar
+  function filtrar(){
+    const palabras=normTxt(inp.value||'').split(/\s+/).filter(Boolean);
+    x.style.display=palabras.length?'block':'none';
+    const grupos=ov.querySelectorAll('.mas-grp');
+    let total=0;
+    grupos.forEach(g=>{
+      const cuerpo=g.querySelector('.mas-grp-body');
+      const botones=cuerpo?cuerpo.querySelectorAll('button'):[];
+      if(!palabras.length){
+        botones.forEach(b=>b.classList.remove('mas-oculto'));
+        g.classList.remove('mas-oculto');
+        if(cuerpo&&guardado.has(cuerpo)){cuerpo.classList.toggle('collapsed',guardado.get(cuerpo));guardado.delete(cuerpo);}
+        return;
+      }
+      if(!cuerpo){g.classList.add('mas-oculto');return;}   // grupos sin botones de función (p. ej. info del POS): se esconden al buscar
+      if(!guardado.has(cuerpo))guardado.set(cuerpo,cuerpo.classList.contains('collapsed'));
+      let n=0;
+      botones.forEach(b=>{
+        const ok=palabras.every(p=>normTxt(b.textContent+' '+(b.title||'')).includes(p));
+        b.classList.toggle('mas-oculto',!ok);if(ok)n++;
+      });
+      g.classList.toggle('mas-oculto',!n);
+      if(n)cuerpo.classList.remove('collapsed');
+      total+=n;
+    });
+    vacio.classList.toggle('hidden',!palabras.length||total>0);
+  }
+  inp.addEventListener('input',filtrar);
+  x.onclick=()=>{inp.value='';filtrar();inp.focus();};
+  // Al abrir Más, el buscador arranca vacío
+  new MutationObserver(()=>{if(!ov.classList.contains('hidden')&&inp.value){inp.value='';filtrar();}}).observe(ov,{attributes:true,attributeFilter:['class']});
+})();
+
 // ===================== RECIBIR MERCADERÍA =====================
 const rcState={item:null,costoOriginal:0,precioOriginal:0,costoBaseline:0,precioBaseline:0,precioTocado:false,margenTocado:false,modo:'unidad',ivaModo:'con',precioPreview:null,redondeo:'none'};
 // true mientras rc-guardar (cualquiera de sus 2 ramas) tiene un POST en vuelo — evita que
@@ -14581,6 +14657,7 @@ document.getElementById('rc-ajustar-guardar').onclick=rcAjustarGuardar;
 // atrás); si no hay nada guardado, se comporta exactamente igual que antes (formulario limpio).
 function openRecibir(){
   try{rcReset();}catch(e){}
+  try{renderRecepcionarHoy('rc-pend');}catch(e){}
   abrirModal('rc-ov');
   try{const d=rcCargarBorrador();if(d)rcAplicarBorrador(d);}catch(e){}
 }
@@ -14593,6 +14670,10 @@ function openRecibir(){
 // casualidad junto a Guardar y descartaba la recepción a medio cargar, mismo criterio que
 // Marín Pedidos). Queda para "Descartar" (tras confirmar) y para el escáner, que cierra y
 // reabre la pantalla alrededor de la cámara.
+document.getElementById('rc-pend-hdr').onclick=()=>{
+  const l=document.getElementById('rc-pend'),c=document.getElementById('rc-pend-caret');
+  const oculto=l.classList.toggle('hidden');c.textContent=oculto?'▸':'▾';
+};
 function closeRecibir(){
   rcReset();
   rcLimpiarBorrador(); // se canceló a propósito — un F5 después no debe revivir este borrador
@@ -17110,9 +17191,13 @@ function itemsPendientesPorProveedorHastaHoy(proveedor){
     .filter(p=>p&&_proveedorRealDePendiente(p)===proveedor&&p.estado!=='recibido'&&p.estado!=='incompleto'&&p.fecha_llegada_estimada&&p.fecha_llegada_estimada<=hoyISO)
     .sort((a,b)=>String(a.nombre||'').localeCompare(String(b.nombre||''),'es'));
 }
-function renderRecepcionarHoy(){
-  const el=document.getElementById('provday-recep'); if(!el)return;
+function renderRecepcionarHoy(elId){
+  // Se dibuja en dos lugares con el mismo contenido: Inicio ('provday-recep') y arriba de Recepción ('rc-pend', con TODOS los pedidos
+  // pendientes: de hoy y atrasados). En Recepción, tocar un producto lo deja cargado en el formulario de Recibir (no hay que abrir nada).
+  const el=document.getElementById(elId||'provday-recep'); if(!el)return;
+  const enRecepcion=el.id==='rc-pend';
   const filas=calcularRecepcionarHoy();
+  if(enRecepcion){const n=document.getElementById('rc-pend-n');if(n)n.textContent=filas.length?'('+filas.length+')':'';}
   if(!filas.length){
     el.innerHTML='<div class="pd-empty-row">Nada pendiente de recepcionar por ahora</div>';
     return;
@@ -17138,8 +17223,12 @@ function renderRecepcionarHoy(){
       detalle.innerHTML=btnIncompleto+(items.map(it=>`<div class="pd-prod-row"><span class="pd-prod-nom">${it.nombre||it.sku}</span><span class="pd-prod-cant">${fmt.format(it.cantidad||0)} u · ${peso(it.costo_total||0)} <button class="pd-recep-btn" data-sku="${it.sku}" style="margin-left:6px;font-size:12px;font-weight:700;color:var(--cielo-d,#1a73e8);background:none;border:none;cursor:pointer">Recibir</button></span></div>`).join('')
         ||'<div class="pd-empty-row">Sin detalle disponible</div>');
       detalle.querySelectorAll('.pd-recep-btn').forEach(b=>{
-        b.onclick=(ev)=>{ev.stopPropagation();cerrarOverlays();openRecibir();try{rcPick(b.dataset.sku);}catch(e){}};
+        b.onclick=(ev)=>{
+          ev.stopPropagation();
+          if(enRecepcion){try{rcPick(b.dataset.sku);}catch(e){} const bs=document.getElementById('rc-search');if(bs&&bs.scrollIntoView)bs.scrollIntoView({block:'center'});return;}
+          cerrarOverlays();openRecibir();try{rcPick(b.dataset.sku);}catch(e){}};
       });
+      if(enRecepcion)detalle.querySelectorAll('.pd-prod-row').forEach(r=>{const b=r.querySelector('.pd-recep-btn');if(b){r.style.cursor='pointer';r.onclick=()=>b.click();}});
       const btnInc=detalle.querySelector('.pd-incompleto-btn');
       if(btnInc)btnInc.onclick=async(ev)=>{
         ev.stopPropagation();
@@ -17160,6 +17249,7 @@ function renderRecepcionarHoy(){
 function refrescarProveedoresHoy(){
   try{renderProvDay();}catch(e){}
   try{renderRecepcionarHoy();}catch(e){}
+  try{renderRecepcionarHoy('rc-pend');}catch(e){}
 }
 {
   const provdayFecha=document.getElementById('provday-fecha');
