@@ -845,6 +845,16 @@ html.modo-bliss .fila-row,html.modo-bliss .row-urgent .fila-row,html.modo-bliss 
 .in-cart-row .qtyrow input{width:70px;padding:6px 8px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:'JetBrains Mono';text-align:center}
 .in-cart-row .unidad{font-size:12px;color:var(--muted)}
 .in-cart-row .costo-warn{width:100%;margin-top:6px;padding:7px 9px;border:1.5px solid var(--rojo);border-radius:8px;font-size:12px;font-family:'JetBrains Mono'}
+.mm-ticket{background:#fff;border:1.5px dashed var(--line);border-radius:10px;padding:2px 10px}
+.mm-ticket .in-cart-row{display:grid;grid-template-columns:1fr auto;column-gap:8px;align-items:center;background:none;border:none;border-bottom:1px dashed var(--line);border-radius:0;padding:9px 0;margin:0}
+.mm-ticket .in-cart-row:last-child{border-bottom:none}
+.mm-ticket .in-cart-row .fila-top{grid-column:1/-1}
+.mm-ticket .in-cart-row .qtyrow{margin-top:0;grid-column:2;grid-row:2;gap:5px}
+.mm-ticket .in-cart-row .qtyrow>span:last-child{font-size:13px!important;min-width:64px;text-align:right}
+.mm-ticket .in-cart-row .qtyrow input{width:46px;padding:4px 2px;font-size:15px}
+.mm-ticket .in-cart-row .qbtn{width:34px!important;height:34px!important;min-width:0!important;font-size:18px!important}
+.mm-ticket .in-cart-row>:not(.fila-top):not(.cat):not(.qtyrow){grid-column:1/-1}
+.mm-ticket .in-cart-row .cat{grid-column:1;grid-row:2}
 .in-cart-total{background:var(--paper);border-radius:10px;padding:10px 12px;font-size:14px;display:flex;justify-content:space-between;align-items:center;font-weight:700;margin:10px 0}
 .in-cart-total b{font-family:'JetBrains Mono';font-size:16px}
 .searchx.on{display:block}
@@ -5510,7 +5520,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.10';
+const APP_VERSION='2026-10-28.11';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -11108,14 +11118,18 @@ function mmAdd(ref){
   document.getElementById('mm-search').value='';
   document.getElementById('mm-results').innerHTML='';
   mmRenderCart();
+  const bu=document.getElementById('mm-search');if(bu&&!false)bu.focus();   // seguir cargando uno tras otro
 }
 function mmRemove(ref){mmCart=mmCart.filter(c=>c.ref!==ref);mmRenderCart();}
 function mmCostoUnit(c){return c.coste>0?c.coste:(Number(c.costoManual)||0);}
 function mmRenderCart(){
   const box=document.getElementById('mm-cart');
+  const lbl=box.previousElementSibling;
+  if(lbl)lbl.textContent=mmCart.length?'Lista de merma · '+mmCart.length+(mmCart.length===1?' producto':' productos'):'Lista de merma';
+  box.classList.toggle('mm-ticket',mmCart.length>0);
   if(!mmCart.length){box.innerHTML='<div class="vc-empty">Agrega productos de arriba</div>';}
   else{
-    box.innerHTML=mmCart.map(c=>{
+    box.innerHTML=mmCart.slice().reverse().map(c=>{   // el último agregado arriba, justo debajo del buscador
       const sinCosto=!(c.coste>0);
       return `
       <div class="in-cart-row" data-ref="${c.ref}">
