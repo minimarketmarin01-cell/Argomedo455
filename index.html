@@ -5525,7 +5525,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.12';
+const APP_VERSION='2026-10-28.13';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -6979,16 +6979,10 @@ function fpPaneGeneral(f){
     // que directamente no se ofrece la acción. Nunca copia stock (ver accionCopiarProductoExterno).
     '<div style="margin:-4px 0 14px">'+
       '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Copiar a '+OTRO_LOCAL_NOMBRE+'</div>'+
-      (p.barcode?
-        ('<div style="display:flex;gap:8px">'+
-          '<button type="button" id="fp-copiar-todo" class="loadbtn" style="flex:1">Copiar todo</button>'+
-          '<button type="button" id="fp-copiar-costo-precio" class="loadbtn" style="flex:1">Solo costo y precio</button>'+
-        '</div>')
-        :'<div class="cat">Este producto no tiene código de barras — hace falta para saber si ya existe en '+OTRO_LOCAL_NOMBRE+'.</div>')+
+      '<div id="fp-copiar-cuerpo">'+(p.barcode?fpCopiarBotonesHtml():fpCopiarSinCodigoHtml())+'</div>'+
       '<div id="fp-copiar-res" class="hidden" style="margin-top:8px;font-size:14px;line-height:1.45"></div>'+
     '</div>';
-  { const bt=document.getElementById('fp-copiar-todo'); if(bt)bt.onclick=()=>fpCopiarAOtroLocal(p,'todo'); }
-  { const bc=document.getElementById('fp-copiar-costo-precio'); if(bc)bc.onclick=()=>fpCopiarAOtroLocal(p,'costo_precio'); }
+  fpCablearCopiar(p);
   document.querySelectorAll('#fp-g-nombre,#fp-g-barcode').forEach(el=>el&&el.addEventListener('input',fpGuardarBorrador));
   const stockMinInp=document.getElementById('fp-i-stockmin');
   if(stockMinInp)stockMinInp.addEventListener('input',fpGuardarBorrador);
@@ -7163,7 +7157,109 @@ async function fpGuardarRecuento(sku){
 // producto. modo:'todo' copia nombre/categoría/costo/precio/sigue-inventario/vendido-por-peso;
 // modo:'costo_precio' copia solo costo y precio. El otro local decide crear o actualizar según
 // si ya tiene un producto con ese código de barras — acá solo se muestra el resultado.
-async function fpCopiarAOtroLocal(p,modo){
+// Copiar a otro local: el emparejamiento es por código de barras. Sin código se puede (1) ASIGNAR el producto a uno que ya
+// existe en el otro local (quedan con el mismo código, no se toca ningún precio ni stock) o (2) CREARLO allá con un código
+// interno nuevo, que también queda guardado aquí.
+const _fpEsc=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+function fpCopiarBotonesHtml(){
+  return '<div style="display:flex;gap:8px">'+
+    '<button type="button" id="fp-copiar-todo" class="loadbtn" style="flex:1">Copiar todo</button>'+
+    '<button type="button" id="fp-copiar-costo-precio" class="loadbtn" style="flex:1">Solo costo y precio</button>'+
+  '</div>';
+}
+function fpCopiarSinCodigoHtml(){
+  return '<div class="cat" style="margin-bottom:8px">Sin código de barras: asígnalo a un producto que ya existe en '+OTRO_LOCAL_NOMBRE+' o créalo allá.</div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button type="button" id="fp-asignar-otro" class="loadbtn" style="flex:1">Asignar a uno existente</button>'+
+      '<button type="button" id="fp-crear-otro" class="loadbtn" style="flex:1">Crear en '+OTRO_LOCAL_NOMBRE+'</button>'+
+    '</div>'+
+    '<div id="fp-asignar-box" class="hidden" style="margin-top:8px"><input id="fp-asignar-q" placeholder="Buscar en '+OTRO_LOCAL_NOMBRE+' por nombre o código…" autocomplete="off" style="width:100%;padding:11px 14px;border:1.5px solid var(--line);border-radius:10px;font-size:14px"><div id="fp-asignar-res" style="margin-top:6px"></div></div>';
+}
+function fpCablearCopiar(p){
+  const bt=document.getElementById('fp-copiar-todo'); if(bt)bt.onclick=()=>fpCopiarAOtroLocal(p,'todo');
+  const bc=document.getElementById('fp-copiar-costo-precio'); if(bc)bc.onclick=()=>fpCopiarAOtroLocal(p,'costo_precio');
+  const ba=document.getElementById('fp-asignar-otro');
+  if(ba)ba.onclick=()=>{const caja=document.getElementById('fp-asignar-box');caja.classList.toggle('hidden');if(!caja.classList.contains('hidden'))document.getElementById('fp-asignar-q').focus();};
+  const bn=document.getElementById('fp-crear-otro'); if(bn)bn.onclick=()=>fpCrearEnOtroLocal(p);
+  const q=document.getElementById('fp-asignar-q');
+  if(q){let t;q.oninput=()=>{clearTimeout(t);t=setTimeout(()=>fpBuscarEnOtroLocal(p,q.value),350);};}
+}
+function fpRepintarCopiar(p){
+  const c=document.getElementById('fp-copiar-cuerpo'); if(!c)return;
+  c.innerHTML=p.barcode?fpCopiarBotonesHtml():fpCopiarSinCodigoHtml();
+  fpCablearCopiar(p);
+}
+// Búsqueda en el otro local (mismo servicio liviano que usa la app de etiquetas) → [{sku,nombre,precio,barcode,categoria,costo}]
+async function fpOtroLocalBuscar(texto){
+  const r=await fetch(OTRO_LOCAL_URL+'?action=buscar_etiquetas&q='+encodeURIComponent(texto));
+  const j=await r.json();
+  return (j&&j.ok&&Array.isArray(j.productos))?j.productos.map(a=>({sku:a[0],nombre:a[1],precio:a[2],barcode:a[3],categoria:a[4],costo:a[6]})):[];
+}
+// Código interno que no exista ni en este local ni en el otro.
+async function fpCodigoLibreEnAmbos(){
+  for(let i=0;i<5;i++){
+    const c=generarCodigoBarrasInterno(); if(!c)return null;
+    const hay=await fpOtroLocalBuscar(c);
+    if(!hay.some(x=>x.barcode===c))return c;
+  }
+  return null;
+}
+// Guarda el código en ESTE local (Loyverse + base) y lo refleja en la ficha abierta.
+async function fpGuardarCodigoLocal(p,codigo){
+  const r=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'editar_codigo_barras',payload:{sku:p.sku,barcode:codigo,responsable:''}})});
+  const j=await r.json();
+  if(!j||!j.ok)throw new Error((j&&j.error)||'No se pudo guardar el código en este local');
+  p.barcode=codigo;
+  const it=(DB.items||[]).find(x=>x.ref===p.sku); if(it)it.barcode=codigo;
+  const inp=document.getElementById('fp-g-barcode'); if(inp)inp.value=codigo;
+}
+async function fpBuscarEnOtroLocal(p,texto){
+  const res=document.getElementById('fp-asignar-res'); if(!res)return;
+  texto=(texto||'').trim();
+  if(texto.length<2){res.innerHTML='';return;}
+  res.innerHTML='<span class="cat">Buscando…</span>';
+  let lista;
+  try{lista=await fpOtroLocalBuscar(texto);}catch(e){res.innerHTML='<span style="color:var(--rojo)">Error de conexión con '+OTRO_LOCAL_NOMBRE+'.</span>';return;}
+  if(!lista.length){res.innerHTML='<span class="cat">Sin resultados en '+OTRO_LOCAL_NOMBRE+'.</span>';return;}
+  lista=lista.slice(0,15);
+  res.innerHTML=lista.map((x,i)=>'<div class="fp-asig-fila" data-i="'+i+'" style="padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer"><div style="font-weight:700;font-size:14px">'+_fpEsc(x.nombre)+'</div><div class="cat">'+_fpEsc(x.categoria)+' · '+peso(x.precio)+' · '+(x.barcode?('código '+_fpEsc(x.barcode)):'sin código')+'</div></div>').join('');
+  res.querySelectorAll('.fp-asig-fila').forEach(el=>el.onclick=()=>fpAsignarAExistente(p,lista[+el.dataset.i]));
+}
+async function fpAsignarAExistente(p,x){
+  const box=document.getElementById('fp-copiar-res'); if(!box)return;
+  if(!await dlgConfirm('¿Asignar "'+p.nombre+'" ('+LOCAL_NOMBRE+') a "'+x.nombre+'" de '+OTRO_LOCAL_NOMBRE+'?\n\nQuedarán con el mismo código de barras'+(x.barcode?' ('+x.barcode+')':' (uno interno nuevo)')+'. No se cambia ningún precio ni stock.'))return;
+  box.classList.remove('hidden');box.innerHTML='<span class="cat">Asignando…</span>';
+  try{
+    let codigo=x.barcode;
+    if(codigo){
+      const otro=(DB.items||[]).find(i=>String(i.barcode||'').trim()===codigo&&i.ref!==p.sku);
+      if(otro)throw new Error('Ese código ya lo usa "'+otro.nombre+'" en este local');
+    }else{
+      codigo=await fpCodigoLibreEnAmbos();
+      if(!codigo)throw new Error('No se pudo generar un código único — intenta de nuevo');
+      const r=await fetch(OTRO_LOCAL_URL,{method:'POST',body:JSON.stringify({action:'editar_codigo_barras',payload:{sku:x.sku,barcode:codigo,responsable:'Asignado desde '+LOCAL_NOMBRE}})});
+      const j=await r.json();
+      if(!j||!j.ok)throw new Error((j&&j.error)||'No se pudo guardar el código en '+OTRO_LOCAL_NOMBRE);
+    }
+    await fpGuardarCodigoLocal(p,codigo);
+    fpRepintarCopiar(p);
+    box.innerHTML='<span style="color:var(--verde);font-weight:700">✅ Asignado: ahora comparten el código '+_fpEsc(codigo)+'. Ya puedes copiar costo y precio.</span>';
+    sonidoGuardado();
+  }catch(e){box.innerHTML='<span style="color:var(--rojo)">'+_fpEsc(e.message)+'</span>';}
+}
+async function fpCrearEnOtroLocal(p){
+  const box=document.getElementById('fp-copiar-res'); if(!box)return;
+  if(!await dlgConfirm('"'+p.nombre+'" no tiene código de barras.\n\nSe le generará un código interno (queda guardado también aquí) y se creará en '+OTRO_LOCAL_NOMBRE+' con su categoría, costo y precio. El stock NUNCA se copia. ¿Seguir?'))return;
+  box.classList.remove('hidden');box.innerHTML='<span class="cat">Generando código…</span>';
+  try{
+    const codigo=await fpCodigoLibreEnAmbos();
+    if(!codigo)throw new Error('No se pudo generar un código único — intenta de nuevo');
+    await fpGuardarCodigoLocal(p,codigo);
+  }catch(e){box.innerHTML='<span style="color:var(--rojo)">'+_fpEsc(e.message)+'</span>';return;}
+  fpRepintarCopiar(p);
+  await fpCopiarAOtroLocal(p,'todo',true);
+}
+async function fpCopiarAOtroLocal(p,modo,sinConfirmar){
   const box=document.getElementById('fp-copiar-res');
   const btnTodo=document.getElementById('fp-copiar-todo'),btnCP=document.getElementById('fp-copiar-costo-precio');
   if(!box)return;
@@ -7171,7 +7267,7 @@ async function fpCopiarAOtroLocal(p,modo){
   const confirmMsg=modo==='todo'
     ?('¿Copiar "'+p.nombre+'" completo a '+OTRO_LOCAL_NOMBRE+'?\n\nSi ya existe allá (mismo código de barras), se actualiza. Si no existe, se crea. Se copia también la imagen (si tiene). El stock NUNCA se copia.')
     :('¿Copiar solo costo y precio de "'+p.nombre+'" a '+OTRO_LOCAL_NOMBRE+'?');
-  if(!await dlgConfirm(confirmMsg))return;
+  if(!sinConfirmar&&!await dlgConfirm(confirmMsg))return;
   box.classList.remove('hidden');
   box.innerHTML='<span class="cat">Enviando a '+OTRO_LOCAL_NOMBRE+'…</span>';
   if(btnTodo)btnTodo.disabled=true; if(btnCP)btnCP.disabled=true;
