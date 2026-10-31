@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#0B1A33">
+<meta name="theme-color" content="#196DA9">
   <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -40,7 +40,7 @@
 
   /* Acción / confirmar (Guardar, carrito, checks). Azul marino de acción, no el
      navy más oscuro de marca, para que el texto blanco encima siga siendo legible. */
-  --wa:#2C5F9E;--wa-d:#1E4E8C;--gold:#8A7A4E;--gold-bg:#F3F0E2;
+  --wa:#218FDE;--wa-d:#176197;--gold:#8A7A4E;--gold-bg:#F3F0E2;
   /* Éxito/confirmado (badge "Liquidado", chip "Principal", KPI destacado) — verde vivo
      DISTINTO de --verde (que es uno de los 5 colores de alerta de stock reservados,
      "saludable"; ver nota más arriba). Sin cambio en el rebrand — es un verde de estado,
@@ -48,20 +48,24 @@
   --exito:#1E7A3E;--exito-bg:#E3F3E8;
 
   /* ===== MARCA =====
-     Azul marino — header, nav, botones primarios, elementos activos. Sin degradados
-     oscuros: la barra superior debe pesar poco. */
-  --marino:#0B1A33;--marino-hi:#16294D;--marino-tint:#EAF1FA;
-  --salvia:#C3D4EA;--salvia-2:#2C5F9E;--salvia-tint:#EAF1FA;
-  --lavanda:#C3D4EA;--lavanda-tint:#EAF1FA;
-  --brand-1:#2C5F9E;--brand-2:#1E4E8C;--brand-3:#0B1A33;--brand-solid:#1E4E8C;
+     Celeste vivo — header, nav, botones primarios, elementos activos. Pedido explícito
+     del dueño (2026-10-31): reemplaza el azul marino oscuro de Fase 1/2 por un celeste
+     igual de vivo que una foto de referencia (botella bebida azul) que mandó. Mismo matiz
+     (H205°) en todos los tonos de abajo, solo cambia la luminosidad — así el header
+     (#196DA9, contraste 5.5:1 con texto blanco) sigue siendo legible sin perder el verse
+     "vivo" que pidió, en vez de quedar oscuro como antes. */
+  --marino:#196DA9;--marino-hi:#1E84CC;--marino-tint:#EDF6FC;
+  --salvia:#AFD7F3;--salvia-2:#218FDE;--salvia-tint:#EDF6FC;
+  --lavanda:#AFD7F3;--lavanda-tint:#EDF6FC;
+  --brand-1:#218FDE;--brand-2:#176197;--brand-3:#196DA9;--brand-solid:#176197;
   --brand-grad:linear-gradient(120deg,var(--brand-1),var(--brand-2));
   --brand-grad-deep:linear-gradient(120deg,var(--brand-2),var(--brand-3));
 
   /* ===== SOMBRAS — todas muy suaves, nada debe verse pesado ===== */
-  --sh-card:0 1px 2px rgba(11,26,51,.04),0 2px 8px rgba(11,26,51,.04);
-  --sh-soft:0 1px 3px rgba(11,26,51,.06);
-  --sh-float:0 4px 14px rgba(11,26,51,.12);
-  --shadow-brand:0 2px 10px rgba(30,78,140,.28);
+  --sh-card:0 1px 2px rgba(25,109,169,.04),0 2px 8px rgba(25,109,169,.04);
+  --sh-soft:0 1px 3px rgba(25,109,169,.06);
+  --sh-float:0 4px 14px rgba(25,109,169,.12);
+  --shadow-brand:0 2px 10px rgba(23,97,151,.28);
 
   --radius-card:18px;--radius-btn:12px;
   /* Escala de radios ya en uso consistente en la práctica (campos de formulario 8-10px,
@@ -72,8 +76,8 @@
      "mínimos cambios estructurales"). */
   --radius-field:9px;--radius-chip:20px;
   --ciruela:#7A6490;--ciruela-hi:#8E76A4;--ciruela-tint:#EEE6F6;
-  --oliva:#2C5F9E;--oliva-hi:#C3D4EA;--oliva-tint:#EAF1FA;
-  --magenta:#7A6490;--focus-ring:0 0 0 3px rgba(30,78,140,.30);
+  --oliva:#218FDE;--oliva-hi:#AFD7F3;--oliva-tint:#EDF6FC;
+  --magenta:#7A6490;--focus-ring:0 0 0 3px rgba(23,97,151,.30);
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -89,10 +93,10 @@ h1,h2,h3{font-family:'Manrope',system-ui,sans-serif}
 .brand .loc{color:#B6C7DE;font-size:12px;font-weight:500}
 .toprt{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 /* Botón secundario: pastel lavanda con sombra muy suave (Catálogo y similares). */
-.loadbtn{display:inline-flex;align-items:center;gap:6px;background:var(--lavanda-tint);border:1px solid #DFD2EC;color:#5A4A6E;border-radius:var(--radius-btn);padding:8px 12px;font-size:12px;font-weight:500;font-family:'Manrope';cursor:pointer;box-shadow:var(--sh-soft)}
-.loadbtn:active{background:#E2D6F0}
+.loadbtn{display:inline-flex;align-items:center;gap:6px;background:var(--lavanda-tint);border:1px solid #CAE4F6;color:#176197;border-radius:var(--radius-btn);padding:8px 12px;font-size:12px;font-weight:500;font-family:'Manrope';cursor:pointer;box-shadow:var(--sh-soft)}
+.loadbtn:active{background:#B9DBF4}
 /* Botón de acción: salvia pastel (Sincronizar, Guardar). */
-.loadbtn.acc{background:var(--salvia);border-color:var(--salvia-2);color:#33422A}
+.loadbtn.acc{background:var(--salvia);border-color:var(--salvia-2);color:#176197}
 .loadbtn.acc:active{background:var(--salvia-2);color:#fff}
 .upd{color:#B6C7DE;font-size:12px;width:100%;margin-top:2px}
 .upd b{color:#c7ccd3}
@@ -124,7 +128,7 @@ h1,h2,h3{font-family:'Manrope',system-ui,sans-serif}
 .legend.sm{gap:8px;margin-top:5px;font-size:12px}
 .legend.sm .ldot{width:6px;height:6px}
 .row-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;flex:none}
-.cart-fab{position:fixed;right:max(14px,env(safe-area-inset-right));bottom:calc(78px + env(safe-area-inset-bottom));z-index:270;width:54px;height:54px;border-radius:50%;background:var(--salvia);color:#3A4A31;border:1px solid var(--salvia-2);font-size:20px;box-shadow:var(--sh-float);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.cart-fab{position:fixed;right:max(14px,env(safe-area-inset-right));bottom:calc(78px + env(safe-area-inset-bottom));z-index:270;width:54px;height:54px;border-radius:50%;background:var(--salvia);color:#176197;border:1px solid var(--salvia-2);font-size:20px;box-shadow:var(--sh-float);cursor:pointer;display:flex;align-items:center;justify-content:center}
 .cart-fab:active{background:var(--wa-d);transform:scale(.96)}
 .cart-fab.fab-oculto{display:none}
 /* Panel del carrito: SIEMPRE montado, se muestra/oculta solo con CSS (transform+opacity+pointer-events)
@@ -284,7 +288,7 @@ html.carrito-fijo #ed-ov .mm-card,html.carrito-fijo #mc-ov .mm-card{
 .mm-body{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 16px 22px;flex:1;min-height:0}
 #vc-list-view,#vc-form-view{display:flex;flex-direction:column;flex:1;min-height:0}
 .mm-head h3{font-family:'Manrope';font-weight:700;font-size:16px;display:flex;align-items:center;gap:9px}
-.mm-head-ic{flex:none;color:var(--brand-2,#1E4E8C)}
+.mm-head-ic{flex:none;color:var(--brand-2,#176197)}
 /* ============ Rediseño visual de "Revisión de vencimientos" ============
    TODO escopado a #vc-ov (o a los ids propios del módulo) para no afectar al resto de los
    modales que comparten .mm-head, .mm-topbar, .mm-card, .seg, .prov-combo, .loadbtn, .vc-mini
@@ -1101,7 +1105,7 @@ input[type=number]{width:64px;font-family:'JetBrains Mono';font-weight:500}
    colores de alerta de stock (🔴🟠⚪🟢🔵) para no romper esa asociación aprendida. */
 .abc-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:5px;font-size:12px;font-weight:700;font-family:'JetBrains Mono',monospace;cursor:pointer;line-height:1;vertical-align:middle}
 .abc-badge.abc-a{background:var(--lavanda);color:#4A3B5C}
-.abc-badge.abc-b{background:var(--lavanda-tint);color:#6B5C7D;border:1px solid #DFD2EC}
+.abc-badge.abc-b{background:var(--lavanda-tint);color:#176197;border:1px solid #CAE4F6}
 .abc-badge.abc-c{background:#F2EDE0;color:#7A6A45;border:1px solid #E5DCC6}
 .fila-precios .abc-badge{margin-left:4px}
 .catchart{padding:11px 13px}
@@ -1464,7 +1468,7 @@ html.modo-bliss .row-pedir .fila-nombre::before{content:'● ';color:var(--ambar
 .pedido-confirmado-banner{margin:10px 14px 0;padding:9px 11px;background:var(--paper);border:1px solid var(--line);border-left:3px solid var(--gold,#c68a1b);border-radius:9px;font-size:12px;line-height:1.5;color:var(--ink2);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .pedido-confirmado-banner b{color:var(--ink)}
 .pedido-confirmado-banner .pcb-btns{display:flex;gap:6px;flex-wrap:wrap}
-.pedido-confirmado-banner .pcb-btn{flex:none;background:var(--lavanda-tint);border:1px solid #DFD2EC;color:#5A4A6E;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;font-family:'Manrope';cursor:pointer;white-space:nowrap}
+.pedido-confirmado-banner .pcb-btn{flex:none;background:var(--lavanda-tint);border:1px solid #CAE4F6;color:#176197;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;font-family:'Manrope';cursor:pointer;white-space:nowrap}
 .pedido-confirmado-banner .pcb-btn-danger{background:var(--card);border-color:#F3D4D0;color:var(--rojo)}
 .order-body{padding:12px 14px;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .oline{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px dashed var(--line2);font-size:14px}
@@ -1674,7 +1678,7 @@ html.carrito-fijo.ocultar-contenido-pedido #tab-pedido{grid-template-columns:min
 .in2-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
 .in2-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 8px 10px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;text-align:center;position:relative;min-height:86px;justify-content:center}
 .in2-card:active{background:var(--paper);transform:scale(.97)}
-.in2-card .ic{font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center;color:var(--brand-2,#1E4E8C)}
+.in2-card .ic{font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center;color:var(--brand-2,#176197)}
 .in2-card .lab{font-size:12px;font-weight:700;color:var(--ink);line-height:1.2}
 .in2-card .badge{position:absolute;top:6px;right:6px;background:var(--rojo);color:#fff;border-radius:10px;min-width:17px;height:17px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;font-family:'JetBrains Mono',monospace}
 .in2-card .badge.ok{background:var(--verde,#3a9d5c)}
@@ -1722,7 +1726,7 @@ html.carrito-fijo.ocultar-contenido-pedido #tab-pedido{grid-template-columns:min
 .in2-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .in2-action-btn{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;font-size:12px;font-weight:700;color:var(--ink);text-align:center}
 .in2-action-btn:active{background:var(--paper)}
-.in2-action-btn .ic{font-size:20px;display:flex;align-items:center;justify-content:center;color:var(--brand-2,#1E4E8C)}
+.in2-action-btn .ic{font-size:20px;display:flex;align-items:center;justify-content:center;color:var(--brand-2,#176197)}
 @media (min-width:400px){.in2-card .lab{font-size:12px}}
 /* ==== Inicio en BlissOS (monitor fijo ~1024×684, sentado, mouse/touch de escritorio) ====
    Mismo criterio que ya usa Pedidos en este modo: aprovechar el ancho horizontal con más
@@ -1899,7 +1903,7 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
    separadas por una franja gris, títulos de sección en verde, botones rectangulares.
    TODO escopado a esos ids: no cambia ids, textos ni lógica, y el resto de la app queda igual. */
 #rc-ov,#cp-ov,#ed-ov,#fp-ov{
-  --lv:#4CAF50;--lv-d:#388E3C;--lv-txt:#212121;--lv-sub:#757575;--lv-line:#BDBDBD;--lv-gris:#F2F2F2;
+  --lv:#196DA9;--lv-d:#176197;--lv-txt:#212121;--lv-sub:#757575;--lv-line:#BDBDBD;--lv-gris:#F2F2F2;
   padding:0;align-items:stretch;background:#fff;font-family:Roboto,'Segoe UI',system-ui,sans-serif;color:var(--lv-txt)
 }
 #rc-ov .mm-card,#cp-ov .mm-card,#ed-ov .mm-card,#fp-ov .mm-card,
@@ -2005,9 +2009,9 @@ html.carrito-fijo #cp-ov .mm-card,html.carrito-fijo #ed-ov .mm-card{
    TODO escopado a esos ids: no cambia ids, textos ni lógica, y el resto de la app queda igual. */
 /* Los diálogos chicos (precio, nombre, Corregir stock) no entran en el estilo Loyverse de arriba, pero sus botones usan las mismas variables
    --lv: sin definirlas, el fondo del botón quedaba sin color y 'Guardar stock' se veía como una caja blanca vacía (texto blanco sobre blanco). */
-#pv-ov,#rn-ov,#stk-ov{--lv:#4CAF50;--lv-d:#388E3C;--lv-txt:#212121;--lv-sub:#757575;--lv-line:#BDBDBD;--lv-gris:#F2F2F2}
+#pv-ov,#rn-ov,#stk-ov{--lv:#196DA9;--lv-d:#176197;--lv-txt:#212121;--lv-sub:#757575;--lv-line:#BDBDBD;--lv-gris:#F2F2F2}
 :is(.mm-ov:not(#pv-ov):not(#rn-ov):not(#stk-ov),#__lv){
-  --lv:#4CAF50;--lv-d:#388E3C;--lv-txt:#212121;--lv-sub:#757575;--lv-line:#BDBDBD;--lv-gris:#F2F2F2;
+  --lv:#196DA9;--lv-d:#176197;--lv-txt:#212121;--lv-sub:#757575;--lv-line:#BDBDBD;--lv-gris:#F2F2F2;
   padding:0;align-items:stretch;background:#fff;font-family:Roboto,'Segoe UI',system-ui,sans-serif;color:var(--lv-txt)
 }
 :is(.mm-ov:not(#pv-ov):not(#rn-ov):not(#stk-ov),#__lv) .mm-card,html.carrito-fijo :is(.mm-ov:not(#pv-ov):not(#rn-ov):not(#stk-ov),#__lv) .mm-card{
@@ -2105,7 +2109,7 @@ html.carrito-fijo #cp-ov .mm-card,html.carrito-fijo #ed-ov .mm-card{
 :is(#pv-ov,#rn-ov,#stk-ov) .mm-card{border-radius:4px !important;overflow:hidden}
 :is(#pv-ov,#rn-ov,#stk-ov) .mm-head{background:#fff !important;box-shadow:none !important}
 :is(#pv-ov,#rn-ov,#stk-ov) .mm-head h3,:is(#pv-ov,#rn-ov,#stk-ov) .mm-head-ic{color:#212121 !important}
-:is(#pv-ov,#rn-ov,#stk-ov) .mm-head button{color:#388E3C !important}
+:is(#pv-ov,#rn-ov,#stk-ov) .mm-head button{color:#176197 !important}
 /* Más: grupos como lista blanca con divisor, sin colores pastel */
 #mas-ov .mas-grp{border:none !important;border-bottom:1px solid #E0E0E0 !important;border-radius:0 !important;margin:0 !important;background:#fff}
 #mas-ov .mas-grp-head{background:#fff !important;padding:16px !important;min-height:56px;box-sizing:border-box}
@@ -2118,7 +2122,7 @@ html.carrito-fijo #cp-ov .mm-card,html.carrito-fijo #ed-ov .mm-card{
 #mas-ov #ayuda-head .t{color:#212121 !important;font-size:16px !important;font-weight:400 !important}
 #mas-ov .scalecard{border:none !important;border-radius:0 !important;box-shadow:none !important;background:#fff}
 /* Vencimientos: color principal verde Loyverse en vez de azul marino */
-#vc-ov{--vc-activo:#388E3C !important}
+#vc-ov{--vc-activo:#176197 !important}
 #vc-ov .vc-toprow button,#vc-ov #vc-viewseg button,#vc-ov .vc-chip,#vc-ov [class*=vc-] button{border-radius:2px !important}
 
 /* Ajustes del estilo general de módulos */
@@ -2131,13 +2135,13 @@ html.carrito-fijo #cp-ov .mm-card,html.carrito-fijo #ed-ov .mm-card{
 #mas-ov #ayuda-head{margin:0 -16px !important;padding:16px !important}
 #mas-ov #ayuda-head .accordion-chev{color:#757575 !important}
 :is(.mm-ov,#__lv) .mm-motivo:not(.lv-fila),:is(.mm-ov,#__lv) .mm-resp > *,:is(.mm-ov,#__lv) .vc-mini,:is(.mm-ov,#__lv) .mm-total{border-radius:2px !important}
-:is(.mm-ov,#__lv) .mm-motivo.active,:is(.mm-ov,#__lv) .mm-motivo.on,:is(.mm-ov,#__lv) .mm-resp > .active{border-color:#4CAF50 !important;color:#388E3C !important;background:#E8F5E9 !important}
+:is(.mm-ov,#__lv) .mm-motivo.active,:is(.mm-ov,#__lv) .mm-motivo.on,:is(.mm-ov,#__lv) .mm-resp > .active{border-color:#196DA9 !important;color:#176197 !important;background:#EDF6FC !important}
 /* ============ Estilo Loyverse (Material) en Pedidos (vista de tarjetas / celular) ============
    Barra de búsqueda verde con texto blanco y lista de artículos plana: miniatura cuadrada, nombre,
    línea de stock con color (rojo = agotado/urgente, naranja = pedir) y divisor fino, como la lista
    de artículos de Loyverse. Solo cambia el aspecto: mismos datos, ids y comportamiento. No toca la
    vista de filas de pantallas grandes (html.vista-filas). */
-#prov-anchor{--lv:#4CAF50;--lv-d:#388E3C}
+#prov-anchor{--lv:#196DA9;--lv-d:#176197}
 #prov-anchor .shc-row.shc-wrap{background:var(--lv);margin:0 -12px;padding:8px 12px;box-shadow:0 2px 4px rgba(0,0,0,.25);border-radius:0;gap:8px}
 #prov-anchor .fav-toggle-btn{background:transparent;border:none;color:#fff;box-shadow:none}
 #prov-anchor .prov-combo{background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.7);border-radius:0;box-shadow:none}
@@ -2169,7 +2173,7 @@ html:not(.vista-filas) .card-cell.row-urgent .card-thumb-wrap::after,html:not(.v
 }
 html:not(.vista-filas) .card-cell.row-urgent .card-thumb-wrap::after{background:#D32F2F}
 html:not(.vista-filas) .card-cell.row-pedir .card-thumb-wrap::after{background:#F57C00}
-html:not(.vista-filas) .card-cell .sug-btn{background:transparent;border:1px solid #E0E0E0;border-radius:2px;color:#388E3C;font-family:inherit;font-weight:500;text-transform:uppercase;letter-spacing:.04em;font-size:12px}
+html:not(.vista-filas) .card-cell .sug-btn{background:transparent;border:1px solid #E0E0E0;border-radius:2px;color:#176197;font-family:inherit;font-weight:500;text-transform:uppercase;letter-spacing:.04em;font-size:12px}
 html:not(.vista-filas) .card-cell,html:not(.vista-filas) .card-cell *{font-family:Roboto,'Segoe UI',system-ui,sans-serif !important}
 html:not(.vista-filas) .card-cell .priceline,html:not(.vista-filas) .card-cell [class*='price']{font-weight:500}
 
@@ -2203,7 +2207,7 @@ body{font-variant-numeric:tabular-nums}
 /* ============ Carrito al estilo Loyverse (como el ticket de Loyverse) ============
    Encabezado verde plano, líneas con divisor fino, cantidades con borde gris, papelera gris,
    pie blanco con el total grande y CONFIRMAR verde rectangular. Solo aspecto: mismos ids y acciones. */
-#tab-carrito{--lv:#4CAF50;--lv-d:#388E3C}
+#tab-carrito{--lv:#196DA9;--lv-d:#176197}
 #tab-carrito .order{border:1px solid #E0E0E0;border-radius:2px;box-shadow:none;background:#fff}
 #tab-carrito .order-head{background:var(--lv);padding:14px 16px;box-shadow:0 2px 4px rgba(0,0,0,.2);position:relative;z-index:1}
 #tab-carrito .order-head .t{font-weight:500;font-size:20px;color:#fff;gap:10px}
@@ -2270,7 +2274,7 @@ html.carrito-fijo #tab-carrito .oact-btn{width:44px}
 /* Encabezado del carrito como el "Ticket" de Loyverse: fondo blanco, título oscuro, sombra suave abajo */
 #tab-carrito .order-head{background:#fff !important;box-shadow:0 1px 4px rgba(0,0,0,.18)}
 #tab-carrito .order-head .t{color:#212121}
-#tab-carrito .order-head .t .wa-ico{background:#4CAF50;color:#fff}
+#tab-carrito .order-head .t .wa-ico{background:#196DA9;color:#fff}
 #tab-carrito .order-head .s{color:#757575}
 #prov-anchor .prov-menu{border-radius:2px !important;box-shadow:0 2px 6px rgba(0,0,0,.25)}
 
@@ -2293,7 +2297,7 @@ html.carrito-fijo #tab-carrito .oact-btn{width:44px}
 /* ============ Inicio al estilo Loyverse ============
    Barra superior verde, títulos de sección en verde, filas blancas planas sin bordes de color a la
    izquierda, y la misma escala de letra: 16 texto principal, 14 secundario, 20 cifras. */
-#tab-inicio .in2-hdr{background:#4CAF50;color:#fff;box-shadow:0 2px 4px rgba(0,0,0,.25);border:none}
+#tab-inicio .in2-hdr{background:#196DA9;color:#fff;box-shadow:0 2px 4px rgba(0,0,0,.25);border:none}
 #tab-inicio .in2-hdr *{color:#fff}
 #tab-inicio .in2-hdr-txt b{font-size:20px;font-weight:500}
 #tab-inicio .in2-hdr-txt span,#tab-inicio .in2-hdr-sub{font-size:14px;font-weight:400;color:rgba(255,255,255,.85)}
@@ -2301,7 +2305,7 @@ html.carrito-fijo #tab-carrito .oact-btn{width:44px}
 #tab-inicio .in2-live{font-size:14px;font-weight:500}
 #tab-inicio .in2-live-dot{background:#fff !important}
 #tab-inicio .in2-hdr [class*=badge],#tab-inicio .in2-hdr .in2-notif-n{color:#fff}
-#tab-inicio .in2-section-title{font-size:14px;font-weight:500;color:#388E3C;text-transform:none;letter-spacing:0;margin:18px 0 8px}
+#tab-inicio .in2-section-title{font-size:14px;font-weight:500;color:#176197;text-transform:none;letter-spacing:0;margin:18px 0 8px}
 #tab-inicio .pd-mod-title{font-size:16px;font-weight:500;color:#212121}
 /* Requiere atención + Vence ≤15 días: misma fila, mismo tamaño */
 #tab-inicio .in2-att-row,#tab-inicio #in2-venc-card{
@@ -5525,7 +5529,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.13';
+const APP_VERSION='2026-10-31.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
