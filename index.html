@@ -5525,7 +5525,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-28.11';
+const APP_VERSION='2026-10-28.12';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -12538,6 +12538,8 @@ function vcFilaHtml(l){
     botones=`<button class="vc-mini" data-actm="cambiado" data-i="${l.filaIndex}" data-nom="${nom}" data-cant="${l.cantidad}" data-unidad="${l.unidad}" title="Marcar como cambiado"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg><span>Cambiado</span></button>
        <button class="vc-mini" data-actm="descuento" data-i="${l.filaIndex}" data-nom="${nom}" data-sku="${l.sku}" data-cant="${l.cantidad}" title="Descuento en factura"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg><span>Descuento</span></button>`;
     notaExtra='<div class="cat" style="color:var(--azul);font-weight:700;font-size:12px">Ya se retiró y se descontó del stock — esperando al proveedor</div>';
+    // Ideal ya no hace cambios (solo descuento en factura): sin el botón "Cambiado", que sumaría stock por error.
+    if(esProvDescuento(l.categoria))botones=botones.replace(/<button class="vc-mini" data-actm="cambiado"[\s\S]*?<\/button>/,'');
   }else if(esCambio){
     // Vencido o Por vencer (aviso del proveedor, incluidos los estados "urgente"/"muy atrasado"):
     // en ambos casos no hay ningún proceso automático que lo pase a Pendientes, así que se
