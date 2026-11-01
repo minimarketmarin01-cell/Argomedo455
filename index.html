@@ -884,19 +884,20 @@ input[type=number]{width:64px;font-family:'JetBrains Mono';font-weight:500}
 .prov-x:active{background:var(--line);color:var(--ink)}
 /* Vencimientos: el JS ya calcula correctamente la clase .on según si hay texto escrito
    (vcWireBuscadorInteligente), pero la regla de arriba no tenía display:none por defecto y la
-   X quedaba siempre visible. Fix solo acá — escopado a #vc-ov para no tocar el buscador de
-   Armar pedido (usa el id #prov-x, no esta clase, y ya se comporta bien). */
-#vc-ov .prov-x{display:none}
-#vc-ov .prov-x.on{display:flex}
+   X quedaba siempre visible. Fix solo acá — escopado a #vc-ov/#pl-ov para no tocar el buscador
+   de Armar pedido (usa el id #prov-x, no esta clase, y ya se comporta bien). */
+#vc-ov .prov-x,#pl-ov .prov-x{display:none}
+#vc-ov .prov-x.on,#pl-ov .prov-x.on{display:flex}
 /* Buscador del módulo: campo más alto y redondeado, lupa a la izquierda y la cámara como
-   botón con su propio recuadro a la derecha, como en la referencia. */
-#vc-ov .prov-all{font-size:14px;font-weight:500;border-radius:12px;padding-top:13px;padding-bottom:13px;padding-left:38px;padding-right:96px}
-#vc-ov .prov-icon{left:14px;color:var(--muted)}
-#vc-ov .prov-icon svg{width:17px;height:17px}
-#vc-ov .prov-scan{right:8px;width:36px;height:32px;border:1.5px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}
-#vc-ov .prov-scan svg{width:17px;height:17px}
-#vc-ov .prov-mic{right:50px;width:28px;height:28px}
-#vc-ov .prov-x{right:82px;width:26px;height:26px}
+   botón con su propio recuadro a la derecha, como en la referencia. Mismo estilo en Lista de
+   precios (#pl-ov), que reusa el mismo buscador inteligente (vcWireBuscadorInteligente). */
+#vc-ov .prov-all,#pl-ov .prov-all{font-size:14px;font-weight:500;border-radius:12px;padding-top:13px;padding-bottom:13px;padding-left:38px;padding-right:96px}
+#vc-ov .prov-icon,#pl-ov .prov-icon{left:14px;color:var(--muted)}
+#vc-ov .prov-icon svg,#pl-ov .prov-icon svg{width:17px;height:17px}
+#vc-ov .prov-scan,#pl-ov .prov-scan{right:8px;width:36px;height:32px;border:1.5px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}
+#vc-ov .prov-scan svg,#pl-ov .prov-scan svg{width:17px;height:17px}
+#vc-ov .prov-mic,#pl-ov .prov-mic{right:50px;width:28px;height:28px}
+#vc-ov .prov-x,#pl-ov .prov-x{right:82px;width:26px;height:26px}
 .prov-mic{position:absolute;top:50%;right:52px;transform:translateY(-50%);width:19px;height:19px;border:none;background:var(--paper);border-radius:50%;color:var(--muted);font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;padding:0}
 .prov-mic:active{background:var(--line);color:var(--ink)}
 .prov-mic.listening{background:var(--rojo);color:#fff;animation:micpulse 1s infinite}
@@ -3576,14 +3577,13 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
     <div class="mm-topbar"><button class="loadbtn" id="pl-cerrar" style="width:100%">Cerrar</button></div>
     <div class="mm-body">
       <div class="hm-summary"><span class="lbl" id="pl-lbl">—</span><span class="val" id="pl-val"></span></div>
-      <select id="pl-cat" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;background:#fff;margin-bottom:8px">
-        <option value="">Todas las categorías</option>
-      </select>
-      <div class="mm-search" style="margin:0 0 10px">
-        <input id="pl-search" placeholder="Buscar por nombre, REF o código…" autocomplete="off" style="padding-right:132px">
-        <button class="mm-x" id="pl-x" type="button" aria-label="Limpiar" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
-        <button class="mm-mic" id="pl-mic" type="button" aria-label="Buscar por voz"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg></button>
-        <button class="mm-scan cam-btn" id="pl-scan" type="button" aria-label="Escanear código"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h2v12H4V6m3 0h1v12H7V6m2 0h3v12H9V6m4 0h1v12h-1V6m3 0h2v12h-2V6m3 0h1v12h-1V6M2 4v4H0V4a2 2 0 0 1 2-2h4v2H2m20-2a2 2 0 0 1 2 2v4h-2V4h-4V2h4M2 16v4h4v2H2a2 2 0 0 1-2-2v-4h2m20 4v-4h2v4a2 2 0 0 1-2 2h-4v-2h4z"/></svg></button>
+      <div class="prov-combo" id="pl-combo" style="margin-bottom:10px">
+        <span class="prov-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58s1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41s-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg></span>
+        <input class="prov-all" id="pl-search" placeholder="Proveedor o producto… escribe o toca" autocomplete="off" inputmode="text">
+        <button class="prov-mic" id="pl-mic" type="button" tabindex="-1" aria-label="Buscar por voz"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg></button>
+        <button class="prov-scan cam-btn" id="pl-scan" type="button" tabindex="-1" aria-label="Escanear código"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h2v12H4V6m3 0h1v12H7V6m2 0h3v12H9V6m4 0h1v12h-1V6m3 0h2v12h-2V6m3 0h1v12h-1V6M2 4v4H0V4a2 2 0 0 1 2-2h4v2H2m20-2a2 2 0 0 1 2 2v4h-2V4h-4V2h4M2 16v4h4v2H2a2 2 0 0 1-2-2v-4h2m20 4v-4h2v4a2 2 0 0 1-2 2h-4v-2h4z"/></svg></button>
+        <button class="prov-x" id="pl-x" type="button" tabindex="-1" aria-label="Borrar"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+        <div class="prov-menu hidden" id="pl-menu"></div>
       </div>
       <div id="pl-list"></div>
     </div>
@@ -5531,7 +5531,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-01.2';
+const APP_VERSION='2026-11-01.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -8635,61 +8635,31 @@ async function rkGuardarFila(inp){
 // y Loyverse). El campo arranca CON el precio actual ya escrito (a diferencia del de Reconteo,
 // que arranca vacío con placeholder) — acá se pidió explícitamente "mostrar" el precio, no solo
 // dejar un hueco para reemplazarlo.
-const plState={cat:'',search:''};
 document.getElementById('mas-q-precios').onclick=()=>{document.getElementById('mas-ov').classList.add('hidden');plAbrir();};
 document.getElementById('pl-cerrar').onclick=()=>cerrarModal('pl-ov');
 function plAbrir(){
-  plState.cat='';plState.search='';
+  plFiltro.prov='';plFiltro.search='';
   document.getElementById('pl-search').value='';
-  document.getElementById('pl-x').style.display='none';
-  plPoblarCategorias();
+  document.getElementById('pl-x').classList.remove('on');
+  document.getElementById('pl-menu').classList.add('hidden');
   abrirModal('pl-ov');
   plRender();
 }
-function plPoblarCategorias(){
-  const sel=document.getElementById('pl-cat');
-  const valorActual=sel.value;
-  const cats=Array.from(new Set((DB.provs||[]).map(p=>p.prov).filter(Boolean))).sort((a,b)=>String(a).localeCompare(String(b),'es'));
-  sel.innerHTML='<option value="">Todas las categorías</option>'+cats.map(c=>`<option value="${String(c).replace(/"/g,'&quot;')}">${c}</option>`).join('');
-  sel.value=cats.includes(valorActual)?valorActual:'';
-}
-document.getElementById('pl-cat').addEventListener('change',()=>{
-  plState.cat=document.getElementById('pl-cat').value;
-  plState.search='';document.getElementById('pl-search').value='';document.getElementById('pl-x').style.display='none';
-  plRender();
+// Buscador inteligente único (proveedor/categoría + producto, con mic y escáner) — mismo
+// helper que ya usa "Revisión de vencimientos" (Lista/Pendientes/Descuentos), para que Lista
+// de precios busque del mismo modo que el resto de la app en vez de tener su propio select +
+// input separados. "categoría" acá es el campo it.prov (como ya filtraba antes de unificar).
+const plFiltro=vcWireBuscadorInteligente('pl',{
+  getLotes:()=>DB.items||[],
+  onFiltroChange:plRender,
+  proveedorDe:it=>it.prov,
+  cerrarParaEscanear:()=>cerrarModal('pl-ov'),
+  reabrirTrasEscanear:()=>document.getElementById('pl-ov').classList.remove('hidden'),
 });
-document.getElementById('pl-search').addEventListener('input',()=>{
-  const v=document.getElementById('pl-search').value;
-  plState.search=v;plState.cat='';document.getElementById('pl-cat').value='';
-  document.getElementById('pl-x').style.display=v?'block':'none';
-  clearTimeout(window._plSearchT);window._plSearchT=setTimeout(plRender,200);
-});
-document.getElementById('pl-x').onclick=()=>{
-  document.getElementById('pl-search').value='';plState.search='';
-  document.getElementById('pl-x').style.display='none';
-  plRender();
-};
-document.getElementById('pl-mic').onclick=()=>voiceSearch(document.getElementById('pl-mic'),text=>{
-  document.getElementById('pl-search').value=text;
-  plState.search=text;plState.cat='';document.getElementById('pl-cat').value='';
-  document.getElementById('pl-x').style.display=text?'block':'none';
-  plRender();
-});
-document.getElementById('pl-scan').onclick=()=>{
-  const reopen=()=>{document.getElementById('pl-ov').classList.remove('hidden');};
-  cerrarModal('pl-ov');
-  openScanner(code=>{
-    reopen();
-    document.getElementById('pl-search').value=code;
-    plState.search=code;plState.cat='';document.getElementById('pl-cat').value='';
-    document.getElementById('pl-x').style.display='block';
-    plRender();
-  },reopen);
-};
 function plFiltrados(){
   let lista=(DB.items||[]);
-  if(plState.cat)lista=lista.filter(it=>it.prov===plState.cat);
-  const q=normTxt(plState.search).trim();
+  if(plFiltro.prov)lista=lista.filter(it=>it.prov===plFiltro.prov);
+  const q=normTxt(plFiltro.search).trim();
   if(q){
     const words=q.split(/\s+/).filter(Boolean);
     lista=lista.filter(it=>{const s=normTxt((it.nombre||'')+' '+(it.ref||'')+' '+(it.barcode||''));return words.every(w=>s.includes(w));});
@@ -8699,7 +8669,7 @@ function plFiltrados(){
 const PL_LIMITE=150; // mismo umbral y motivo que RK_LIMITE — evita renderizar miles de filas de una
 function plRender(){
   const box=document.getElementById('pl-list');
-  const cat=plState.cat,q=plState.search;
+  const cat=plFiltro.prov,q=plFiltro.search;
   const lista=plFiltrados();
   document.getElementById('pl-lbl').textContent=lista.length+' producto'+(lista.length===1?'':'s');
   document.getElementById('pl-val').textContent=cat?cat:(q?'búsqueda':'elige categoría o busca');
@@ -12513,7 +12483,7 @@ function vcAplicarFiltroInteligente(lotes,filtro){
 // de proveedores sugeridos (solo los que aparecen en getLotes(), no todo DB.provs — así nunca
 // sugiere un proveedor sin resultados en esta pestaña). Mismo patrón visual/JS que #rk-all
 // (Reconteo de stock), parametrizado para no duplicarlo entre Pendientes/Descuentos/Lista.
-function vcWireBuscadorInteligente(prefix,{getLotes,onFiltroChange,vistaParaReabrir,proveedorDe}){
+function vcWireBuscadorInteligente(prefix,{getLotes,onFiltroChange,vistaParaReabrir,proveedorDe,cerrarParaEscanear,reabrirTrasEscanear}){
   const deQueCampo=proveedorDe||vcProveedorDe; // Pendientes/Descuentos: proveedor real. Lista: l.categoria (mismo campo que ya filtraba antes de unificar el buscador).
   const filtro={search:'',prov:''};
   const inp=document.getElementById(prefix+'-search');
@@ -12560,8 +12530,12 @@ function vcWireBuscadorInteligente(prefix,{getLotes,onFiltroChange,vistaParaReab
     inp.value=text;filtro.search=text;filtro.prov='';x.classList.toggle('on',!!text);onFiltroChange();
   });
   document.getElementById(prefix+'-scan').onclick=()=>{
-    const reopen=()=>{document.getElementById('vc-ov').classList.remove('hidden');vcSetView(vistaParaReabrir);};
-    closeVenc();
+    // Por defecto (Lista/Pendientes/Descuentos) escanear cierra vc-ov y lo reabre en la misma
+    // pestaña de donde salió. Otros buscadores que reusan este mismo helper (ej. Lista de
+    // precios) viven en su propio modal, no en vc-ov — cerrarParaEscanear/reabrirTrasEscanear
+    // les permite pasar su propio par abrir/cerrar sin tocar este comportamiento por defecto.
+    const reopen=reabrirTrasEscanear||(()=>{document.getElementById('vc-ov').classList.remove('hidden');vcSetView(vistaParaReabrir);});
+    (cerrarParaEscanear||closeVenc)();
     openScanner(code=>{
       reopen();inp.value=code;filtro.search=code;filtro.prov='';
       x.classList.add('on');onFiltroChange();
