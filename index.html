@@ -2142,7 +2142,7 @@ html.carrito-fijo #cp-ov .mm-card,html.carrito-fijo #ed-ov .mm-card{
    de artículos de Loyverse. Solo cambia el aspecto: mismos datos, ids y comportamiento. No toca la
    vista de filas de pantallas grandes (html.vista-filas). */
 #prov-anchor{--lv:#196DA9;--lv-d:#176197}
-#prov-anchor .shc-row.shc-wrap{background:var(--lv);margin:0 -12px;padding:8px 12px;box-shadow:0 2px 4px rgba(0,0,0,.25);border-radius:0;gap:8px}
+#prov-anchor .shc-row.shc-wrap{background:var(--lv);margin:-4px -12px 0;padding:8px 12px;box-shadow:0 2px 4px rgba(0,0,0,.25);border-radius:0;gap:8px}
 #prov-anchor .fav-toggle-btn{background:transparent;border:none;color:#fff;box-shadow:none}
 #prov-anchor .prov-combo{background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.7);border-radius:0;box-shadow:none}
 #prov-anchor .prov-combo input{background:transparent;border:none;color:#fff;font-family:Roboto,'Segoe UI',system-ui,sans-serif;font-size:20px;box-shadow:none}
@@ -5529,7 +5529,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-10-31.1';
+const APP_VERSION='2026-11-01.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
