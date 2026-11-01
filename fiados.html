@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#F7F9FC">
+<meta name="theme-color" content="#196DA9">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Fiados">
@@ -13,19 +13,21 @@
 <title>Fiados — Los Cumpas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --ink:#12233D;--ink2:#1E3454;--muted:#5C7593;--paper:#F7F9FC;--card:#FFFFFF;--line:#E3E8F0;
   --rojo:#A84A4A;--rojo-bg:#FBEDED;
   --ambar:#8A5810;--ambar-bg:#FBF1DF;
-  --azul:#1E4E8C;
+  --azul:#176197;
   --verde:#5F7A4C;
-  --salvia:#C3D4EA;--salvia-2:#2C5F9E;
-  --lavanda-tint:#EAF1FA;
-  --brand-1:#2C5F9E;--brand-2:#1E4E8C;
-  --brand-grad:linear-gradient(120deg,var(--brand-1),var(--brand-2));
-  --shadow-brand:0 2px 10px rgba(30,78,140,.28);
+  /* Tema Argomedo (celeste): mismos nombres y valores que index.html — el celeste de acción da 6,58:1 con texto blanco. */
+  --header:#196DA9;--action:#176197;--action-pressed:#0F4C7A;--action-tint:#EDF6FC;--border-control:#757575;
+  --salvia:#EDF6FC;--salvia-2:#176197;
+  --lavanda-tint:#EDF6FC;
+  --brand-1:#176197;--brand-2:#176197;
+  --brand-grad:var(--action);
+  --shadow-brand:0 2px 10px rgba(23,97,151,.28);
   --sh-soft:0 1px 3px rgba(11,26,51,.06);
   --radius-card:18px;--radius-btn:12px;
 }
@@ -36,20 +38,20 @@ html{-webkit-text-size-adjust:100%;width:100%;overflow-x:hidden}
 /* Sin encabezado propio "Fiados" (se sacó de las 3 vistas, pantalla completa tipo POS/Loyverse
    — ver body) — el padding-top de acá reemplaza el rol de espaciado bajo notch/status bar que
    tendría esa barra. */
-body{font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--ink);font-size:16px;line-height:1.5;-webkit-tap-highlight-color:transparent;width:100%;max-width:560px;margin:0 auto;padding-top:max(10px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}
-h1,h2,h3{font-family:'Manrope',system-ui,sans-serif}
+body{font-family:'Roboto',system-ui,sans-serif;background:var(--paper);color:var(--ink);font-size:16px;line-height:1.5;-webkit-tap-highlight-color:transparent;width:100%;max-width:560px;margin:0 auto;padding-top:max(10px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}
+h1,h2,h3{font-family:'Roboto',system-ui,sans-serif}
 .hidden{display:none!important}
 .body{padding:16px max(16px,env(safe-area-inset-left)) 16px max(16px,env(safe-area-inset-right))}
 .vc-empty{padding:24px;text-align:center;color:var(--muted);font-size:14px}
-.loadbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--lavanda-tint);border:1px solid #C9DCF0;color:var(--ink2);border-radius:var(--radius-btn);padding:12px 14px;font-size:15px;font-weight:600;font-family:'Manrope';cursor:pointer;min-height:48px}
-.loadbtn:active{background:#DCE9F8}
-.loadbtn.acc{background:var(--salvia);border-color:var(--salvia-2);color:#0B1A33}
+.loadbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:#fff;border:1px solid var(--border-control);color:var(--action);border-radius:var(--radius-btn);padding:12px 14px;font-size:15px;font-weight:600;font-family:'Roboto',system-ui,sans-serif;cursor:pointer;min-height:48px}
+.loadbtn:active{background:var(--action-tint)}
+.loadbtn.acc{background:var(--action-tint);border-color:var(--action);color:var(--action-pressed)}
 .loadbtn.acc:active{background:var(--salvia-2);color:#fff}
-.mm-save{width:100%;background:var(--brand-grad);color:#fff;border:none;border-radius:var(--radius-btn);padding:16px;font-size:17px;font-weight:700;font-family:'Manrope';cursor:pointer;margin-top:8px;box-shadow:var(--shadow-brand);min-height:52px}
+.mm-save{width:100%;background:var(--brand-grad);color:#fff;border:none;border-radius:var(--radius-btn);padding:16px;font-size:17px;font-weight:700;font-family:'Roboto',system-ui,sans-serif;cursor:pointer;margin-top:8px;box-shadow:var(--shadow-brand);min-height:52px}
 .mm-save:disabled{opacity:.5;cursor:default}
 .mm-field{margin-bottom:16px}
 .mm-field label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;margin-bottom:6px}
-.mm-field input{width:100%;height:48px;padding:0 14px;border:1.5px solid var(--line);border-radius:10px;font-size:16px;box-sizing:border-box;font-family:'Inter';background:#fff;color:var(--ink)}
+.mm-field input{width:100%;height:48px;padding:0 14px;border:1.5px solid var(--line);border-radius:10px;font-size:16px;box-sizing:border-box;font-family:'Roboto',system-ui,sans-serif;background:#fff;color:var(--ink)}
 .mm-search{position:relative}
 .mm-search input{width:100%;padding-right:50px}
 .mm-x{position:absolute;top:50%;right:8px;transform:translateY(-50%);width:34px;height:34px;border:none;background:var(--paper);border-radius:50%;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
@@ -123,13 +125,13 @@ h1,h2,h3{font-family:'Manrope',system-ui,sans-serif}
 .fd-efectivo-row{display:flex;gap:10px;align-items:stretch}
 .fd-efectivo-input-wrap{position:relative;flex:1;display:flex;align-items:center;color:var(--muted)}
 .fd-efectivo-input-wrap svg{position:absolute;left:14px;pointer-events:none}
-.fd-efectivo-input-wrap input{width:100%;height:50px;padding:0 14px 0 42px;border:1.5px solid var(--line);border-radius:10px;font-size:20px;font-weight:700;font-family:'Inter';background:#fff;color:var(--ink)}
-.fd-cobrar-efectivo-btn{flex:none;min-width:120px;background:var(--brand-grad);color:#fff;border:none;border-radius:var(--radius-btn);padding:0 18px;font-size:15px;font-weight:800;font-family:'Manrope';cursor:pointer;box-shadow:var(--shadow-brand)}
+.fd-efectivo-input-wrap input{width:100%;height:50px;padding:0 14px 0 42px;border:1.5px solid var(--line);border-radius:10px;font-size:20px;font-weight:700;font-family:'Roboto',system-ui,sans-serif;background:#fff;color:var(--ink)}
+.fd-cobrar-efectivo-btn{flex:none;min-width:120px;background:var(--brand-grad);color:#fff;border:none;border-radius:var(--radius-btn);padding:0 18px;font-size:15px;font-weight:800;font-family:'Roboto',system-ui,sans-serif;cursor:pointer;box-shadow:var(--shadow-brand)}
 .fd-cobrar-efectivo-btn:disabled{opacity:.5;cursor:default;box-shadow:none}
 .fd-sugerencias{display:flex;gap:8px;margin-top:10px}
 .fd-sugerencia-btn{flex:1;border:1.5px solid var(--line);background:var(--paper);border-radius:10px;padding:11px 4px;font-size:14.5px;font-weight:700;color:var(--ink);cursor:pointer;min-height:44px}
 .fd-sugerencia-btn:active{background:var(--line)}
-.fd-pago-directo-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:var(--radius-btn);padding:12px;font-size:15px;font-weight:700;letter-spacing:.02em;font-family:'Manrope';cursor:pointer;min-height:50px;margin-bottom:9px}
+.fd-pago-directo-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:var(--radius-btn);padding:12px;font-size:15px;font-weight:700;letter-spacing:.02em;font-family:'Roboto',system-ui,sans-serif;cursor:pointer;min-height:50px;margin-bottom:9px}
 .fd-pago-directo-btn:active{background:var(--paper)}
 .fd-pago-directo-btn:disabled{opacity:.4;cursor:default}
 
