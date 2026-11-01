@@ -1674,7 +1674,7 @@ html.modo-bliss .top{display:none}
 html.carrito-fijo.ocultar-contenido-pedido #tab-carrito{transform:translateX(100%)!important;opacity:0!important;pointer-events:none!important}
 html.carrito-fijo.ocultar-contenido-pedido #tab-pedido{grid-template-columns:minmax(0,1fr) 0}
 .in2-hdr-left{display:flex;align-items:center;gap:8px;min-width:0}
-.in2-logo{width:26px;height:26px;border-radius:var(--r-md);flex-shrink:0;object-fit:cover}
+.in2-logo{width:30px;height:30px;box-sizing:border-box;border:2px solid #fff;border-radius:var(--r-md);flex-shrink:0;object-fit:cover}   /* marco blanco: el ícono es del mismo color que la barra */
 .in2-hdr-txt{display:flex;flex-direction:column;line-height:1.2;min-width:0}
 .in2-hdr-txt b{font-size:14px;font-weight:700;color:var(--ink)}
 .in2-hdr-txt span{font-size:12px;color:var(--muted);font-weight:500}
@@ -5666,7 +5666,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-01.11';
+const APP_VERSION='2026-11-01.12';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
