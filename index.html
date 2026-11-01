@@ -379,8 +379,8 @@ html.carrito-fijo #rc-ov .mm-sections{
    reservan 44px de padding-right, no los 104px que asume el .mm-x genérico de arriba. Con el
    offset genérico (right:84px) el botón "×" quedaba flotando sobre la zona de texto tipeable
    en vez de después de ella, interceptando toques ahí — mismo tipo de bug que #prov-x/.cam-btn. */
-#gp-x,#pl-x{right:6px}
-/* #gp-prod-search SÍ tiene botón de escaneo (a diferencia de #gp-x/#pl-x de arriba) — el "×"
+#gp-x{right:6px}
+/* #gp-prod-search SÍ tiene botón de escaneo (a diferencia de #gp-x de arriba) — el "×"
    se corre un cajón hacia la izquierda para dejarle su lugar al escáner, que pasa a ocupar la
    posición más cercana al borde (mismo criterio que el resto de los buscadores de la app: el
    escáner siempre al filo, luego el resto de los botones hacia adentro). */
@@ -3580,8 +3580,10 @@ html.carrito-fijo #tab-carrito .order-foot{container-type:inline-size}
         <option value="">Todas las categorías</option>
       </select>
       <div class="mm-search" style="margin:0 0 10px">
-        <input id="pl-search" placeholder="Buscar por nombre, REF o código…" autocomplete="off" style="padding-right:44px">
+        <input id="pl-search" placeholder="Buscar por nombre, REF o código…" autocomplete="off" style="padding-right:132px">
         <button class="mm-x" id="pl-x" type="button" aria-label="Limpiar" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+        <button class="mm-mic" id="pl-mic" type="button" aria-label="Buscar por voz"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg></button>
+        <button class="mm-scan cam-btn" id="pl-scan" type="button" aria-label="Escanear código"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h2v12H4V6m3 0h1v12H7V6m2 0h3v12H9V6m4 0h1v12h-1V6m3 0h2v12h-2V6m3 0h1v12h-1V6M2 4v4H0V4a2 2 0 0 1 2-2h4v2H2m20-2a2 2 0 0 1 2 2v4h-2V4h-4V2h4M2 16v4h4v2H2a2 2 0 0 1-2-2v-4h2m20 4v-4h2v4a2 2 0 0 1-2 2h-4v-2h4z"/></svg></button>
       </div>
       <div id="pl-list"></div>
     </div>
@@ -5529,7 +5531,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-01.1';
+const APP_VERSION='2026-11-01.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -8666,6 +8668,23 @@ document.getElementById('pl-x').onclick=()=>{
   document.getElementById('pl-search').value='';plState.search='';
   document.getElementById('pl-x').style.display='none';
   plRender();
+};
+document.getElementById('pl-mic').onclick=()=>voiceSearch(document.getElementById('pl-mic'),text=>{
+  document.getElementById('pl-search').value=text;
+  plState.search=text;plState.cat='';document.getElementById('pl-cat').value='';
+  document.getElementById('pl-x').style.display=text?'block':'none';
+  plRender();
+});
+document.getElementById('pl-scan').onclick=()=>{
+  const reopen=()=>{document.getElementById('pl-ov').classList.remove('hidden');};
+  cerrarModal('pl-ov');
+  openScanner(code=>{
+    reopen();
+    document.getElementById('pl-search').value=code;
+    plState.search=code;plState.cat='';document.getElementById('pl-cat').value='';
+    document.getElementById('pl-x').style.display='block';
+    plRender();
+  },reopen);
 };
 function plFiltrados(){
   let lista=(DB.items||[]);
