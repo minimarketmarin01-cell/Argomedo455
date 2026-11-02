@@ -4959,6 +4959,7 @@ async function renderInicio2(){
   let provHoyNum=0;
   try{provHoyNum=calcularProveedoresHoy().filter(f=>f.pide).length+recepHoyNum;}catch(e){}
   const nTotal=nLlegadas+riesgoNum+provHoyNum;
+  _in2NotifDesglose={total:nTotal,llegadas:nLlegadas,riesgo:riesgoNum,pedirHoy:Math.max(0,provHoyNum-recepHoyNum),recepHoy:recepHoyNum};
   if(notifBadge){
     if(nTotal>0){notifBadge.textContent=nTotal>99?'99+':String(nTotal);notifBadge.classList.remove('hidden');}
     else notifBadge.classList.add('hidden');
@@ -4973,7 +4974,19 @@ async function renderInicio2(){
   // in2CalcVenc), así que sumar 'vencidos' aparte duplicaría el conteo — no hace falta.
   actualizarBadgeBn('bn-vencimientos-badge',vencCounts.d15);
 }
-document.getElementById('in2-notif-btn').onclick=()=>{cerrarOverlays();abrirModal('mas-ov');};
+let _in2NotifDesglose=null;
+document.getElementById('in2-notif-btn').onclick=async()=>{
+  const d=_in2NotifDesglose;
+  if(!d||!d.total){cerrarOverlays();abrirModal('mas-ov');return;}
+  const pl=(n,s,p)=>n+' '+(n===1?s:p);
+  const l=[];
+  if(d.riesgo)l.push('• '+pl(d.riesgo,'producto en riesgo de quiebre (clase A)','productos en riesgo de quiebre (clase A)'));
+  if(d.pedirHoy)l.push('• '+pl(d.pedirHoy,'proveedor al que hay que pedir hoy','proveedores a los que hay que pedir hoy'));
+  if(d.recepHoy)l.push('• '+pl(d.recepHoy,'recepción pendiente de hoy','recepciones pendientes de hoy'));
+  if(d.llegadas)l.push('• '+pl(d.llegadas,'pedido llegado por revisar','pedidos llegados por revisar'));
+  const ir=await dlgConfirm('Avisos: '+d.total+'\n\n'+l.join('\n')+'\n\n¿Abrir el menú Más?');
+  if(ir){cerrarOverlays();abrirModal('mas-ov');}
+};
 function actualizarBadgeBn(id,n){
   const b=document.getElementById(id);
   if(!b)return;
@@ -5686,7 +5699,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-02.2';
+const APP_VERSION='2026-11-02.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
