@@ -1,0 +1,2 @@
+Copia de los íconos anteriores a la familia aprobada del 02/11/2026 (caja abierta / libreta / balanza).
+Para volver atrás: copiar estos archivos a la raíz del proyecto (o git revert del commit de íconos).
