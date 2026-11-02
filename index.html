@@ -2476,6 +2476,26 @@ tbody tr{height:48px}
 .ico{display:inline-block;flex:0 0 auto;vertical-align:-.2em}
 .mas-grp-t .ic .ico,.pd-mod-title .ico,.scale-head .t .ico{vertical-align:-3px}
 .pd-mod-title .ico,.scale-head .t .ico{margin-right:6px;color:var(--text-sec)}
+
+/* ============ Tablet (BlissOS): columnas de la tabla proporcionales ============
+   Antes STK / Vta / Cob / Pedir tenían ancho fijo (100+64+66+132 px) y, con el divisor del carrito arrastrado hacia el centro, la columna
+   de producto quedaba en ~13 px (nombres cortados a una letra). Ahora cada columna crece o se encoge con el ancho de la tabla
+   (igual que antes cuando hay espacio) y el nombre del producto siempre conserva un ancho legible. */
+html.modo-bliss.carrito-fijo.vista-filas{
+  --tw:calc(100vw - var(--cart-w) - 12px);
+  --c-stk:clamp(52px,calc(var(--tw)*.14),100px);--c-vta:clamp(44px,calc(var(--tw)*.09),64px);
+  --c-cob:clamp(44px,calc(var(--tw)*.092),66px);--c-ped:clamp(84px,calc(var(--tw)*.185),132px);
+}
+html.modo-bliss.carrito-fijo.vista-filas .fila-row{grid-template-columns:52px minmax(0,1fr) var(--c-stk) var(--c-vta) var(--c-cob) var(--c-ped) !important}
+html.modo-bliss.carrito-fijo.vista-filas .ptable-head>*:nth-child(2){flex:0 0 var(--c-stk)}
+html.modo-bliss.carrito-fijo.vista-filas .ptable-head>*:nth-child(3){flex:0 0 var(--c-vta)}
+html.modo-bliss.carrito-fijo.vista-filas .ptable-head>*:nth-child(4){flex:0 0 var(--c-cob)}
+html.modo-bliss.carrito-fijo.vista-filas .ptable-head>*:nth-child(5){flex:0 0 var(--c-ped)}
+html.modo-bliss.carrito-fijo.vista-filas .ptable-head>*{font-size:clamp(11px,calc(var(--tw)*.019),14px)}
+html.modo-bliss.carrito-fijo.vista-filas .fila-nombre{font-size:clamp(15px,calc(var(--tw)*.028),20px)}
+/* La barra verde de proveedor/filtros no cabía en una sola línea con el divisor al centro: el campo "Ent." quedaba cortado por el borde y se veía
+   como una línea clara vertical. Ahora los filtros pasan a una segunda línea en vez de cortarse. */
+html.modo-bliss.carrito-fijo.vista-filas #prov-anchor .shc-row.shc-wrap{flex-wrap:wrap;row-gap:4px}
 </style>
 </head>
 <body>
@@ -5666,7 +5686,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-01.12';
+const APP_VERSION='2026-11-01.13';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
