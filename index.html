@@ -5686,7 +5686,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-02.1';
+const APP_VERSION='2026-11-02.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -17952,6 +17952,35 @@ autoSyncIfStale();
     head.appendChild(bs[0]);
     if(!tb.children.length||!tb.textContent.trim())tb.style.display='none';
   });
+})();
+</script>
+<!-- Botón "Instalar app" propio: Chrome 154-156 en Android tiene un error que bloquea instalar
+     una segunda app del mismo sitio desde su menú ("Ya se instaló esta app"). Este botón usa
+     beforeinstallprompt, que Chrome resuelve por el alcance de cada app y no por el sitio. -->
+<div id="pwa-instalar" style="display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:calc(78px + env(safe-area-inset-bottom,0px));z-index:9999;align-items:center;gap:4px;background:var(--action,#2E7D32);color:#fff;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.28);font:500 15px/1 Roboto,system-ui,sans-serif;">
+  <button id="pwa-instalar-btn" type="button" style="all:unset;cursor:pointer;padding:13px 6px 13px 18px;min-height:20px;">⬇ Instalar app</button>
+  <button id="pwa-instalar-x" type="button" aria-label="Cerrar" style="all:unset;cursor:pointer;padding:13px 16px 13px 8px;opacity:.85;">✕</button>
+</div>
+<script>
+(function(){
+  var caja=document.getElementById('pwa-instalar');if(!caja)return;
+  var instalada=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone;
+  if(instalada)return;
+  var evento=null;
+  window.addEventListener('beforeinstallprompt',function(ev){
+    ev.preventDefault();evento=ev;
+    try{if(sessionStorage.getItem('pwaInstalarCerrado'))return;}catch(e){}
+    caja.style.display='flex';
+  });
+  document.getElementById('pwa-instalar-btn').onclick=function(){
+    if(!evento)return;
+    evento.prompt();
+    Promise.resolve(evento.userChoice).catch(function(){}).then(function(){evento=null;caja.style.display='none';});
+  };
+  document.getElementById('pwa-instalar-x').onclick=function(){
+    caja.style.display='none';try{sessionStorage.setItem('pwaInstalarCerrado','1');}catch(e){}
+  };
+  window.addEventListener('appinstalled',function(){caja.style.display='none';});
 })();
 </script>
 </body>
