@@ -2011,7 +2011,7 @@ async function fiadosCompletarIncompletos(env) {
     const desde = new Date(ahora - 3 * 86400000).toISOString();
     const { results } = await env.DB.prepare(
       `SELECT f.id, f.receipt_id_loyverse AS numero FROM fiados f
-       WHERE f.fecha_hora >= ? AND f.monto_total - COALESCE((SELECT SUM(l.cantidad * l.precio_unitario) FROM fiados_lineas l WHERE l.fiado_id = f.id), 0) > 5
+       WHERE f.estado = 'abierto' AND f.fecha_hora >= ? AND f.monto_total - COALESCE((SELECT SUM(l.cantidad * l.precio_unitario) FROM fiados_lineas l WHERE l.fiado_id = f.id), 0) > 5
        ORDER BY f.id DESC LIMIT 5`).bind(desde).all();
     for (const f of (results || [])) {
       try {
@@ -2407,9 +2407,8 @@ async function accionFiadosEliminarLinea(env, payload) {
 async function repFiadosCliente(env, clienteId) {
   if (!clienteId) throw new Error("Falta cliente_id");
   const { results: fiadosAbiertos } = await env.DB.prepare(`
-    SELECT f.id, f.fecha_hora, f.monto_total, (f.monto_total - COALESCE(pf.pagado,0)) AS saldo
+    SELECT f.id, f.fecha_hora, f.monto_total, (f.monto_total - COALESCE((SELECT SUM(p.monto) FROM pagos_fiado p WHERE p.fiado_id = f.id),0)) AS saldo
     FROM fiados f
-    LEFT JOIN (SELECT fiado_id, SUM(monto) AS pagado FROM pagos_fiado GROUP BY fiado_id) pf ON pf.fiado_id = f.id
     WHERE f.cliente_id = ? AND f.estado = 'abierto'
     ORDER BY f.fecha_hora ASC`).bind(clienteId).all();
   if (!fiadosAbiertos.length) return { saldoTotal: 0, fiadosAbiertos: [] };
@@ -2460,12 +2459,13 @@ async function repClientesBuscar(env, queryTexto, todos) {
 
 // Lista de clientes que SÍ tienen fiado abierto (para la Vista A de fiados.html) — nunca la
 // lista completa de clientes de Loyverse, solo el subconjunto que efectivamente debe algo.
+const _nombresClienteCache = new Map();
+const NOMBRES_CLIENTE_CACHE_MS = 600000;
 async function repFiadosResumen(env) {
   const { results: porCliente } = await env.DB.prepare(`
     SELECT f.cliente_id AS cliente_id, COUNT(*) AS fiados_abiertos, MIN(f.fecha_hora) AS fiado_mas_antiguo,
-           SUM(f.monto_total - COALESCE(pf.pagado,0)) AS saldo
+           SUM(f.monto_total - COALESCE((SELECT SUM(p.monto) FROM pagos_fiado p WHERE p.fiado_id = f.id),0)) AS saldo
     FROM fiados f
-    LEFT JOIN (SELECT fiado_id, SUM(monto) AS pagado FROM pagos_fiado GROUP BY fiado_id) pf ON pf.fiado_id = f.id
     WHERE f.estado = 'abierto' AND f.cliente_id IS NOT NULL
     GROUP BY f.cliente_id`).all();
   if (!porCliente.length) return { clientes: [] };
@@ -2473,14 +2473,19 @@ async function repFiadosResumen(env) {
     clienteId: f.cliente_id, fiadosAbiertos: f.fiados_abiertos,
     saldo: Math.round((f.saldo || 0) * 100) / 100, fiadoMasAntiguo: f.fiado_mas_antiguo
   }));
-  try {
-    const datos = await loyverseGet(env, "/customers", { customer_ids: clientes.map(c => c.clienteId).join(",") });
-    const nombrePorId = {};
-    (datos.customers || []).forEach(c => { nombrePorId[c.id] = c.name; });
-    clientes.forEach(c => { c.nombre = nombrePorId[c.clienteId] || null; });
-  } catch (e) {
-    await logMsg(env, "⚠️ No se pudieron resolver nombres de clientes en fiados_resumen: " + e.message);
+  // Solo se le pregunta a Loyverse por los clientes cuyo nombre no se conoce (o venció, 10 min);
+  // si la consulta falla se usa el último nombre conocido en vez de dejarlo vacío.
+  const ahoraN = Date.now();
+  const faltan = clientes.filter(c => { const h = _nombresClienteCache.get(c.clienteId); return !(h && ahoraN - h.at < NOMBRES_CLIENTE_CACHE_MS); }).map(c => c.clienteId);
+  if (faltan.length) {
+    try {
+      const datos = await loyverseGet(env, "/customers", { customer_ids: faltan.join(",") });
+      (datos.customers || []).forEach(c => { if (c.name) _nombresClienteCache.set(c.id, { nombre: c.name, at: ahoraN }); });
+    } catch (e) {
+      await logMsg(env, "⚠️ No se pudieron resolver nombres de clientes en fiados_resumen: " + e.message);
+    }
   }
+  clientes.forEach(c => { const h = _nombresClienteCache.get(c.clienteId); c.nombre = h ? h.nombre : null; });
   clientes.sort((a, b) => String(a.fiadoMasAntiguo || "").localeCompare(String(b.fiadoMasAntiguo || "")));
   return { clientes };
 }
@@ -6972,7 +6977,7 @@ const _servidor = {
         return json({ ok: true, ...resultado });
       }
       if (action === "fiados_resumen") {
-        await fiadosSincronizarRapido(env);
+        if (url.searchParams.get("rapido") !== "1") await fiadosSincronizarRapido(env);
         const resultado = await repFiadosResumen(env);
         return json({ ok: true, ...resultado });
       }
