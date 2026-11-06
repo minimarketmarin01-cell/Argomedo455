@@ -2106,6 +2106,23 @@ async function procesarFiadosDeReceipts(env, receipts) {
 
 // Cobro de un abono: aplica el monto FIFO contra los fiados más antiguos del cliente y genera
 // un receipt real en Loyverse (ítem "Abono Fiado") para que el cierre de caja oficial cuadre.
+// Líneas de varios fiados de una vez (en tandas de 90 ids por el límite de parámetros de D1),
+// agrupadas por fiado_id con el mismo shape que devolvía la consulta individual.
+async function lineasDeFiadosPorId(env, ids) {
+  const porFiado = {};
+  const LOTE = 90;
+  const tandas = [];
+  for (let i = 0; i < ids.length; i += LOTE) tandas.push(ids.slice(i, i + LOTE));
+  const resultados = await Promise.all(tandas.map(lote => env.DB.prepare(
+    `SELECT fiado_id, sku, producto_nombre, cantidad, precio_unitario FROM fiados_lineas WHERE fiado_id IN (${lote.map(() => "?").join(",")}) ORDER BY id`
+  ).bind(...lote).all().then(r => r.results || [])));
+  resultados.flat().forEach(l => {
+    (porFiado[l.fiado_id] = porFiado[l.fiado_id] || []).push(
+      { sku: l.sku, producto_nombre: l.producto_nombre, cantidad: l.cantidad, precio_unitario: l.precio_unitario });
+  });
+  return porFiado;
+}
+
 async function accionFiadosCobrar(env, payload) {
   const clienteId = String((payload && payload.cliente_id) || "");
   const monto = Number(payload && payload.monto);
@@ -2114,16 +2131,20 @@ async function accionFiadosCobrar(env, payload) {
   if (!monto || monto <= 0) throw new Error("El monto debe ser mayor a 0");
   if (!METODOS_PAGO_FIADO_VALIDOS.includes(metodoPago)) throw new Error("metodo_pago inválido: " + metodoPago);
 
+  // Antes: un SELECT de saldo por fiado y, por cada fiado cubierto, un INSERT + un UPDATE + un
+  // SELECT de líneas, todos seriales (con una cuenta larga el cobro tardaba muchísimo en
+  // responder). Ahora el saldo viene en la misma consulta de los fiados, las líneas se leen en
+  // una consulta por tandas y todas las escrituras van en UN solo env.DB.batch (una transacción:
+  // o se registran todos los pagos o ninguno). Mismas validaciones y misma respuesta.
   const { results: fiadosAbiertos } = await env.DB.prepare(
-    "SELECT * FROM fiados WHERE cliente_id = ? AND estado = 'abierto' ORDER BY fecha_hora ASC").bind(clienteId).all();
+    `SELECT f.*, COALESCE((SELECT SUM(p.monto) FROM pagos_fiado p WHERE p.fiado_id = f.id), 0) AS pagado
+     FROM fiados f WHERE f.cliente_id = ? AND f.estado = 'abierto' ORDER BY f.fecha_hora ASC`).bind(clienteId).all();
   if (!fiadosAbiertos.length) throw new Error("Este cliente no tiene fiados abiertos");
 
   // Primera pasada: calcular hasta dónde alcanza el monto SIN escribir nada todavía — así se
   // puede rechazar de entrada un monto que supera la deuda total sin dejar cambios a medias.
-  // Los saldos de cada fiado abierto son independientes entre sí — se piden todos en paralelo
-  // (antes era un await por fiado, uno tras otro: con varios fiados abiertos eso sumaba latencia
-  // innecesaria a un cobro que debe sentirse instantáneo) y recién después se arma el FIFO.
-  const saldos = await Promise.all(fiadosAbiertos.map(f => saldoDeFiado(env, f)));
+  // El saldo de cada fiado ya viene calculado (igual que saldoDeFiado) en la consulta de arriba.
+  const saldos = fiadosAbiertos.map(f => Math.round((f.monto_total - f.pagado) * 100) / 100);
   let restante = monto, deudaTotal = 0;
   const aplicaciones = [];
   fiadosAbiertos.forEach((f, i) => {
@@ -2159,12 +2180,16 @@ async function accionFiadosCobrar(env, payload) {
   }
 
   const { storeId } = storeInfo;
-  const creado = await loyversePost(env, "/receipts", {
-    store_id: storeId,
-    customer_id: clienteId,
-    line_items: [{ variant_id: itemAbono.variant_id, quantity: 1, price: monto }],
-    payments: [{ payment_type_id: paymentTypeId, money_amount: monto }]
-  });
+  // El recibo en Loyverse y la lectura de líneas (para el comprobante) no dependen entre sí.
+  const [creado, lineasPorFiado] = await Promise.all([
+    loyversePost(env, "/receipts", {
+      store_id: storeId,
+      customer_id: clienteId,
+      line_items: [{ variant_id: itemAbono.variant_id, quantity: 1, price: monto }],
+      payments: [{ payment_type_id: paymentTypeId, money_amount: monto }]
+    }),
+    lineasDeFiadosPorId(env, aplicaciones.map(ap => ap.fiado.id))
+  ]);
   const receiptAbono = creado.receipt_number || creado.id;
   // Id de la línea del recibo recién creado — necesario más adelante para poder deshacer este
   // cobro con un reembolso puntual de Loyverse (ver accionFiadosDeshacerCobro), mismo dato que
@@ -2172,20 +2197,20 @@ async function accionFiadosCobrar(env, payload) {
   const lineaAbonoId = (creado.line_items && creado.line_items[0] && creado.line_items[0].id) || null;
 
   const fechaHoraAbono = new Date().toISOString();
+  const escrituras = [];
   const fiadosCubiertos = [];
   for (const ap of aplicaciones) {
-    await run(env,
-      "INSERT INTO pagos_fiado (cliente_id, fiado_id, monto, fecha_hora, metodo_pago, receipt_id_loyverse_abono, receipt_line_item_id_abono) VALUES (?,?,?,?,?,?,?)",
-      clienteId, ap.fiado.id, ap.aplicado, fechaHoraAbono, metodoPago, receiptAbono, lineaAbonoId);
-    if (ap.cierraFiado) await run(env, "UPDATE fiados SET estado = 'pagado' WHERE id = ?", ap.fiado.id);
-    const { results: lineas } = await env.DB.prepare(
-      "SELECT sku, producto_nombre, cantidad, precio_unitario FROM fiados_lineas WHERE fiado_id = ?").bind(ap.fiado.id).all();
+    escrituras.push(env.DB.prepare(
+      "INSERT INTO pagos_fiado (cliente_id, fiado_id, monto, fecha_hora, metodo_pago, receipt_id_loyverse_abono, receipt_line_item_id_abono) VALUES (?,?,?,?,?,?,?)"
+    ).bind(clienteId, ap.fiado.id, ap.aplicado, fechaHoraAbono, metodoPago, receiptAbono, lineaAbonoId));
+    if (ap.cierraFiado) escrituras.push(env.DB.prepare("UPDATE fiados SET estado = 'pagado' WHERE id = ?").bind(ap.fiado.id));
     fiadosCubiertos.push({
       fiadoId: ap.fiado.id, fechaHora: ap.fiado.fecha_hora, montoAplicado: ap.aplicado,
       quedaAbierto: !ap.cierraFiado, saldoRestanteFiado: Math.round((ap.saldo - ap.aplicado) * 100) / 100,
-      lineas
+      lineas: lineasPorFiado[ap.fiado.id] || []
     });
   }
+  await env.DB.batch(escrituras);
   await logMsg(env, "💰 Abono fiado cobrado: cliente " + clienteId + " · $" + monto + " (" + metodoPago + ") · receipt " + receiptAbono);
 
   return { ok: true, saldoRestante: Math.round((deudaTotal - monto) * 100) / 100, fiadosCubiertos, receiptAbono };
