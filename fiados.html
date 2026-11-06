@@ -544,9 +544,14 @@ document.getElementById('fd-mostrar-todos').onclick=fdCargarListaFiados;
 // plano) — pero SOLO en Vista A (lista) y SOLO lo que ya estaba visible: nunca interrumpe un
 // cobro a medio escribir en Vista B, ni fuerza a destapar la lista de clientes con fiado si el
 // cajero no la había pedido antes (privacidad por defecto, ver fdListaFiadosVisible arriba).
+// Al volver a la app el navegador suele disparar visibilitychange, pageshow y focus casi juntos:
+// sin esto cada uno pedía la lista completa al servidor (hasta 3 consultas iguales seguidas).
+let fdUltimoRefrescoAuto=0;
 function fdRefrescarSiCorresponde(){
   if(document.visibilityState!=='visible')return;
   if(fdEstadoActual().vista!=='lista')return;
+  if(Date.now()-fdUltimoRefrescoAuto<3000)return;
+  fdUltimoRefrescoAuto=Date.now();
   fdCargarSinCliente();
   if(fdListaFiadosVisible)fdCargarListaFiados();
 }
