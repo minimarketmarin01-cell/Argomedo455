@@ -3293,12 +3293,14 @@ async function accionLoteNuevo(env, payload) {
   const esBonif = !!payload.bonificado;
   const precioNuevo = !esBonif && payload.precio != null && payload.precio !== "" ? Number(payload.precio) : null;
   const costoNuevo = !esBonif && payload.costo != null && payload.costo !== "" ? Number(payload.costo) : null;
+  const nombreNuevoLote = String(payload.nombre || "").trim();
+  const cambioNombreLote = nombreNuevoLote !== "" && nombreNuevoLote !== it.nombre;
   const proveedorNuevo = payload.proveedor != null ? String(payload.proveedor).trim() : null;
   const sectorNuevo = payload.sector != null ? String(payload.sector).trim() : null;
 
   // Cantidad 0 es válida SOLO si viene acompañada de un cambio de precio/costo/proveedor/
   // sector — permite editar esos campos de un producto ya creado sin recibir stock nuevo.
-  if (cantidad <= 0 && precioNuevo == null && costoNuevo == null && proveedorNuevo == null && sectorNuevo == null) {
+  if (cantidad <= 0 && precioNuevo == null && costoNuevo == null && proveedorNuevo == null && sectorNuevo == null && !cambioNombreLote) {
     throw new Error("Indica una cantidad recibida, o un cambio de precio/costo/proveedor/sector");
   }
 
@@ -3395,30 +3397,43 @@ async function accionLoteNuevo(env, payload) {
   const tareaPrecio = (async () => {
     // 3) Costo y/o precio (opcional): mismo patrón seguro (leer completo → modificar →
     //    reenviar) para no crear un producto nuevo ni perder otros campos de la variante.
-    if (precioNuevo == null && costoNuevo == null) return;
+    if (precioNuevo == null && costoNuevo == null && !cambioNombreLote) return;
     if (!it.id_loyverse || !it.variant_id) {
-      avisoPrecioMsg = "⚠️ No se pudo actualizar costo/precio: falta id de Loyverse.";
+      avisoPrecioMsg = "⚠️ No se pudo actualizar costo/precio/nombre: falta id de Loyverse.";
       return;
     }
     try {
       // Deja registro en historial_precios ANTES de escribir en Loyverse (igual que
       // en accionEditarProducto).
-      await run(env,
-        `INSERT INTO historial_precios (sku, fecha, precio_antes, precio_despues, costo_antes, costo_despues, responsable)
-         VALUES (?,?,?,?,?,?,?)`,
-        sku, fechaHoraDDMMAAAA(), it.precio, precioNuevo != null ? precioNuevo : it.precio,
-        it.costo, costoNuevo != null ? costoNuevo : it.costo, payload.responsable || "");
-      await actualizarPrecioCostoLoyverse(env, it.id_loyverse, it.variant_id, precioNuevo, costoNuevo);
+      if (precioNuevo != null || costoNuevo != null) {
+        await run(env,
+          `INSERT INTO historial_precios (sku, fecha, precio_antes, precio_despues, costo_antes, costo_despues, responsable)
+           VALUES (?,?,?,?,?,?,?)`,
+          sku, fechaHoraDDMMAAAA(), it.precio, precioNuevo != null ? precioNuevo : it.precio,
+          it.costo, costoNuevo != null ? costoNuevo : it.costo, payload.responsable || "");
+      }
+      if (cambioNombreLote) {
+        // Nombre (+ costo/precio si vienen) en UN solo envío a Loyverse — el que ya hace accionEditarProducto.
+        const cambiosEd = { sku, nombre: nombreNuevoLote, responsable: payload.responsable || "" };
+        if (precioNuevo != null) cambiosEd.precio = precioNuevo;
+        if (costoNuevo != null) cambiosEd.costo = costoNuevo;
+        await accionEditarProducto(env, cambiosEd);
+        out.nombreAplicado = nombreNuevoLote;
+      } else {
+        await actualizarPrecioCostoLoyverse(env, it.id_loyverse, it.variant_id, precioNuevo, costoNuevo);
+      }
       const sets = [], vals = [];
       if (precioNuevo != null) { sets.push("precio = ?"); vals.push(precioNuevo); }
       if (costoNuevo != null) { sets.push("costo = ?"); vals.push(costoNuevo); }
-      vals.push(sku);
-      await run(env, "UPDATE productos SET " + sets.join(", ") + " WHERE sku = ?", ...vals);
+      if (sets.length) {
+        vals.push(sku);
+        await run(env, "UPDATE productos SET " + sets.join(", ") + " WHERE sku = ?", ...vals);
+      }
       out.precioAplicado = precioNuevo != null ? precioNuevo : it.precio;
       out.costoAplicado = costoNuevo != null ? costoNuevo : it.costo;
       // Deja rastro en auditoría solo cuando es una edición SIN recepción de stock —
       // el caso con stock ya queda registrado en el "recepcion_stock" de la otra tarea.
-      if (cantidad <= 0) {
+      if (cantidad <= 0 && (precioNuevo != null || costoNuevo != null)) {
         const detalle = [];
         if (precioNuevo != null) detalle.push("precio → $" + precioNuevo);
         if (costoNuevo != null) detalle.push("costo → $" + costoNuevo);
