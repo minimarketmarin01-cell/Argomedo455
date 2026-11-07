@@ -3147,7 +3147,7 @@ html.modo-bliss.carrito-fijo.vista-filas #prov-anchor .shc-row.shc-wrap{flex-wra
                   <label>Corregir nombre del producto</label>
                   <div style="display:flex;gap:6px">
                     <input id="rc-nombre-input" style="flex:1;min-width:0;padding:7px 9px;border:1px solid var(--border-control);border-radius:4px;font-size:12px" autocomplete="off">
-                    <button class="loadbtn" id="rc-nombre-guardar" type="button" style="white-space:nowrap;padding:7px 10px;font-size:12px">Guardar</button>
+                    <button class="loadbtn" id="rc-nombre-guardar" type="button" style="display:none">Guardar</button>
                   </div>
                 </div>
                 <div class="cat" id="rc-costo-actual" style="margin-top:2px">Costo actual: —</div>
@@ -5735,7 +5735,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-07.2';
+const APP_VERSION='2026-11-07.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14887,10 +14887,16 @@ function rcValidar(){
   const provCambio=provInput!==((it.prov&&it.prov!=='SIN PROVEEDOR')?it.prov:'');
   const sectInput=(document.getElementById('rc-sect-input').value||'').trim().toUpperCase();
   const sectCambio=sectInput!==(it.sector||'');
-  const hayCambio=costoCambio||precioCambio||provCambio||sectCambio;
+  const hayCambio=costoCambio||precioCambio||provCambio||sectCambio||!!rcNombreCambio();
   btn.disabled=false; // no se deshabilita: al tocarlo sin datos, dice qué casilla falta (ver rcFaltante)
   btn.classList.toggle('mm-falta',!hayCambio);
   btn.textContent=hayCambio?'Guardar cambios':'Guardar y sumar stock';
+}
+// ¿Se escribió un nombre distinto al actual? Se guarda con el botón general de Recepción (ya no hay botón aparte).
+function rcNombreCambio(){
+  const it=rcState.item;if(!it)return '';
+  const n=(document.getElementById('rc-nombre-input').value||'').trim();
+  return (n&&n!==it.nombre)?n:'';
 }
 function rcHayCambioSinCantidad(){
   const{costoCambio,precioCambio}=rcCalcularCambiosCostoPrecio();
@@ -14899,7 +14905,7 @@ function rcHayCambioSinCantidad(){
   const provCambio=provInput!==((it.prov&&it.prov!=='SIN PROVEEDOR')?it.prov:'');
   const sectInput=(document.getElementById('rc-sect-input').value||'').trim().toUpperCase();
   const sectCambio=sectInput!==(it.sector||'');
-  return costoCambio||precioCambio||provCambio||sectCambio;
+  return costoCambio||precioCambio||provCambio||sectCambio||!!rcNombreCambio();
 }
 // Primer dato obligatorio que falta en Recepción (o null si se puede guardar): mensaje + casilla a resaltar.
 function rcFaltante(){
@@ -15350,6 +15356,7 @@ function rcBonifActualizar(){
   }
 }
 {const b=document.getElementById('rc-bonif');if(b)b.onchange=rcBonifActualizar;}
+{const ni=document.getElementById('rc-nombre-input');if(ni)ni.addEventListener('input',()=>{try{rcValidar();}catch(e){}});}
 document.getElementById('rc-cantidad').oninput=()=>{rcValidar();rcSincronizarCostoPresentacion();rcRenderResumen();rcRecalcularCostoConModo();};
 document.getElementById('rc-fecha').oninput=()=>{rcValidar();rcGuardarBorrador();};
 
@@ -15631,7 +15638,8 @@ document.getElementById('rc-guardar').onclick=async()=>{
   // que usa una acción distinta sin soporte de proveedor/sector). Si el usuario sí tocó
   // proveedor/sector con cantidad 0, sigue el flujo normal de abajo — lote_nuevo ya acepta
   // cantidad 0 cuando trae algún cambio de proveedor/sector/costo/precio.
-  if(cantidad===0&&!provCambio&&!sectCambio){await rcGuardarSoloPrecio(it);return;}
+  const nombreNuevoRc=rcNombreCambio();
+  if(cantidad===0&&!provCambio&&!sectCambio&&!nombreNuevoRc){await rcGuardarSoloPrecio(it);return;}
   // (fecha ya calculada arriba, antes del confirm — no se recalcula)
   // Lo que se guarda en Loyverse es el costo BRUTO (Loyverse usa costo con IVA) — el mismo
   // valor que sirvió de base para calcular el precio de venta arriba. rcCostoNeto() es alias
@@ -15654,12 +15662,18 @@ document.getElementById('rc-guardar').onclick=async()=>{
     if(precioCambio)payload.precio=nuevoPrecio;
     if(provCambio)payload.proveedor=provInput;
     if(sectCambio)payload.sector=sectInput;
+    if(nombreNuevoRc)payload.nombre=nombreNuevoRc;
     if(esBonif){payload.bonificado=true;payload.bonifProveedor=(document.getElementById('rc-bonif-prov')||{}).value||'';}
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'lote_nuevo',payload:payload}),signal:ctrl.signal});
     let j;
     try{j=await res.json();}
     catch(parseErr){throw new Error('El servidor respondió '+res.status+' (no es una respuesta válida) — puede que el stock ya se haya guardado, revisa el producto antes de reintentar.');}
     if(j&&j.ok){
+      // Nombre: si el servidor lo aplicó, se refleja acá; si es una versión anterior (no lo conoce), se guarda con la acción de siempre.
+      if(nombreNuevoRc){
+        if(j.fila&&j.fila.nombreAplicado===nombreNuevoRc){it.nombre=nombreNuevoRc;persist();}
+        else{try{await document.getElementById('rc-nombre-guardar').onclick();}catch(e){}}
+      }
       // Actualiza la copia local del producto AL INSTANTE (sin esperar a sincronizar),
       // para que si vuelves a abrir el mismo producto ya se vea al día.
       const itLocal=(DB.items||[]).find(x=>x.ref===it.ref);
