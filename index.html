@@ -2496,6 +2496,14 @@ html.modo-bliss.carrito-fijo.vista-filas .fila-nombre{font-size:clamp(15px,calc(
 /* La barra verde de proveedor/filtros no cabía en una sola línea con el divisor al centro: el campo "Ent." quedaba cortado por el borde y se veía
    como una línea clara vertical. Ahora los filtros pasan a una segunda línea en vez de cortarse. */
 html.modo-bliss.carrito-fijo.vista-filas #prov-anchor .shc-row.shc-wrap{flex-wrap:wrap;row-gap:4px}
+/* La X de borrar de estos buscadores quedaba fuera de pantalla (otra regla la volvía position:relative). Se fija junto al micrófono (todas las .mm-x de buscadores). */
+.mm-search>.mm-x{position:absolute !important;top:50%;right:84px;transform:translateY(-50%)}
+#gp-prod-x,#gp-x{right:6px !important}
+/* X de borrar automática en los cuadros de texto que no la tenían (ver cxInstalar). */
+.cx-x{position:absolute;top:50%;transform:translateY(-50%);width:32px;height:32px;border:none;background:transparent;border-radius:50%;color:var(--text-sec,#616161);cursor:pointer;display:none;align-items:center;justify-content:center;padding:0;z-index:3;-webkit-tap-highlight-color:transparent}
+.cx-x:active{background:rgba(0,0,0,.08)}
+/* Vencimientos: fecha y stock siempre en filas separadas (antes el stock se quedaba al lado de la fecha cuando cabía y bajaba cuando no, y las tarjetas se veían distintas). */
+#vc-ov .vc-meta{flex-direction:column;align-items:flex-start;flex-wrap:nowrap;gap:4px}
 </style>
 </head>
 <body>
@@ -5699,7 +5707,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-02.3';
+const APP_VERSION='2026-11-07.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5938,6 +5946,16 @@ function renderABCResumen(){
   };
   const search=document.getElementById('abcr-search');
   if(search)search.addEventListener('input',renderABCResumen);
+  // X para borrar lo escrito (este buscador no la tenía, a diferencia de Ventas/Mermas por día).
+  const caja=search&&search.closest('.mm-search');
+  if(caja&&!document.getElementById('abcr-x')){
+    const x=document.createElement('button');
+    x.className='mm-x';x.id='abcr-x';x.type='button';x.setAttribute('aria-label','Limpiar');x.style.display='none';
+    x.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+    caja.appendChild(x);
+    search.addEventListener('input',()=>{x.style.display=search.value?'flex':'none';});
+    x.onclick=()=>{search.value='';x.style.display='none';renderABCResumen();search.focus();};
+  }
 })();
 
 (function(){
@@ -16355,7 +16373,7 @@ document.getElementById('vd-cerrar').onclick=()=>cerrarModal('vd-ov');
   const x=document.getElementById('vd-x');
   inp.addEventListener('input',()=>{
     _vdFiltro.search=inp.value;
-    x.style.display=inp.value?'block':'none';
+    x.style.display=inp.value?'flex':'none';
     clearTimeout(window._vdSearchT);window._vdSearchT=setTimeout(vdRender,200);
   });
   x.onclick=()=>{inp.value='';_vdFiltro.search='';x.style.display='none';vdRender();inp.focus();};
@@ -16390,7 +16408,7 @@ document.getElementById('vd-list').addEventListener('click',ev=>{
   if(!f)return;
   document.getElementById('vd-search').value=f.nombre||'';
   _vdFiltro.search=f.nombre||'';
-  document.getElementById('vd-x').style.display='block';
+  document.getElementById('vd-x').style.display='flex';
   vdRender();
 });
 
@@ -16502,7 +16520,7 @@ document.getElementById('mmc-cerrar').onclick=()=>cerrarModal('mmc-ov');
   const x=document.getElementById('mmc-x');
   inp.addEventListener('input',()=>{
     _mmcFiltro.search=inp.value;
-    x.style.display=inp.value?'block':'none';
+    x.style.display=inp.value?'flex':'none';
     clearTimeout(window._mmcSearchT);window._mmcSearchT=setTimeout(mmcRender,200);
   });
   x.onclick=()=>{inp.value='';_mmcFiltro.search='';x.style.display='none';mmcRender();inp.focus();};
@@ -17994,6 +18012,44 @@ autoSyncIfStale();
     caja.style.display='none';try{sessionStorage.setItem('pwaInstalarCerrado','1');}catch(e){}
   };
   window.addEventListener('appinstalled',function(){caja.style.display='none';});
+})();
+</script>
+<script>
+// X de borrar en TODOS los cuadros de texto de búsqueda/nombre que no tenían una funcionando.
+// Los que ya traen su X (.mm-x/.prov-x) se arreglan por CSS; acá se agrega la que falta. Al tocarla
+// vacía el campo y avisa con el evento 'input', así cada pantalla reacciona como si se hubiera borrado a mano.
+(function cxInstalar(){
+  const EXCLUIR=/fecha|cantidad|costo|stock|stk|margen|ancho|alto|unidades|danadas|precio|monto|^lead$|^cover$/i;
+  const SVG='<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+  const lista=[];
+  document.querySelectorAll('input').forEach(inp=>{
+    const t=(inp.type||'text').toLowerCase();
+    if(t!=='text'&&t!=='search')return;
+    if(inp.readOnly||inp.disabled||!inp.id||EXCLUIR.test(inp.id))return;
+    const caja=inp.closest('.mm-search')||inp.parentElement;
+    if(!caja||caja.querySelector('.mm-x,.prov-x,.cx-x'))return;
+    if(getComputedStyle(caja).position==='static')caja.style.position='relative';
+    const x=document.createElement('button');
+    x.type='button';x.className='cx-x';x.tabIndex=-1;x.setAttribute('aria-label','Borrar texto');x.innerHTML=SVG;
+    caja.appendChild(x);
+    const acomodar=()=>{
+      // a la izquierda de los botones de micrófono / escáner / cámara que haya dentro de la caja
+      let der=6;
+      caja.querySelectorAll('.mm-mic,.mm-scan,.cam-btn').forEach(b=>{if(b.offsetWidth)der=Math.max(der,(caja.getBoundingClientRect().right-b.getBoundingClientRect().left)+4);});
+      x.style.right=der+'px';
+      const pad=der+36;
+      if((parseFloat(getComputedStyle(inp).paddingRight)||0)<pad)inp.style.paddingRight=pad+'px';
+    };
+    const sync=()=>{const ver=!!inp.value&&document.activeElement===inp||!!inp.value&&x.dataset.on==='1';x.style.display=inp.value?'flex':'none';if(inp.value)acomodar();};
+    inp.addEventListener('input',sync);inp.addEventListener('focus',sync);inp.addEventListener('change',sync);
+    x.addEventListener('mousedown',e=>e.preventDefault());
+    x.addEventListener('touchstart',e=>e.preventDefault(),{passive:false});
+    const borrar=e=>{e.preventDefault();inp.value='';inp.dispatchEvent(new Event('input',{bubbles:true}));inp.dispatchEvent(new Event('change',{bubbles:true}));x.style.display='none';try{inp.focus();}catch(_){}};
+    x.addEventListener('click',borrar);
+    lista.push({inp,x});
+  });
+  // Hay pantallas que vacían el campo por código (al guardar, al cambiar de producto): se esconde la X si quedó sola.
+  setInterval(()=>{lista.forEach(({inp,x})=>{if(!inp.value&&x.style.display!=='none')x.style.display='none';else if(inp.value&&x.style.display==='none'&&inp.offsetParent)x.style.display='flex';});},700);
 })();
 </script>
 </body>
