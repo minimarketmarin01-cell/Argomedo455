@@ -288,7 +288,7 @@ html.carrito-fijo.overlay-open #tab-pedido{grid-template-columns:minmax(0,1fr) 0
 html.carrito-fijo #mm-ov .mm-card,html.carrito-fijo #abc-ov .mm-card,html.carrito-fijo #sc-ov .mm-card,
 html.carrito-fijo #rneg-ov .mm-card,html.carrito-fijo #hm-ov .mm-card,html.carrito-fijo #in-ov .mm-card,
 html.carrito-fijo #pr-ov .mm-card,html.carrito-fijo #ll-ov .mm-card,html.carrito-fijo #abcr-ov .mm-card,
-html.carrito-fijo #rz-ov .mm-card,html.carrito-fijo #rd-ov .mm-card,html.carrito-fijo #vd-ov .mm-card,
+html.carrito-fijo #rz-ov .mm-card,html.carrito-fijo #rd-ov .mm-card,html.carrito-fijo #vd-ov .mm-card,html.carrito-fijo #bn-ov .mm-card,
 html.carrito-fijo #mmc-ov .mm-card,html.carrito-fijo #calprov-ov .mm-card,html.carrito-fijo #sm-ov .mm-card,
 html.carrito-fijo #rk-ov .mm-card,html.carrito-fijo #cp-ov .mm-card,html.carrito-fijo #gp-ov .mm-card,
 html.carrito-fijo #ed-ov .mm-card,html.carrito-fijo #mc-ov .mm-card{
@@ -3204,6 +3204,16 @@ html.modo-bliss.carrito-fijo.vista-filas #prov-anchor .shc-row.shc-wrap{flex-wra
                 <label for="rc-danadas" style="font-size:13px;font-weight:700;color:var(--rojo,#C62828);flex:1"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg> ¿Cuántas llegaron dañadas?<span style="display:block;font-weight:400;font-size:11px;color:var(--muted)">Van directo a Pendientes para cambio</span></label>
                 <input id="rc-danadas" inputmode="numeric" placeholder="0" autocomplete="off" style="width:64px;height:38px;text-align:center;font-size:16px;border:1px solid var(--border-control);border-radius:4px;background:#fff">
               </div>
+              <div id="rc-bonif-box" style="margin-top:8px">
+                <label for="rc-bonif" style="display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;color:var(--ink);cursor:pointer;text-transform:none;letter-spacing:0">
+                  <input type="checkbox" id="rc-bonif" style="width:22px;height:22px;flex:none;accent-color:var(--action,#176197)"> Es bonificado (gratis)
+                </label>
+                <div id="rc-bonif-prov-wrap" class="hidden" style="margin-top:6px">
+                  <div class="cat" style="margin-bottom:3px">Proveedor que lo regaló</div>
+                  <select id="rc-bonif-prov" style="width:100%;padding:8px 9px;border:1px solid var(--border-control);border-radius:4px;font-size:14px"></select>
+                  <div class="cat" style="margin-top:4px">Suma el stock y no cambia el costo ni el precio del producto.</div>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -3449,6 +3459,7 @@ html.modo-bliss.carrito-fijo.vista-filas #prov-anchor .shc-row.shc-wrap{flex-wra
             <button id="mas-q-ventasdia"><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:-3px" fill="currentColor"><path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/></svg><br>Ventas por día</button>
             <button id="mas-q-mermasdia"><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:-3px" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg><br>Mermas por día</button>
             <button id="mas-q-reportedia"><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:-3px" fill="currentColor"><path d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 18H4V8h16v13z"/></svg><br>Reportes del día</button>
+            <button id="mas-q-bonif"><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:-3px" fill="currentColor"><path d="M20 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm11 15H4v-2h16v2zm0-5H4V8h5.08L7 10.83 8.62 12 11 8.76l1-1.36 1 1.36L15.38 12 17 10.83 14.92 8H20v6z"/></svg><br>Bonificados</button>
             <button id="mas-q-supabase"><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:-3px" fill="currentColor"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM10 17l-3.5-3.5 1.41-1.41L10 14.17 15.18 9l1.41 1.41L10 17z"/></svg><br>Respaldo en Supabase</button>
           </div>
         </div>
@@ -3528,6 +3539,23 @@ html.modo-bliss.carrito-fijo.vista-filas #prov-anchor .shc-row.shc-wrap{flex-wra
       <button type="button" id="rz-ver-excluidos" style="width:100%;margin-bottom:10px;padding:7px;border-radius:9px;border:1px dashed var(--line);background:transparent;color:var(--muted);font-weight:500;font-size:12px;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9A7.9 7.9 0 0 1 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1A7.9 7.9 0 0 1 20 12c0 4.42-3.58 8-8 8z"/></svg> Ver productos excluidos<span id="rz-excl-count"></span></button>
       <div id="rz-excluidos-box" class="hidden" style="margin-bottom:10px"></div>
       <div id="rz-list"></div>
+    </div>
+  </div>
+</div>
+
+<div class="mm-ov hidden" id="bn-ov">
+  <div class="mm-card">
+    <div class="mm-head"><h3><svg width="18" height="18" viewBox="0 0 24 24" class="mm-head-ic" fill="currentColor"><path d="M20 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2z"/></svg>Bonificados</h3></div>
+    <div class="mm-topbar"><button class="loadbtn" id="bn-cerrar" style="width:100%">Cerrar</button></div>
+    <div class="mm-body">
+      <div class="cat" style="margin-bottom:8px;line-height:1.4">Mercadería que los proveedores te regalaron (se marca con "Es bonificado" al recibir). El valor está al costo normal del producto. El % compara con lo que recibiste de ese proveedor (aproximado).</div>
+      <select id="bn-dias" style="width:100%;margin-bottom:10px;padding:9px;border-radius:4px;border:1px solid var(--borde);background:#fff;font-size:14px">
+        <option value="30">Últimos 30 días</option><option value="90" selected>Últimos 90 días</option><option value="365">Último año</option>
+      </select>
+      <div class="hm-summary" style="margin-bottom:8px"><span class="lbl" id="bn-lbl">—</span></div>
+      <div id="bn-prov"></div>
+      <h4 style="margin:16px 0 6px;font-size:14px">Detalle</h4>
+      <div id="bn-det"></div>
     </div>
   </div>
 </div>
@@ -5707,7 +5735,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-07.1';
+const APP_VERSION='2026-11-07.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14917,6 +14945,7 @@ function rcReset(){
   document.getElementById('rc-sin-track-msg').classList.add('hidden');
   const cIn=document.getElementById('rc-cantidad');cIn.value='';cIn.disabled=true;cIn.placeholder='0';
   {const dn=document.getElementById('rc-danadas');if(dn)dn.value='';}
+  {const bf=document.getElementById('rc-bonif');if(bf&&bf.checked){bf.checked=false;try{rcBonifActualizar();}catch(e){}}}
   document.getElementById('rc-unidad').textContent='u';
   document.getElementById('rc-fecha').value='';
   document.getElementById('rc-fecha-dd').value='';
@@ -15307,6 +15336,20 @@ document.getElementById('rc-qty-mas').onclick=rcQtyMas;
   });
 })();
 {const dn=document.getElementById('rc-danadas');if(dn)dn.oninput=()=>{rcValidar();};}
+// Bonificado: se muestra el proveedor que lo regaló y se esconde el bloque de costo/precio (no se toca).
+function rcBonifActualizar(){
+  const on=!!(document.getElementById('rc-bonif')||{}).checked;
+  const w=document.getElementById('rc-bonif-prov-wrap');if(w)w.classList.toggle('hidden',!on);
+  const mount=document.getElementById('rc-pc-mount');const sec=mount&&mount.closest('section');if(sec)sec.classList.toggle('hidden',on);
+  if(on){
+    const sel=document.getElementById('rc-bonif-prov');
+    const def=(rcState.item&&rcState.item.prov&&rcState.item.prov!=='SIN PROVEEDOR')?rcState.item.prov:'';
+    const provs=[...new Set(((DB&&DB.items)||[]).map(x=>x.prov).filter(pv=>pv&&pv!=='SIN PROVEEDOR').concat(def?[def]:[]))].sort((a,b)=>a.localeCompare(b,'es'));
+    sel.innerHTML=provs.map(pv=>'<option value="'+String(pv).replace(/"/g,'&quot;')+'">'+pv+'</option>').join('');
+    if(def)sel.value=def;
+  }
+}
+{const b=document.getElementById('rc-bonif');if(b)b.onchange=rcBonifActualizar;}
 document.getElementById('rc-cantidad').oninput=()=>{rcValidar();rcSincronizarCostoPresentacion();rcRenderResumen();rcRecalcularCostoConModo();};
 document.getElementById('rc-fecha').oninput=()=>{rcValidar();rcGuardarBorrador();};
 
@@ -15576,7 +15619,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
   // accidentales (doble tap sin querer) que sumaban stock de más. Solo se pregunta cuando
   // realmente va a sumar stock (cantidad>0) — guardar solo precio/costo/proveedor/sector
   // (cantidad=0, ver más abajo) no toca stock y no tiene ese riesgo.
-  if(cantidad>0&&!await dlgConfirm('¿Confirmar recepción en '+LOCAL_NOMBRE+' de '+fmt1(cantidad)+' '+(it.peso?'kg':'u')+' de "'+it.nombre+'"?'+(danadas>0?'\n\n⚠️ '+fmt1(danadas)+' llegaron dañadas: se reciben y pasan a Pendientes para cambio.':'')+'\n\nEl stock quedará en '+fmt1(Math.max(0,Number(it.stock)||0)+cantidad-danadas)+'.'))return;
+  if(cantidad>0&&!await dlgConfirm('¿Confirmar recepción'+((document.getElementById('rc-bonif')||{}).checked?' BONIFICADA (gratis)':'')+' en '+LOCAL_NOMBRE+' de '+fmt1(cantidad)+' '+(it.peso?'kg':'u')+' de "'+it.nombre+'"?'+(danadas>0?'\n\n⚠️ '+fmt1(danadas)+' llegaron dañadas: se reciben y pasan a Pendientes para cambio.':'')+'\n\nEl stock quedará en '+fmt1(Math.max(0,Number(it.stock)||0)+cantidad-danadas)+'.'))return;
   const provInput=(document.getElementById('rc-prov-input').value||'').trim().toUpperCase();
   const provActual=(it.prov&&it.prov!=='SIN PROVEEDOR')?it.prov:'';
   const provCambio=provInput!==provActual;
@@ -15593,10 +15636,11 @@ document.getElementById('rc-guardar').onclick=async()=>{
   // Lo que se guarda en Loyverse es el costo BRUTO (Loyverse usa costo con IVA) — el mismo
   // valor que sirvió de base para calcular el precio de venta arriba. rcCostoNeto() es alias
   // de rcCostoBruto(); si la compra fue por caja, ya viene dividido por las unidades.
+  const esBonif=!!(document.getElementById('rc-bonif')||{}).checked;
   const nuevoCosto=Math.round(rcCostoNeto());
   const nuevoPrecio=Number(document.getElementById('rc-precio').value)||0;
-  const costoCambio=nuevoCosto>0;
-  const precioCambio=nuevoPrecio>0;
+  const costoCambio=!esBonif&&nuevoCosto>0;
+  const precioCambio=!esBonif&&nuevoPrecio>0;
   rcGuardando=true;
   btn.disabled=true;btn.textContent='Guardando…';
   // Timeout de seguridad: si el servidor no responde en 25s, se corta y avisa
@@ -15610,6 +15654,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
     if(precioCambio)payload.precio=nuevoPrecio;
     if(provCambio)payload.proveedor=provInput;
     if(sectCambio)payload.sector=sectInput;
+    if(esBonif){payload.bonificado=true;payload.bonifProveedor=(document.getElementById('rc-bonif-prov')||{}).value||'';}
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'lote_nuevo',payload:payload}),signal:ctrl.signal});
     let j;
     try{j=await res.json();}
@@ -15647,7 +15692,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
       if(it.barcode&&DB.pendByBarcode)delete DB.pendByBarcode[it.barcode];
       try{refrescarProveedoresHoy();}catch(e){}
       let msg=cantidad>0
-        ?('Recibido: '+it.nombre+' · +'+cantidad+' '+(it.peso?'kg':'u')+(fecha?(' · vence '+fecha):' · sin vencimiento'))
+        ?((esBonif?'Bonificado recibido (gratis): ':'Recibido: ')+it.nombre+' · +'+cantidad+' '+(it.peso?'kg':'u')+(fecha?(' · vence '+fecha):' · sin vencimiento'))
         :('Actualizado: '+it.nombre);
       const rcCambios=[];
       if(costoCambio)rcCambios.push('costo');
@@ -16263,6 +16308,44 @@ function vdRenderLista(){
   box.innerHTML=lista.slice(0,100).map(l=>`<div class="cbar-row" data-vd-sku="${l.sku}" style="cursor:pointer"><span class="cbar-lbl" title="${(l.nombre||'').replace(/"/g,'&quot;')}">${l.nombre||l.sku}</span><span class="cbar-track"><span class="cbar-fill" style="width:${Math.max(3,Math.round(l.total/max*100))}%;background:var(--rojo)"></span></span><span class="cbar-val">${Math.round(l.total*10)/10} u</span></div>`).join('');
 }
 function vdRender(){vdActualizarNavSemana();vdRenderChart();vdRenderLista();}
+// ===================== BONIFICADOS (ranking de proveedores) =====================
+function bnAbrir(){
+  document.getElementById('mas-ov').classList.add('hidden');
+  abrirModal('bn-ov');
+  bnCargar();
+}
+async function bnCargar(){
+  const dias=document.getElementById('bn-dias').value||'90';
+  document.getElementById('bn-lbl').textContent='Cargando…';
+  document.getElementById('bn-prov').innerHTML='';document.getElementById('bn-det').innerHTML='';
+  try{
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=bonificados&dias='+encodeURIComponent(dias));
+    const j=await res.json();
+    if(!j||!j.ok)throw new Error((j&&j.error)||'sin respuesta');
+    bnRender(j);
+  }catch(e){
+    document.getElementById('bn-lbl').textContent='No se pudo cargar: '+e.message;
+  }
+}
+function bnRender(j){
+  const esc=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const lbl=document.getElementById('bn-lbl');
+  if(!j.detalle||!j.detalle.length){
+    lbl.textContent='Sin bonificados registrados en este período';
+    document.getElementById('bn-prov').innerHTML='<div class="cc-empty">Aún no hay bonificados. Al recibir mercadería regalada, activa "Es bonificado (gratis)" en Recepción.</div>';
+    return;
+  }
+  lbl.textContent=fmt1(j.totalUnidades)+' unidades gratis · '+peso(j.totalValor)+' al costo normal';
+  document.getElementById('bn-prov').innerHTML=j.proveedores.map((p,i)=>
+    '<div class="vc-row" style="margin-bottom:8px"><div class="nom">'+(i+1)+'. '+esc(p.proveedor)+'</div>'+
+    '<div class="cat" style="margin-top:3px">'+fmt1(p.unidades)+' unidades · '+peso(p.valor)+(p.pct!=null?' · '+p.pct+'% de lo que le recibes':'')+' · '+p.veces+' vez'+(p.veces===1?'':'es')+' · última: '+esc(String(p.ultima||'').slice(0,10))+'</div></div>').join('');
+  document.getElementById('bn-det').innerHTML=j.detalle.map(f=>
+    '<div class="cat" style="padding:7px 0;border-bottom:1px solid var(--border-light,#eee)"><b style="color:var(--ink)">'+esc(f.producto)+'</b> · '+fmt1(f.unidades)+' u · '+peso(f.valor)+'<br>'+esc(String(f.fecha||'').slice(0,10))+' · '+esc(f.proveedor)+'</div>').join('');
+}
+document.getElementById('mas-q-bonif').onclick=bnAbrir;
+document.getElementById('bn-cerrar').onclick=()=>cerrarModal('bn-ov');
+document.getElementById('bn-dias').onchange=bnCargar;
+
 document.getElementById('mas-q-ventasdia').onclick=vdAbrir;
 
 // ===================== RESPALDO EN SUPABASE (estado del espejo) =====================
