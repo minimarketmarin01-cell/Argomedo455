@@ -5735,7 +5735,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-07.3';
+const APP_VERSION='2026-11-07.4';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -18147,6 +18147,29 @@ autoSyncIfStale();
   });
   // Hay pantallas que vacían el campo por código (al guardar, al cambiar de producto): se esconde la X si quedó sola.
   setInterval(()=>{lista.forEach(({inp,x})=>{if(!inp.value&&x.style.display!=='none')x.style.display='none';else if(inp.value&&x.style.display==='none'&&inp.offsetParent)x.style.display='flex';});},700);
+})();
+</script>
+<script>
+// Sonido suave de "toque" en cada botón de la app (un tic corto). Para apagarlo en este equipo:
+// localStorage.setItem('toqueSonido','off') — por defecto está encendido.
+(function sonidoToque(){
+  const SEL='button,[role="button"],.bn-item,.loadbtn,summary,input[type="button"],input[type="submit"],.qbtn';
+  let ultimo=0;
+  document.addEventListener('pointerdown',function(ev){
+    try{
+      if(ev.pointerType==='mouse'&&ev.button!==0)return;
+      const b=ev.target&&ev.target.closest&&ev.target.closest(SEL);
+      if(!b||b.disabled||b.getAttribute('aria-disabled')==='true')return;
+      const t=Date.now();if(t-ultimo<60)return;ultimo=t;
+      try{if(localStorage.getItem('toqueSonido')==='off')return;}catch(e){}
+      const ctx=_getAudioCtx();if(!ctx)return;
+      if(ctx.state==='suspended')ctx.resume().catch(function(){});
+      const t0=ctx.currentTime,osc=ctx.createOscillator(),g=ctx.createGain();
+      osc.type='sine';osc.frequency.setValueAtTime(1150,t0);osc.frequency.exponentialRampToValueAtTime(620,t0+0.05);
+      g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(0.09,t0+0.006);g.gain.exponentialRampToValueAtTime(0.0001,t0+0.06);
+      osc.connect(g);g.connect(ctx.destination);osc.start(t0);osc.stop(t0+0.07);
+    }catch(e){/* sin audio: nunca debe estorbar al botón */}
+  },true);
 })();
 </script>
 </body>
