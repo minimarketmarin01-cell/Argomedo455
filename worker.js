@@ -3928,6 +3928,144 @@ async function accionEditarFechaVencimiento(env, payload) {
 //  - 'vendido' / 'merma' / 'revisado' → cierre directo sin pasar por "Retirado" (se
 //    liquidó tal cual, se comprobó que está bien, etc.) — no toca stock (ya se
 //    vendió normal por caja, o directamente no salió nada).
+// ============================================================
+//  REVISIÓN DE VENCIDOS (escaneo) — portado de Marín 376
+// ============================================================
+// Escaneas lo retirado; el reparto sale del lote vencido más viejo al más nuevo: proveedores "de cambio" → Pendientes,
+// el resto → merma, y lo que sobra del lote se da por vendido. Se guarda el reparto en el lote (trazabilidad).
+let _repartoColOk = false;
+async function asegurarColumnaReparto(env) {
+  if (_repartoColOk) return;
+  try { await run(env, "ALTER TABLE vencimientos ADD COLUMN reparto_json TEXT"); } catch (e) { /* ya existía */ }
+  try { await run(env, "ALTER TABLE vencimientos ADD COLUMN motivo_cierre TEXT"); } catch (e) { /* ya existía */ }
+  try { await run(env, "ALTER TABLE vencimientos ADD COLUMN fecha_revision TEXT"); } catch (e) { /* ya existía */ }
+  try { await run(env, "ALTER TABLE vencimientos ADD COLUMN revisado_por TEXT"); } catch (e) { /* ya existía */ }
+  _repartoColOk = true;
+}
+async function _qAllRv(env, sql, ...params) {
+  const st = params.length ? env.DB.prepare(sql).bind(...params) : env.DB.prepare(sql);
+  return (await st.all()).results || [];
+}
+const ESTADOS_CERRADOS_VENC = ["Revisado", "Retirado", "Cambiado", "Descuento recibido", "Desechado"];
+function _diasHastaVencRv(fechaTxt) {
+  const venc = parseFechaDDMMAAAA(fechaTxt);
+  if (!venc) return null;
+  const [y, m, d] = fechaISO().split("-").map(Number);
+  return Math.round((venc - new Date(y, m - 1, d)) / 86400000);
+}
+async function destinoVencidoRv(env, categoria, tabla) {
+  const tipo = vidaUtilCat(categoria, tabla).tipo;
+  return tipo === "cambio"
+    ? { destino: "pendientes", regla: "Proveedor con cambio: Pendientes" }
+    : { destino: "merma", regla: "Proveedor sin cambio: merma" };
+}
+async function planRevisionVencidos(env, items) {
+  await asegurarColumnaReparto(env);
+  const tabla = await getVidaUtilTabla(env);
+  const porSku = {};
+  (items || []).forEach(i => { const sk = String(i.sku || ""); const c = Number(i.cantidad) || 0; if (sk && c > 0) porSku[sk] = (porSku[sk] || 0) + c; });
+  const todos = await _qAllRv(env,
+    "SELECT * FROM vencimientos WHERE sku IS NOT NULL AND COALESCE(estado,'') NOT IN ('" + ESTADOS_CERRADOS_VENC.join("','") + "') AND cantidad > 0");
+  const vencidos = todos.filter(r => { const d = _diasHastaVencRv(r.fecha_vencimiento); return d != null && d <= 0; });
+  const lotesPorSku = {};
+  vencidos.forEach(r => { (lotesPorSku[r.sku] = lotesPorSku[r.sku] || []).push(r); });
+  Object.values(lotesPorSku).forEach(a => a.sort((x, y) => (parseFechaDDMMAAAA(x.fecha_vencimiento) - parseFechaDDMMAAAA(y.fecha_vencimiento)) || (x.id - y.id)));
+  const lineas = [], sinLote = [], tomados = new Set();
+  for (const sku of Object.keys(porSku)) {
+    let resto = porSku[sku];
+    const prod = await get(env, "SELECT * FROM productos WHERE sku = ?", sku);
+    for (const l of (lotesPorSku[sku] || [])) {
+      if (resto <= 0) break;
+      const tomar = Math.min(resto, Number(l.cantidad));
+      resto -= tomar; tomados.add(l.id);
+      const dest = await destinoVencidoRv(env, l.categoria, tabla);
+      lineas.push({ filaIndex: l.id, sku, producto: l.producto, categoria: l.categoria, lote: l.lote || "", fechaVencimiento: l.fecha_vencimiento,
+        cantidadLote: Number(l.cantidad), retiradas: tomar, vendidas: Number(l.cantidad) - tomar, unidad: l.unidad || "un", destino: dest.destino, regla: dest.regla });
+    }
+    if (resto > 0) {
+      const dest = await destinoVencidoRv(env, prod ? prod.categoria : "", tabla);
+      sinLote.push({ sku, producto: prod ? prod.nombre : sku, categoria: prod ? prod.categoria : "", cantidad: resto, destino: dest.destino, regla: dest.regla + " (sin lote vencido registrado)" });
+    }
+  }
+  const sinEscaneo = vencidos.filter(l => !tomados.has(l.id)).map(l => ({
+    filaIndex: l.id, sku: l.sku, producto: l.producto, categoria: l.categoria, fechaVencimiento: l.fecha_vencimiento, cantidadLote: Number(l.cantidad) }));
+  return { lineas, sinLote, sinEscaneo };
+}
+async function accionRevisionVencidosPlan(env, payload) {
+  return { ok: true, ...(await planRevisionVencidos(env, (payload && payload.items) || [])) };
+}
+async function accionRevisionVencidosAplicar(env, payload) {
+  payload = payload || {};
+  await asegurarColumnaReparto(env);
+  const resp = payload.responsable || "";
+  const ahora = fechaHoraDDMMAAAA();
+  const resultados = [];
+  const marca = (l, extra) => JSON.stringify({ retiradas: l.retiradas, destino: l.destino, vendidas: l.vendidas, regla: l.regla, fecha: ahora, por: resp, ...(extra || {}) });
+  if (Array.isArray(payload.items) && payload.items.length) {
+    const plan = await planRevisionVencidos(env, payload.items);
+    for (const l of plan.lineas) {
+      try {
+        let aviso = "";
+        if (l.destino === "pendientes") {
+          const r = await accionRevisarLote(env, { filaIndex: l.filaIndex, resultado: "retirado", cantidad: l.retiradas, revisadoPor: resp, motivoTexto: "Retiro por vencimiento (revisión de vencidos)" });
+          aviso = r.avisoStock || "";
+          await run(env, "UPDATE vencimientos SET reparto_json = ? WHERE id = ?", marca(l), l.filaIndex);
+          if (r.filaRestante && l.vendidas > 0) {
+            await run(env, "UPDATE vencimientos SET estado='Revisado', motivo_cierre='vendido', fecha_revision=?, revisado_por=?, reparto_json=? WHERE id=?", ahora, resp, marca(l, { cierre: "resto vendido" }), r.filaRestante);
+          }
+        } else {
+          const m = await accionMerma(env, { sku: l.sku, cantidad: l.retiradas, motivo: "vencido", origen: "vencimiento", lote: l.lote, vencFilaIndex: l.filaIndex, responsable: resp });
+          aviso = m.avisoStock || "";
+          const row = await get(env, "SELECT * FROM vencimientos WHERE id = ?", l.filaIndex);
+          if (l.retiradas < l.cantidadLote && row) {
+            await run(env, "UPDATE vencimientos SET cantidad=?, estado='Revisado', motivo_cierre='merma', fecha_revision=?, revisado_por=?, reparto_json=? WHERE id=?", l.retiradas, ahora, resp, marca(l), l.filaIndex);
+            await run(env,
+              `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, prioridad, accion, motivo_cierre, fecha_revision, revisado_por, reparto_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+              row.fecha_ingreso, row.sku, row.producto, row.categoria, row.unidad, row.lote, l.cantidadLote - l.retiradas, row.fecha_vencimiento,
+              "Revisado", row.prioridad, row.accion, "vendido", ahora, resp, marca(l, { cierre: "resto vendido" }));
+          } else {
+            await run(env, "UPDATE vencimientos SET estado='Revisado', motivo_cierre='merma', fecha_revision=?, revisado_por=?, reparto_json=? WHERE id=?", ahora, resp, marca(l), l.filaIndex);
+          }
+        }
+        resultados.push({ ok: true, sku: l.sku, producto: l.producto, destino: l.destino, retiradas: l.retiradas, vendidas: l.vendidas, aviso });
+      } catch (e) {
+        resultados.push({ ok: false, sku: l.sku, producto: l.producto, error: e.message });
+      }
+    }
+    for (const sl of plan.sinLote) {
+      try {
+        let aviso = "";
+        if (sl.destino === "pendientes") {
+          const d = await accionDanadoAPendientes(env, { sku: sl.sku, cantidad: sl.cantidad, responsable: resp });
+          aviso = d.avisoStock || "";
+          await run(env, "UPDATE vencimientos SET accion = 'Vencido — esperando cambio con proveedor', reparto_json = ? WHERE id = ?",
+            JSON.stringify({ retiradas: sl.cantidad, destino: "pendientes", vendidas: 0, regla: sl.regla, fecha: ahora, por: resp }), d.filaIndex);
+        } else {
+          const m = await accionMerma(env, { sku: sl.sku, cantidad: sl.cantidad, motivo: "vencido", origen: "manual", responsable: resp });
+          aviso = m.avisoStock || "";
+        }
+        resultados.push({ ok: true, sku: sl.sku, producto: sl.producto, destino: sl.destino, retiradas: sl.cantidad, vendidas: 0, sinLote: true, aviso });
+      } catch (e) {
+        resultados.push({ ok: false, sku: sl.sku, producto: sl.producto, error: e.message });
+      }
+    }
+  }
+  let cerrados = 0;
+  if (Array.isArray(payload.cerrarIds) && payload.cerrarIds.length) {
+    for (const id of payload.cerrarIds.map(Number).filter(n => n > 0)) {
+      const row = await get(env, "SELECT * FROM vencimientos WHERE id = ?", id);
+      if (!row || ESTADOS_CERRADOS_VENC.includes(row.estado)) continue;
+      const d = _diasHastaVencRv(row.fecha_vencimiento);
+      if (d == null || d > 0) continue;
+      await run(env, "UPDATE vencimientos SET estado='Revisado', motivo_cierre='vendido', fecha_revision=?, revisado_por=?, reparto_json=? WHERE id=?",
+        ahora, resp, JSON.stringify({ retiradas: 0, destino: "vendido", vendidas: Number(row.cantidad), regla: "Sin unidades encontradas en la revisión", fecha: ahora, por: resp }), id);
+      cerrados++;
+    }
+  }
+  return { ok: true, resultados, cerrados };
+}
+
 async function accionRevisarLote(env, payload) {
   payload = payload || {};
   const fi = Number(payload.filaIndex || payload.id);
@@ -3945,20 +4083,22 @@ async function accionRevisarLote(env, payload) {
     if (cantidadRetirada > cantidadTotal) throw new Error("No puedes retirar más unidades de las que había en el lote (" + cantidadTotal + ")");
     const esParcial = cantidadRetirada < cantidadTotal;
     const cantidadRestante = cantidadTotal - cantidadRetirada;
+    let filaRestanteId = null;
 
     if (esParcial) {
       await run(env, "UPDATE vencimientos SET cantidad=?, estado='Retirado', fecha_retiro=?, revisado_por=? WHERE id=?",
         cantidadRetirada, ahora, responsable, fi);
-      await run(env,
+      const insRestante = await run(env,
         `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, prioridad, accion, precio_recomendado, costo_usado, costo_origen)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         row.fecha_ingreso, row.sku, row.producto, row.categoria, row.unidad, row.lote, cantidadRestante, row.fecha_vencimiento,
         row.estado, row.prioridad, row.accion, row.precio_recomendado, row.costo_usado, row.costo_origen);
+      filaRestanteId = insRestante.meta.last_row_id;
     } else {
       await run(env, "UPDATE vencimientos SET estado='Retirado', fecha_retiro=?, revisado_por=? WHERE id=?",
         ahora, responsable, fi);
     }
-    const out = { sku: row.sku, nombre: row.producto, categoria: row.categoria, unidad: row.unidad, lote: row.lote, cantidad: cantidadRetirada, estado: "Retirado" };
+    const out = { sku: row.sku, nombre: row.producto, categoria: row.categoria, unidad: row.unidad, lote: row.lote, cantidad: cantidadRetirada, estado: "Retirado", filaRestante: filaRestanteId };
     if (esParcial) out.cantidadRestante = cantidadRestante;
 
     if (cantidadRetirada > 0) {
@@ -6334,6 +6474,14 @@ const _servidor = {
       // POST { action:'revisar_lote', payload:{filaIndex,revisadoPor,resultado,cantidad?} } →
       // cierra o retira un lote (portado de Marín 376, Fase 2 — ver accionRevisarLote).
       // Respuesta envuelta en `fila`, como la espera el frontend de Marín.
+      if (action === "revision_vencidos_plan") {
+        return json(await accionRevisionVencidosPlan(env, payload));
+      }
+      if (action === "revision_vencidos_aplicar") {
+        const r = await accionRevisionVencidosAplicar(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json(r);
+      }
       if (action === "revisar_lote") {
         const resultado = await accionRevisarLote(env, payload);
         await marcarCatalogoActualizado(env);
