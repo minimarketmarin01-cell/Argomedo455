@@ -1621,6 +1621,49 @@ function _parseFechaHoraTextoAuditoria(s) {
   if (!m) return null;
   return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0));
 }
+// ---------- Bonificados (mercadería regalada por el proveedor) ----------
+// Se guardan aparte: el stock se suma normal en Loyverse, pero el costo/precio del producto no se toca.
+let _tablaBonificadosOk = false;
+async function asegurarTablaBonificados(env) {
+  if (_tablaBonificadosOk) return;
+  await run(env, `CREATE TABLE IF NOT EXISTS bonificados (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, fecha_iso TEXT, sku TEXT, producto TEXT,
+    proveedor TEXT, unidades REAL, costo_unit REAL, valor REAL, vencimientos_id INTEGER, responsable TEXT)`);
+  await run(env, "CREATE INDEX IF NOT EXISTS idx_bonificados_fecha ON bonificados(fecha_iso)");
+  _tablaBonificadosOk = true;
+}
+async function _qBonif(env, sql, ...params) {
+  const st = params.length ? env.DB.prepare(sql).bind(...params) : env.DB.prepare(sql);
+  return (await st.all()).results || [];
+}
+// Ranking de proveedores por mercadería bonificada en los últimos N días. "compras" = lo recibido (no
+// bonificado) valorizado al costo actual de cada producto, agrupado por su proveedor; base del % (aproximado).
+async function repBonificados(env, diasParam) {
+  await asegurarTablaBonificados(env);
+  const dias = Math.min(Math.max(Number(diasParam) || 90, 7), 730);
+  const desde = fechaISO(new Date(Date.now() - dias * 86400000));
+  const filas = await _qBonif(env, "SELECT id, fecha, fecha_iso, sku, producto, proveedor, unidades, costo_unit, valor FROM bonificados WHERE fecha_iso >= ? ORDER BY fecha_iso DESC, id DESC", desde);
+  const rec = await _qBonif(env, "SELECT a.fecha, a.cantidad, a.motivo, COALESCE(NULLIF(p.proveedor,''), p.categoria) AS prov, p.costo FROM auditoria a JOIN productos p ON p.sku = a.sku WHERE a.accion = 'recepcion_stock' AND a.cantidad > 0 ORDER BY a.id DESC LIMIT 6000");
+  const compras = {};
+  rec.forEach(r => {
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(String(r.fecha || ""));
+    if (!m || (m[3] + "-" + m[2] + "-" + m[1]) < desde) return;
+    if (String(r.motivo || "").startsWith("Recepción BONIFICADA")) return;   // lo regalado no cuenta como compra
+    compras[r.prov] = (compras[r.prov] || 0) + (Number(r.cantidad) || 0) * (Number(r.costo) || 0);
+  });
+  const por = {};
+  filas.forEach(f => {
+    const k = f.proveedor || "Sin proveedor";
+    const o = por[k] || (por[k] = { proveedor: k, unidades: 0, valor: 0, veces: 0, ultima: f.fecha });
+    o.unidades += Number(f.unidades) || 0; o.valor += Number(f.valor) || 0; o.veces++;
+  });
+  const proveedores = Object.values(por).map(o => {
+    const c = compras[o.proveedor] || 0;
+    return { ...o, valor: Math.round(o.valor), compras: Math.round(c), pct: c > 0 ? Math.round(o.valor / c * 1000) / 10 : null };
+  }).sort((a, b) => b.valor - a.valor);
+  return { dias, proveedores, detalle: filas.slice(0, 150), totalUnidades: filas.reduce((t, f) => t + (Number(f.unidades) || 0), 0), totalValor: Math.round(filas.reduce((t, f) => t + (Number(f.valor) || 0), 0)) };
+}
+
 async function repRecepcionesNegativas(env) {
   const { results: rows } = await env.DB.prepare(
     "SELECT sku, fecha, motivo FROM auditoria WHERE accion = 'recepcion_stock' ORDER BY id DESC LIMIT 2000"
@@ -3246,8 +3289,10 @@ async function accionLoteNuevo(env, payload) {
   if (!it) throw new Error("Producto no encontrado en el catálogo local (sincroniza el catálogo si es reciente): " + sku);
 
   const cantidad = Number(payload.cantidad) || 0;
-  const precioNuevo = payload.precio != null && payload.precio !== "" ? Number(payload.precio) : null;
-  const costoNuevo = payload.costo != null && payload.costo !== "" ? Number(payload.costo) : null;
+  // Bonificado (regalo del proveedor): suma stock pero NUNCA cambia costo ni precio del producto.
+  const esBonif = !!payload.bonificado;
+  const precioNuevo = !esBonif && payload.precio != null && payload.precio !== "" ? Number(payload.precio) : null;
+  const costoNuevo = !esBonif && payload.costo != null && payload.costo !== "" ? Number(payload.costo) : null;
   const proveedorNuevo = payload.proveedor != null ? String(payload.proveedor).trim() : null;
   const sectorNuevo = payload.sector != null ? String(payload.sector).trim() : null;
 
@@ -3313,8 +3358,18 @@ async function accionLoteNuevo(env, payload) {
           `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable, cantidad)
            VALUES (?,?,?,?,?,?,?,?,?,?)`,
           fechaHoraDDMMAAAA(), "recepcion_stock", sku, it.nombre, it.categoria, it.id_loyverse, res.despues,
-          "Recepción de mercadería: +" + cantidad + " " + unidad + " (" + res.antes + " → " + res.despues + ")" +
+          (esBonif ? "Recepción BONIFICADA (gratis): +" : "Recepción de mercadería: +") + cantidad + " " + unidad + " (" + res.antes + " → " + res.despues + ")" +
           (tieneFecha ? " · vence " + fechaTxt : ""), payload.responsable || "", cantidad);
+        if (esBonif) {
+          try {
+            await asegurarTablaBonificados(env);
+            const costoU = Number(it.costo) || 0;
+            await run(env, `INSERT INTO bonificados (fecha, fecha_iso, sku, producto, proveedor, unidades, costo_unit, valor, vencimientos_id, responsable) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+              fechaHoraDDMMAAAA(), fechaISO(new Date()), sku, it.nombre,
+              String(payload.bonifProveedor || it.proveedor || it.categoria || "").trim() || "Sin proveedor", cantidad, costoU, Math.round(cantidad * costoU), insertRes.meta.last_row_id, payload.responsable || "");
+            out.bonificado = true;
+          } catch (e) { /* no crítico: el stock ya se sumó */ }
+        }
       } else {
         revertirLote = true;
         avisoStockMsg = "⚠️ No se pudo sumar el stock en Loyverse (" + res.motivo + "). Esta recepción NO quedó guardada: vuelve a ingresarla por Recepción.";
@@ -6685,6 +6740,9 @@ const _servidor = {
 
       // GET /?action=recepciones_negativas  →  productos recibidos en las últimas 2
       // semanas que hoy siguen con stock negativo (portado de Marín 376, Fase 2).
+      if (action === "bonificados") {
+        return json({ ok: true, ...(await repBonificados(env, url.searchParams.get("dias"))) });
+      }
       if (action === "recepciones_negativas") {
         return json({ ok: true, productos: await repRecepcionesNegativas(env) });
       }
