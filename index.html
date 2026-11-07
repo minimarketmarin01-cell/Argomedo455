@@ -5735,7 +5735,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-07.4';
+const APP_VERSION='2026-11-07.5';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -18169,6 +18169,30 @@ autoSyncIfStale();
       g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(0.09,t0+0.006);g.gain.exponentialRampToValueAtTime(0.0001,t0+0.06);
       osc.connect(g);g.connect(ctx.destination);osc.start(t0);osc.stop(t0+0.07);
     }catch(e){/* sin audio: nunca debe estorbar al botón */}
+  },true);
+})();
+// Sonido al escribir y al borrar en los cuadros de texto (más agudo al escribir, más grave al borrar).
+// Se apaga junto con el de los botones: localStorage.setItem('toqueSonido','off').
+(function sonidoTeclas(){
+  let ultimo=0;
+  document.addEventListener('input',function(ev){
+    try{
+      const el=ev.target;
+      if(!el||!(el.tagName==='INPUT'||el.tagName==='TEXTAREA')||ev.isTrusted===false)return;
+      const tipo=String(ev.inputType||'');
+      const borra=/^delete/.test(tipo);
+      if(!borra&&!/^insert|^history/.test(tipo)&&tipo!=='')return;
+      const t=Date.now();if(t-ultimo<35)return;ultimo=t;
+      try{if(localStorage.getItem('toqueSonido')==='off')return;}catch(e){}
+      const ctx=_getAudioCtx();if(!ctx)return;
+      if(ctx.state==='suspended')ctx.resume().catch(function(){});
+      const t0=ctx.currentTime,osc=ctx.createOscillator(),g=ctx.createGain();
+      osc.type='triangle';
+      const f=borra?420:760;
+      osc.frequency.setValueAtTime(f,t0);osc.frequency.exponentialRampToValueAtTime(f*0.8,t0+0.03);
+      g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(0.06,t0+0.004);g.gain.exponentialRampToValueAtTime(0.0001,t0+0.04);
+      osc.connect(g);g.connect(ctx.destination);osc.start(t0);osc.stop(t0+0.05);
+    }catch(e){/* sin audio: nunca debe estorbar al escribir */}
   },true);
 })();
 </script>
