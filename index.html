@@ -2504,6 +2504,10 @@ html.modo-bliss.carrito-fijo.vista-filas #prov-anchor .shc-row.shc-wrap{flex-wra
 .cx-x:active{background:rgba(0,0,0,.08)}
 /* Vencimientos: fecha y stock siempre en filas separadas (antes el stock se quedaba al lado de la fecha cuando cabía y bajaba cuando no, y las tarjetas se veían distintas). */
 #vc-ov .vc-meta{flex-direction:column;align-items:flex-start;flex-wrap:nowrap;gap:4px}
+/* Revisión de vencidos: deslizar una fila hacia la izquierda para quitarla (como en Loyverse). */
+.rv-sw{position:relative;overflow:hidden;border-radius:8px;margin-bottom:6px}
+.rv-sw-bg{position:absolute;inset:0;background:#C62828;color:#fff;display:flex;align-items:center;justify-content:flex-end;gap:6px;padding:0 18px;font-weight:700;font-size:13px;opacity:0}
+.rv-sw-fg{position:relative;touch-action:pan-y;margin-bottom:0 !important;transition:transform .18s}
 </style>
 </head>
 <body>
@@ -5767,7 +5771,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-08.1';
+const APP_VERSION='2026-11-08.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -16417,12 +16421,49 @@ function rvRender(){
   document.getElementById('rv-terminar').disabled=!rvLista.length;
   const esc=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   document.getElementById('rv-lista').innerHTML=rvLista.length?rvLista.map(x=>
-    '<div class="vc-row" style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div style="flex:1;min-width:0"><div class="nom">'+esc(x.nombre)+'</div><div class="cat">'+esc(x.prov)+'</div></div>'+
+    '<div class="rv-sw" data-ref="'+esc(x.ref)+'"><div class="rv-sw-bg" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>Quitar</div><div class="vc-row rv-sw-fg" style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div class="nom">'+esc(x.nombre)+'</div><div class="cat">'+esc(x.prov)+'</div></div>'+
     '<button type="button" class="loadbtn" data-rvd="-1" data-ref="'+esc(x.ref)+'" style="width:40px;padding:8px 0">−</button>'+
     '<b style="min-width:26px;text-align:center">'+x.cantidad+'</b>'+
-    '<button type="button" class="loadbtn" data-rvd="1" data-ref="'+esc(x.ref)+'" style="width:40px;padding:8px 0">+</button></div>').join('')
+    '<button type="button" class="loadbtn" data-rvd="1" data-ref="'+esc(x.ref)+'" style="width:40px;padding:8px 0">+</button></div></div>').join('')
     :'<div class="cc-empty">Todavía no escaneaste nada.</div>';
 }
+function rvQuitar(ref){
+  const x=rvLista.find(z=>z.ref===ref);
+  rvLista=rvLista.filter(z=>z.ref!==ref);
+  rvGuardarBorrador();rvRender();
+  if(x)showToast('Quitado: '+x.nombre);
+}
+(function rvSwipe(){
+  const box=document.getElementById('rv-lista');
+  let ref=null,fg=null,x0=0,y0=0,dx=0,activo=false,decidido=false,arrastro=false;
+  // si el dedo se arrastró, el toque final no debe contar como clic en el botón + o −
+  box.addEventListener('click',e=>{if(arrastro){e.stopPropagation();e.preventDefault();arrastro=false;}},true);
+  box.addEventListener('pointerdown',e=>{
+    arrastro=false;
+    const w=e.target.closest('.rv-sw');if(!w)return;
+    fg=w.querySelector('.rv-sw-fg');ref=w.dataset.ref;x0=e.clientX;y0=e.clientY;dx=0;activo=true;decidido=false;
+  });
+  box.addEventListener('pointermove',e=>{
+    if(!activo)return;
+    const mx=e.clientX-x0,my=e.clientY-y0;
+    if(!decidido){
+      if(Math.abs(mx)<8&&Math.abs(my)<8)return;
+      decidido=true;
+      if(Math.abs(my)>Math.abs(mx)){activo=false;return;}   // era scroll vertical
+      fg.style.transition='none';arrastro=true;
+      try{box.setPointerCapture(e.pointerId);}catch(_){}
+    }
+    dx=Math.min(0,mx);fg.style.transform='translateX('+dx+'px)';fg.previousElementSibling.style.opacity=dx<0?'1':'0';
+  });
+  const fin=()=>{
+    if(!activo||!fg)return;activo=false;
+    const w=fg.parentElement.offsetWidth;
+    fg.style.transition='transform .18s';
+    if(-dx>w*0.35){fg.style.transform='translateX(-110%)';const r=ref;setTimeout(()=>rvQuitar(r),170);}
+    else{fg.style.transform='translateX(0)';const bg=fg.previousElementSibling;setTimeout(()=>{if(bg)bg.style.opacity='0';},190);}
+  };
+  box.addEventListener('pointerup',fin);box.addEventListener('pointercancel',fin);
+})();
 function rvBuscar(txt){
   const box=document.getElementById('rv-results');
   const list=txt&&txt.trim()?mmFindItems(txt):[];
