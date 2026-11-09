@@ -5771,7 +5771,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-08.2';
+const APP_VERSION='2026-11-09.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -6731,6 +6731,19 @@ function _actualizarVisibilidadFab(){
   // botón "Confirmar") con el carrito ya abierto, reportado en captura de pantalla.
   fab.classList.toggle('fab-oculto',!enPedidos||hayModal||_carritoAbierto);
 }
+// Hay ventanas que se vuelven a mostrar quitando 'hidden' a mano (al volver del escáner o del micrófono en
+// Recepción, Ventas por día, etc.) sin pasar por abrirModal: el carrito flotante quedaba encima. Se vigila el
+// cambio de clase de cualquier ventana (.mm-ov/.scan-ov) y se recalcula solo — sin importar quién la abrió.
+(function(){
+  let pendiente=false;
+  const mo=new MutationObserver(function(muts){
+    if(pendiente)return;
+    if(!muts.some(function(m){return m.target&&m.target.matches&&m.target.matches('.mm-ov, .scan-ov');}))return;
+    pendiente=true;
+    requestAnimationFrame(function(){pendiente=false;try{_actualizarVisibilidadFab();}catch(e){}});
+  });
+  mo.observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']});
+})();
 // Botón físico "Atrás" de Android: cierra SOLO la ventana abierta; si no hay
 // ninguna y estás en el carrito, vuelve a Pedidos; y solo sale de la app cuando
 // ya estás en Pedidos (con doble toque de confirmación, para no salir sin querer).
