@@ -5871,7 +5871,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-13.1';
+const APP_VERSION='2026-11-13.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -7870,6 +7870,46 @@ function pesosCL(el){
 }
 // Antes que cualquier otro listener: actualiza el valor interno de la casilla en cuanto se escribe en ella.
 document.addEventListener('input',e=>{const t=e.target;if(t&&t._pesos&&t._pesosEscribio)t._pesosEscribio();},true);
+// Casilla de porcentaje: se ve "30%" (con el símbolo) pero .value sigue devolviendo "30", igual que pesosCL con los pesos.
+// Los cálculos leen Number(el.value), así que no cambia nada de lo que ya existía. Decimal con coma, como los pesos.
+function _pctFmt(raw){return(raw===''||raw==null)?'':String(raw).replace('.',',')+'%';}
+function porcentajeCL(el){
+  if(!el||el._pct)return;
+  el._pct=true;
+  try{el.type='text';}catch(e){}
+  el.setAttribute('inputmode','decimal');el.setAttribute('autocomplete','off');
+  let raw='';
+  const norm=v=>{v=String(v==null?'':v).trim().replace(',','.');return /^\d*\.?\d*$/.test(v)?v:'';};
+  Object.defineProperty(el,'value',{configurable:true,
+    get(){return raw;},
+    set(v){raw=norm(v);_inpValor.set.call(el,_pctFmt(raw));}});
+  // el cursor siempre antes del %, para que lo que se escribe o se borra sean las cifras y no el símbolo
+  const antesDelSimbolo=()=>{if(raw==='')return;const n=_pctFmt(raw).length-1;if(el.selectionStart>n||el.selectionEnd>n){try{el.setSelectionRange(Math.min(el.selectionStart,n),n);}catch(e){}}};
+  el._pctEscribio=()=>{   // el usuario escribió: se reinterpreta lo que hay en pantalla
+    const txt=_inpValor.get.call(el).replace(/%/g,'').replace(/\s/g,'').replace(',','.').replace(/[^\d.]/g,'');
+    const m=/^(\d*)(?:\.(\d*))?/.exec(txt)||[];
+    raw=(m[1]||'').replace(/^0+(?=\d)/,'')+(m[2]!=null?'.'+m[2]:'');
+    if(raw==='.')raw='';
+    _inpValor.set.call(el,_pctFmt(raw));
+    if(raw!==''){const n=_pctFmt(raw).length-1;try{el.setSelectionRange(n,n);}catch(e){}}
+  };
+  el.addEventListener('focus',()=>setTimeout(antesDelSimbolo,0));
+  el.addEventListener('click',antesDelSimbolo);
+  // Borrar con el cursor después del %: borra la última cifra (no el símbolo, que se volvería a poner solo).
+  el.addEventListener('beforeinput',e=>{
+    if(e.inputType!=='deleteContentBackward'||raw===''||el.selectionStart!==el.selectionEnd)return;
+    const n=_pctFmt(raw).length-1;
+    if(el.selectionStart<=n)return;
+    e.preventDefault();
+    raw=raw.slice(0,-1);if(raw.endsWith('.'))raw=raw.slice(0,-1);
+    _inpValor.set.call(el,_pctFmt(raw));
+    const m=raw===''?0:_pctFmt(raw).length-1;try{el.setSelectionRange(m,m);}catch(x){}
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  raw=norm(el.getAttribute('value')!=null?el.getAttribute('value'):_inpValor.get.call(el));
+  _inpValor.set.call(el,_pctFmt(raw));
+}
+document.addEventListener('input',e=>{const t=e.target;if(t&&t._pct&&t._pctEscribio)t._pctEscribio();},true);
 function pesosCLEn(raiz){(raiz||document).querySelectorAll('input[data-pesos]').forEach(pesosCL);}
 new MutationObserver(()=>pesosCLEn()).observe(document.documentElement,{childList:true,subtree:true});
 
@@ -7942,6 +7982,7 @@ const PcWidget=(function(){
     const pfx=cfg.prefix;
     const $=id=>document.getElementById(pfx+'-'+id);
     pesosCL($('costo'));pesosCL($('precio'));   // casillas en pesos chilenos ($12.990)
+    porcentajeCL($('margen-obj'));              // margen objetivo con su símbolo (30%)
     const state=cfg.state; // objeto mutable del llamador: {modo,ivaModo,ilaAplica,precioTocado}
     function ilaMarcado(){const el=$('ila');return !!(el&&el.checked);}
     function ila10Marcado(){const el=$('ila10');return !!(el&&el.checked);}
