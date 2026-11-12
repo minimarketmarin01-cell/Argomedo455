@@ -2580,6 +2580,12 @@ html:not(.carrito-fijo) #prov-anchor .shc-row .prov-combo{position:relative;left
 #per-mini-slot .shc-mini label{color:#212121!important}
 #per-mini-slot .shc-mini input{width:64px;height:40px;padding:0 6px;font-size:16px;border:none;border-bottom:2px solid #BDBDBD;border-radius:0;background:#fff;color:#212121;text-align:center}
 .per-ok{display:block;margin:8px 8px 0 auto;padding:10px 16px;border:none;background:transparent;color:var(--action);font:500 14px Roboto,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;cursor:pointer}
+/* Línea gris al fondo de la lista = barra de desplazamiento HORIZONTAL: en celulares de ~393px (Xiaomi, etc.) la fila de
+   encabezados (5 columnas + flechas ▲▼, sin salto de línea) medía más que la pantalla. En celular: flecha solo en la columna
+   activa (ya va subrayada), columnas que reparten el ancho, y la lista no se desplaza de lado (no tiene uso en vista de tarjetas). */
+html:not(.vista-filas) .ptable-head>*{flex:1 1 auto;min-width:0;padding-left:2px;padding-right:2px;letter-spacing:.02em}
+html:not(.vista-filas) .ptable-head>*:not(.sorted) .ar{display:none}
+html:not(.vista-filas) .tbl-scroll{overflow-x:hidden}
 /* Recepción: título y pestañas sin cortes */
 #rc-ov .mm-head h3{font-size:17px}
 #rc-modo-seg button{white-space:nowrap;font-size:12px;padding-left:4px;padding-right:4px}
@@ -5865,7 +5871,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-12.1';
+const APP_VERSION='2026-11-13.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
