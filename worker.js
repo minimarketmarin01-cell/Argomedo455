@@ -1731,9 +1731,22 @@ async function accionEliminarMovimientoStock(env, payload) {
     avisoStock = "⚠️ No se pudo revertir el stock en Loyverse. Revísalo a mano.";
   }
 
+  // Si era un CAMBIO con proveedor: los pendientes que cerró vuelven a Pendientes y se quita el lote del producto repuesto.
+  let reabiertos = 0;
+  if (row.cambio_cierra) {
+    try {
+      const c = JSON.parse(row.cambio_cierra) || {};
+      for (const x of (c.cerrados || [])) {
+        await run(env, "UPDATE vencimientos SET estado='Retirado', motivo_cierre=NULL, fecha_revision=NULL, revisado_por=NULL, cantidad=? WHERE id=?", Number(x.cantidad) || 0, Number(x.id));
+        reabiertos++;
+      }
+      if (c.loteNuevo) await run(env, "DELETE FROM vencimientos WHERE id = ?", Number(c.loteNuevo));
+    } catch (e) { await logMsg(env, "⚠️ No se pudieron reabrir los pendientes del cambio eliminado (" + row.producto + "): " + e.message); }
+  }
   await run(env, "DELETE FROM auditoria WHERE id = ?", id);
 
   const out = { sku: row.sku, nombre: row.producto, cantidad: row.cantidad, nuevoStock };
+  if (reabiertos) out.pendientesReabiertos = reabiertos;
   if (avisoStock) out.avisoStock = avisoStock;
   return out;
 }
@@ -3291,8 +3304,9 @@ async function accionLoteNuevo(env, payload) {
   const cantidad = Number(payload.cantidad) || 0;
   // Bonificado (regalo del proveedor): suma stock pero NUNCA cambia costo ni precio del producto.
   const esBonif = !!payload.bonificado;
-  const precioNuevo = !esBonif && payload.precio != null && payload.precio !== "" ? Number(payload.precio) : null;
-  const costoNuevo = !esBonif && payload.costo != null && payload.costo !== "" ? Number(payload.costo) : null;
+  const esCambio = !!payload.esCambio;   // reposición de un cambio con el proveedor: gratis, no toca costo/precio ni pedidos pendientes
+  const precioNuevo = !esBonif && !esCambio && payload.precio != null && payload.precio !== "" ? Number(payload.precio) : null;
+  const costoNuevo = !esBonif && !esCambio && payload.costo != null && payload.costo !== "" ? Number(payload.costo) : null;
   const nombreNuevoLote = String(payload.nombre || "").trim();
   const cambioNombreLote = nombreNuevoLote !== "" && nombreNuevoLote !== it.nombre;
   const proveedorNuevo = payload.proveedor != null ? String(payload.proveedor).trim() : null;
@@ -3356,12 +3370,13 @@ async function accionLoteNuevo(env, payload) {
       const res = await sumarStockLoyverse(env, it, cantidad, { clampBaseNegativo: true });
       if (res.ok) {
         out.nuevoStock = res.despues;
-        await run(env,
+        const audRes = await run(env,
           `INSERT INTO auditoria (fecha, accion, sku, producto, categoria, id_loyverse, stock, motivo, responsable, cantidad)
            VALUES (?,?,?,?,?,?,?,?,?,?)`,
           fechaHoraDDMMAAAA(), "recepcion_stock", sku, it.nombre, it.categoria, it.id_loyverse, res.despues,
-          (esBonif ? "Recepción BONIFICADA (gratis): +" : "Recepción de mercadería: +") + cantidad + " " + unidad + " (" + res.antes + " → " + res.despues + ")" +
+          (esCambio ? "Cambio con proveedor: +" : esBonif ? "Recepción BONIFICADA (gratis): +" : "Recepción de mercadería: +") + cantidad + " " + unidad + " (" + res.antes + " → " + res.despues + ")" +
           (tieneFecha ? " · vence " + fechaTxt : ""), payload.responsable || "", cantidad);
+        if (audRes && audRes.meta) out.auditoriaId = audRes.meta.last_row_id;
         if (esBonif) {
           try {
             await asegurarTablaBonificados(env);
@@ -3388,6 +3403,7 @@ async function accionLoteNuevo(env, payload) {
     // 2b) Si este producto tenía un pedido confirmado sin recibir ("Ya pedido a
     // X" en Armar pedido), pasa a 'recibido' — no se borra, queda como historial.
     try {
+      if (!esCambio)   // un cambio no es la llegada de un pedido
       await run(env, "UPDATE pedidos_pendientes SET estado = 'recibido' WHERE sku = ? AND estado = 'confirmado'", sku);
     } catch (e) {
       // no crítico: si falla, el chip "Ya pedido" simplemente sigue mostrándose.
@@ -4145,6 +4161,78 @@ async function accionRevisarLote(env, payload) {
 // no está en 'Retirado' (ya se cerró antes), corta ANTES de tocar stock. Admite cambio
 // PARCIAL (`cantidadCambiada` menor al total): cierra solo esa cantidad y deja el resto
 // en una fila nueva, todavía 'Retirado', para seguir apareciendo en Pendientes.
+// ===== Cambio con proveedor recibido por Recepción (solo PAN CASTAÑO repone producto; misma lógica que Marín 376) =====
+// Ideal y San Jorge no reponen: solo dan descuento en factura.
+const CATEGORIAS_CAMBIO_REPOSICION = ["PAN CASTANO"];   // comparadas sin tildes ni mayúsculas
+function esCategoriaCambioReposicion(cat) {
+  const n = String(cat || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+  return CATEGORIAS_CAMBIO_REPOSICION.indexOf(n) >= 0;
+}
+let _auditoriaCambioCierraOk = false;
+async function asegurarColumnaAuditoriaCambioCierra(env) {
+  if (_auditoriaCambioCierraOk) return;
+  try { await run(env, "ALTER TABLE auditoria ADD COLUMN cambio_cierra TEXT"); } catch (e) { /* columna ya existe */ }
+  _auditoriaCambioCierraOk = true;
+}
+async function repCambiosPendientes(env, sku) {
+  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", String(sku));
+  if (!it) return { aplica: false, unidades: 0, lotes: [] };
+  if (!esCategoriaCambioReposicion(it.categoria)) return { aplica: false, categoria: it.categoria || "", unidades: 0, lotes: [] };
+  const { results } = await env.DB.prepare("SELECT id, cantidad, fecha_vencimiento, fecha_retiro FROM vencimientos WHERE sku = ? AND estado = 'Retirado' ORDER BY id ASC").bind(String(sku)).all();
+  const lotes = (results || []).map(r => ({ id: r.id, cantidad: Number(r.cantidad) || 0, fechaVencimiento: r.fecha_vencimiento || "", fechaRetiro: r.fecha_retiro || "" }));
+  return { aplica: true, categoria: it.categoria || "", unidades: lotes.reduce((a, l) => a + l.cantidad, 0), lotes };
+}
+// 1) Recepción marcada como cambio (stock +N una sola vez, lote nuevo con su vencimiento, un movimiento).
+// 2) Cierra los pendientes ('Retirado') más antiguos primero SIN volver a sumar stock.
+// 3) El movimiento guarda qué cerró, para poder deshacerlo.
+async function accionRecibirCambio(env, payload) {
+  payload = payload || {};
+  await asegurarColumnaAuditoriaCambioCierra(env);
+  const sku = String(payload.sku || "").trim();
+  if (!sku) throw new Error("Falta el producto");
+  const pend = await repCambiosPendientes(env, sku);
+  if (!pend.aplica) throw new Error("Solo PAN CASTAÑO hace cambios: este producto no tiene cambio con proveedor.");
+  if (pend.unidades <= 0) throw new Error("Este producto no tiene unidades pendientes de cambio.");
+  const cantidad = Number(payload.cantidad);
+  if (!cantidad || cantidad <= 0) throw new Error("Cantidad inválida");
+  if (cantidad > pend.unidades) throw new Error("Solo hay " + pend.unidades + " unidad(es) pendientes de cambio. Registra las demás como recepción normal (sin marcar 'Es cambio').");
+  const fechaTxt = String(payload.fechaVencimiento || "").trim();
+  if (!fechaTxt) throw new Error("Indica la fecha de vencimiento del producto repuesto.");
+  if (!parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha de vencimiento inválida (usa DD/MM/AAAA)");
+
+  const rec = await accionLoteNuevo(env, Object.assign({}, payload, { esCambio: true, bonificado: false, costo: null, precio: null, nombre: "", proveedor: null, sector: null }));
+  if (rec.loteRevertido || rec.nuevoStock == null) {
+    rec.cambioCerrado = false;
+    rec.avisoCambio = "⚠️ Los pendientes de cambio NO se cerraron porque el stock no quedó confirmado. Revisa el stock y repite el cambio.";
+    return rec;
+  }
+  let restante = cantidad;
+  const cerrados = [];
+  for (const lote of pend.lotes) {
+    if (restante <= 0) break;
+    const toma = Math.min(restante, lote.cantidad);
+    if (toma <= 0) continue;
+    try {
+      await accionMarcarCambiado(env, { filaIndex: lote.id, cantidadCambiada: toma, sinSumarStock: true, revisadoPor: payload.responsable || "" });
+      cerrados.push({ id: lote.id, cantidad: toma });
+      restante -= toma;
+    } catch (e) {
+      await logMsg(env, "⚠️ No se pudo cerrar el lote pendiente " + lote.id + " de " + sku + " al recibir el cambio: " + e.message);
+    }
+  }
+  if (rec.auditoriaId) {
+    try {
+      await run(env, "UPDATE auditoria SET cambio_cierra = ? WHERE id = ?", JSON.stringify({ cerrados, loteNuevo: rec.filaIndex || null }), rec.auditoriaId);
+    } catch (e) { await logMsg(env, "⚠️ No se pudo guardar el vínculo del cambio de " + sku + ": " + e.message); }
+  }
+  rec.cambioCerrado = restante <= 0;
+  rec.unidadesCerradas = cantidad - restante;
+  rec.pendientesRestantes = Math.max(0, pend.unidades - (cantidad - restante));
+  if (restante > 0) rec.avisoCambio = "⚠️ Quedaron " + restante + " unidad(es) sin cerrar en Pendientes. Revísalas en Vencimientos.";
+  await logMsg(env, "🔁 Cambio con proveedor recibido: " + (rec.nombre || sku) + " · +" + cantidad + " · cerró " + cerrados.length + " lote(s) pendiente(s)");
+  return rec;
+}
+
 async function accionMarcarCambiado(env, payload) {
   payload = payload || {};
   const fi = Number(payload.filaIndex || payload.id);
@@ -4171,7 +4259,7 @@ async function accionMarcarCambiado(env, payload) {
   const fechaCerrada = nuevaFechaVencimiento || row.fecha_vencimiento;
 
   const stockOut = {};
-  if (cantidadCambiada > 0) {
+  if (cantidadCambiada > 0 && !payload.sinSumarStock) {   // sinSumarStock: lo usa recibir_cambio, que ya sumó el stock en la recepción
     try {
       const it = await get(env, "SELECT * FROM productos WHERE sku = ?", row.sku);
       if (it) {
@@ -5511,7 +5599,7 @@ async function repFichaProducto(env, sku) {
       estado: l.estado, accion: l.accion, motivoCierre: l.motivo_cierre, fechaRevision: l.fecha_revision, revisadoPor: l.revisado_por
     })),
     mermasRecientes: mermas.map(m => ({ fecha: m.fecha, cantidad: m.cantidad, motivo: m.motivo, costoTotal: m.costo_total, responsable: m.responsable })),
-    movimientos: auditoria.map(a => ({ id: a.id, fecha: a.fecha, accion: a.accion, stock: a.stock, cantidad: a.cantidad, motivo: a.motivo, responsable: a.responsable })),
+    movimientos: auditoria.map(a => ({ id: a.id, fecha: a.fecha, accion: a.accion, stock: a.stock, cantidad: a.cantidad, motivo: a.motivo, responsable: a.responsable, esCambio: a.cambio_cierra != null })),
     ventasDiarias: ventasDiarias.map(v => ({ fecha: v.fecha, unidades: v.unidades, venta: v.venta, utilidad: v.utilidad })),
     historialPrecios: historialPrecios.map(h => ({
       fecha: h.fecha, precioAntes: h.precio_antes, precioDespues: h.precio_despues,
@@ -6491,6 +6579,12 @@ const _servidor = {
       // POST { action:'marcar_cambiado', payload:{filaIndex,cantidadCambiada?,nuevaFechaVencimiento?,revisadoPor} }
       // → cierra un lote "Retirado" porque el proveedor ya lo repuso (portado de Marín
       // 376, Fase 2 — ver accionMarcarCambiado).
+      // POST { action:'recibir_cambio', payload:{sku,cantidad,fechaVencimiento,...} } → cambio con proveedor por Recepción (solo Pan Castaño).
+      if (action === "recibir_cambio") {
+        const resultado = await accionRecibirCambio(env, payload);
+        await marcarCatalogoActualizado(env);
+        return json({ ok: true, fila: resultado });
+      }
       if (action === "marcar_cambiado") {
         const resultado = await accionMarcarCambiado(env, payload);
         await marcarCatalogoActualizado(env);
@@ -6816,6 +6910,12 @@ const _servidor = {
 
       // GET /?action=config_categorias  →  categorías marcadas para gestionarse
       // por "cambio con proveedor" al vencer.
+      // GET /?action=cambios_pendientes&sku=  →  unidades 'Retirado' del producto (solo aplica a Pan Castaño).
+      if (action === "cambios_pendientes") {
+        const skuQ = url.searchParams.get("sku");
+        if (!skuQ) return json({ ok: false, error: "Falta el parámetro sku" }, 400);
+        return json({ ok: true, ...(await repCambiosPendientes(env, skuQ)) });
+      }
       if (action === "config_categorias") {
         const categoriasCambio = await repCategoriasCambio(env);
         return json({ ok: true, categoriasCambio });

@@ -742,14 +742,16 @@ html.carrito-fijo #rc-ov .mm-sections{
 .calc-bar{width:100%;display:flex;justify-content:space-between;align-items:center;margin-top:6px}
 .calc-usar{background:#12a88a!important;color:#fff!important;font-weight:700;font-size:16px;padding:10px 18px!important;border-radius:var(--r-pill)!important}
 .calc-usar:active{filter:brightness(.9)}
+.calc-bar button[data-k=back]{margin-left:auto}
 .calc-usar.hidden{display:none}
-.calc-bar button{background:none;border:none;color:#12a88a;padding:8px 10px;cursor:pointer;border-radius:var(--r-md)}
+.calc-bar button{background:none;border:none;color:#12a88a;padding:14px 16px;margin:-6px 0;cursor:pointer;border-radius:var(--r-md)}
 .calc-bar button:active{background:#f0f0f2}
-.calc-keys{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding-top:10px;border-top:1px solid #ececef}
-.ck{height:clamp(50px,9.2vh,80px);border:none;border-radius:var(--r-pill);font-size:30px;font-weight:400;cursor:pointer;color:#111;background:#f2f2f4;-webkit-tap-highlight-color:transparent;user-select:none;touch-action:manipulation}
+.calc-keys{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin:0 -5px;padding-top:5px;border-top:1px solid #ececef}
+.ck{box-sizing:border-box;height:calc(clamp(50px,9.2vh,80px) + 10px);border:none;border-radius:0;font-size:30px;font-weight:400;cursor:pointer;color:#111;background:transparent;--ckbg:#f2f2f4;position:relative;isolation:isolate;-webkit-tap-highlight-color:transparent;user-select:none;touch-action:manipulation}
+.ck::before{content:'';position:absolute;inset:5px;border-radius:var(--r-pill);background:var(--ckbg);z-index:-1}
 .ck:active{filter:brightness(.88)}
 .ck-f{color:#12a88a;font-size:30px}
-.ck-eq{background:#12a88a;color:#fff;font-weight:500}
+.ck-eq{--ckbg:#12a88a;color:#fff;font-weight:500}
 .ck-eq:active{filter:brightness(.9)}
 .pc-input{width:100%;padding:11px 14px;border:1px solid var(--border-control);border-radius:var(--r-sm);font-size:14px;box-sizing:border-box;background:#fff}
 .pc-input-lg{font-size:16px;font-weight:700}
@@ -2586,6 +2588,8 @@ html:not(.carrito-fijo) #prov-anchor .shc-row .prov-combo{position:relative;left
 html:not(.vista-filas) .ptable-head>*{flex:1 1 auto;min-width:0;padding-left:2px;padding-right:2px;letter-spacing:.02em}
 html:not(.vista-filas) .ptable-head>*:not(.sorted) .ar{display:none}
 html:not(.vista-filas) .tbl-scroll{overflow-x:hidden}
+/* Recepción → "Es cambio del proveedor": un cambio es gratis, no toca costo ni precio, y no se mezcla con bonificado ni dañadas */
+#rc-ov.rc-cambio-on #rc-pc-mount,#rc-ov.rc-cambio-on #rc-bonif-box,#rc-ov.rc-cambio-on #rc-danadas-box{display:none!important}
 /* Recepción: título y pestañas sin cortes */
 #rc-ov .mm-head h3{font-size:17px}
 #rc-modo-seg button{white-space:nowrap;font-size:12px;padding-left:4px;padding-right:4px}
@@ -3309,6 +3313,12 @@ html:not(.vista-filas) .tbl-scroll{overflow-x:hidden}
                 <label for="rc-danadas" style="font-size:13px;font-weight:700;color:var(--rojo,#C62828);flex:1"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg> ¿Cuántas llegaron dañadas?<span style="display:block;font-weight:400;font-size:11px;color:var(--muted)">Van directo a Pendientes para cambio</span></label>
                 <input id="rc-danadas" inputmode="numeric" placeholder="0" autocomplete="off" style="width:64px;height:38px;text-align:center;font-size:16px;border:1px solid var(--border-control);border-radius:2px;background:#fff">
               </div>
+              <div id="rc-cambio-box" class="hidden" style="margin-top:8px;padding:10px 12px;border:1.5px solid var(--azul);border-radius:4px;background:var(--azul-bg)">
+                <label for="rc-cambio" style="display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;color:var(--azul);cursor:pointer;text-transform:none;letter-spacing:0">
+                  <input type="checkbox" id="rc-cambio" style="width:22px;height:22px;flex:none;accent-color:var(--action,#2E7D32)"> Es cambio del proveedor
+                </label>
+                <div class="cat" id="rc-cambio-info" style="margin-top:4px"></div>
+              </div>
               <div id="rc-bonif-box" style="margin-top:8px">
                 <label for="rc-bonif" style="display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;color:var(--ink);cursor:pointer;text-transform:none;letter-spacing:0">
                   <input type="checkbox" id="rc-bonif" style="width:22px;height:22px;flex:none;accent-color:var(--action,#176197)"> Es bonificado (gratis)
@@ -3576,7 +3586,7 @@ html:not(.vista-filas) .tbl-scroll{overflow-x:hidden}
           <li><b><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px" fill="currentColor"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg> Sincronizar:</b> rápido — trae stock y ventas de hoy en vivo. Se actualiza solo cada hora.</li>
           <li><b>Catálogo:</b> úsalo cuando crees, elimines o cambies precio/costo de un producto en Loyverse, para verlo reflejado al instante (nuevos, eliminados, precios y costos). También se actualiza solo cada hora.</li>
           <li><b>🛒 Recibir mercadería:</b> escanea el producto, suma el stock en Loyverse y crea el lote de vencimiento, todo en un solo paso.</li>
-          <li><b>🔁 Cambio con proveedor:</b> las categorías configuradas como "cambio" (Ideal, Pan Castaño, etc.) se descuentan solas del stock apenas vencen, y avisan que hay que retirarlas de la góndola. Cuando el proveedor llega, marca "Cambiado" desde Vencimientos.</li>
+          <li><b>🔁 Cambio con proveedor:</b> las categorías configuradas como "cambio" (Ideal, Pan Castaño, etc.) se descuentan solas del stock apenas vencen, y avisan que hay que retirarlas de la góndola. Cuando el proveedor trae el cambio (solo Pan Castaño), recíbelo en Recepción marcando "Es cambio del proveedor": suma el stock una vez y cierra el pendiente.</li>
           <li><b><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px" fill="currentColor"><path d="M20 2H4c-1 0-2 .9-2 2v3.01c0 .72.43 1.34 1 1.69V20c0 1.1 1.1 2 2 2h14c.9 0 2-.9 2-2V8.7c.57-.35 1-.97 1-1.69V4c0-1.1-1-2-2-2zm-5 12H9v-2h6v2zm5-7H4V4l16-.02V7z"/></svg> Proveedores de hoy:</b> el recuadro de arriba te dice a quién <b>pedir hoy</b> según el calendario de cada proveedor, y qué pedidos confirmados tienes <b>por recepcionar</b> (hoy o atrasados).</li>
           <li><b>Semáforo de pedido:</b> <i class="ldot" style="background:var(--rojo)"></i> Urgente · <i class="ldot" style="background:var(--ambar)"></i> Pedir · <i class="ldot" style="background:var(--verde)"></i> OK · <i class="ldot" style="background:var(--gris)"></i> Sobrestock · <i class="ldot" style="background:var(--azul)"></i> Sin control. Cada fila muestra la cantidad sugerida según rotación, días de entrega y cobertura objetivo — pero el carrito arranca en 0: toca <b>Agregar sugeridos</b> (arriba del carrito) para cargarlos todos de una, o escribe la cantidad a mano fila por fila.</li>
           <li><b>El carrito acumula varios proveedores a la vez:</b> arma el pedido de un proveedor, cambia a otro sin miedo — nada se borra. En el carrito, cada color de franja a la izquierda es un proveedor distinto (solo aparece cuando hay más de uno mezclado). "Copiar" y "Marcar como realizado" solo mandan lo del proveedor que estás viendo; "Vaciar" en cambio borra <b>todo</b> el carrito, de todos los proveedores.</li>
@@ -4640,6 +4650,8 @@ async function cargarVencidoParaCambio(){
   await cargarVencidosPendientes();
 }
 function esCategoriaCambio(prov){return CATEGORIAS_CAMBIO.indexOf(prov)>=0;}
+// Solo PAN CASTAÑO repone producto con cambio por Recepción. Ideal y San Jorge solo dan descuento en factura.
+function esCategoriaCambioReposicion(prov){return String(prov||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase()==='PAN CASTANO';}
 // Proveedores que ya no hacen cambio sino DESCUENTO por lo vencido (Ideal): solo cambia el texto que se ve, el flujo es el mismo.
 const PROVS_DESCUENTO=['IDEAL'];
 const esProvDescuento=prov=>PROVS_DESCUENTO.indexOf(String(prov||'').trim().toUpperCase())>=0;
@@ -5871,7 +5883,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-13.2';
+const APP_VERSION='2026-11-14.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -13067,11 +13079,12 @@ function vcFilaHtml(l){
   const nom=(l.nombre||'').replace(/"/g,'&quot;');
   let botones,notaExtra='';
   if(esCambio && l.estado==='Retirado'){
-    botones=`<button class="vc-mini" data-actm="cambiado" data-i="${l.filaIndex}" data-nom="${nom}" data-cant="${l.cantidad}" data-unidad="${l.unidad}" title="Marcar como cambiado"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg><span>Cambiado</span></button>
+    botones=`<button class="vc-mini" data-actm="recibircambio" data-sku="${l.sku}" title="Recibir el cambio en Recepción"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9 1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg><span>Recibir cambio</span></button>
        <button class="vc-mini" data-actm="descuento" data-i="${l.filaIndex}" data-nom="${nom}" data-sku="${l.sku}" data-cant="${l.cantidad}" title="Descuento en factura"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg><span>Descuento</span></button>`;
     notaExtra='<div class="cat" style="color:var(--azul);font-weight:700;font-size:12px">Ya se retiró y se descontó del stock — esperando al proveedor</div>';
     // Ideal ya no hace cambios (solo descuento en factura): sin el botón "Cambiado", que sumaría stock por error.
-    if(esProvDescuento(l.categoria))botones=botones.replace(/<button class="vc-mini" data-actm="cambiado"[\s\S]*?<\/button>/,'');
+    // Solo Pan Castaño repone producto (se recibe por Recepción con "Es cambio del proveedor"). Ideal y San Jorge solo dan descuento en factura.
+    if(!esCategoriaCambioReposicion(l.categoria))botones=botones.replace(/<button class="vc-mini" data-actm="recibircambio"[\s\S]*?<\/button>/,'');
   }else if(esCambio){
     // Vencido o Por vencer (aviso del proveedor, incluidos los estados "urgente"/"muy atrasado"):
     // en ambos casos no hay ningún proceso automático que lo pase a Pendientes, así que se
@@ -13256,6 +13269,7 @@ function vcWireFilas(box){
   // Cambiado: mismo patrón que Retirar/Ajustar stock — abre un mini-formulario en vez del
   // prompt() de antes, con cantidad (precargada con el total del lote) y fecha de vencimiento
   // del producto nuevo (opcional, 3 segmentos como en Editar fecha).
+  box.querySelectorAll('[data-actm="recibircambio"]').forEach(b=>{b.onclick=()=>vcRecibirCambio(b.dataset.sku);});
   box.querySelectorAll('[data-actm="cambiado"]').forEach(b=>{
     b.onclick=()=>{
       const fi=b.dataset.i;
@@ -14937,24 +14951,25 @@ function rcPintarMovimientos(movs){
       return `<div class="sm-row" style="flex-direction:column;align-items:stretch">
         <div style="display:flex;align-items:flex-start;gap:10px">
           <div class="sm-info">
-            <div class="nom">${esRecepcion?'📦 Recepción':'🔢 Reconteo'}</div>
+            <div class="nom">${esRecepcion?(m.esCambio?'🔁 Cambio con proveedor':'📦 Recepción'):'🔢 Reconteo'}</div>
             <div class="meta">${m.fecha}${m.motivo?(' · '+m.motivo):''}${m.responsable?(' · '+m.responsable):''}</div>
           </div>
           ${m.stock!=null?`<span class="fp-badge ${stockNeg?'rojo':'gris'}">stock ${fmt1(m.stock)}</span>`:''}
         </div>
         ${puedeBorrar?`<div class="btns vc-btns-mini">
-          <button type="button" class="vc-mini vc-mini-rojo" data-rc-elim="${m.id}" data-cant="${m.cantidad}" title="Eliminar movimiento"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg><span>Eliminar</span></button>
+          <button type="button" class="vc-mini vc-mini-rojo" data-rc-elim="${m.id}" data-cant="${m.cantidad}" data-cambio="${m.esCambio?1:0}" title="Eliminar movimiento"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg><span>Eliminar</span></button>
         </div>`:(esRecepcion?`<div class="meta" style="padding-left:2px">No se puede deshacer (movimiento antiguo)</div>`:'')}
       </div>`;
     }).join('');
-  box.querySelectorAll('[data-rc-elim]').forEach(b=>b.onclick=()=>rcEliminarMovimiento(b.dataset.rcElim,b.dataset.cant));
+  box.querySelectorAll('[data-rc-elim]').forEach(b=>b.onclick=()=>rcEliminarMovimiento(b.dataset.rcElim,b.dataset.cant,b.dataset.cambio==='1'));
 }
-async function rcEliminarMovimiento(id,cantidad){
+async function rcEliminarMovimiento(id,cantidad,esCambio){
   const it=rcState.item;
   if(!it)return;
   const cant=Number(cantidad)||0;
   const msg='¿Eliminar este movimiento de recepción de "'+it.nombre+'"?\n\n'+
     (cant>0?('Se descontarán '+fmt1(cant)+' del stock en Loyverse (revierte la recepción).\n'):'')+
+    (esCambio?'Las unidades que este cambio había cerrado vuelven a Pendientes de cambio.\n':'')+
     'Esta acción no se puede deshacer.';
   if(!await dlgConfirm(msg))return;
   showToast('Eliminando movimiento…');
@@ -15003,6 +15018,65 @@ document.getElementById('rc-provid-add').onclick=async()=>{
   }catch(e){showToast('Error de conexión');}
   finally{btn.disabled=false;}
 };
+// ---- Cambio con el proveedor recibido por Recepción (solo Pan Castaño) ----
+// El check aparece solo si el producto es de Pan Castaño Y tiene unidades pendientes de cambio. Al guardar, el servidor suma el stock UNA vez,
+// crea el lote nuevo con su vencimiento, cierra los pendientes más antiguos primero y deja un solo movimiento "Cambio con proveedor".
+function rcCambioReset(){
+  rcState.cambioPend=0;
+  const box=document.getElementById('rc-cambio-box'),cb=document.getElementById('rc-cambio');
+  if(box)box.classList.add('hidden');
+  if(cb&&cb.checked)cb.checked=false;
+  const ov=document.getElementById('rc-ov');if(ov)ov.classList.remove('rc-cambio-on');
+}
+function rcCambioMarcado(){
+  const box=document.getElementById('rc-cambio-box'),cb=document.getElementById('rc-cambio');
+  return !!(box&&cb&&!box.classList.contains('hidden')&&cb.checked);
+}
+async function rcCargarCambioPendiente(it){
+  if(!it||!esCategoriaCambioReposicion(it.prov))return;
+  try{
+    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=cambios_pendientes&sku='+encodeURIComponent(it.ref));
+    const j=await res.json();
+    if(!rcState.item||rcState.item.ref!==it.ref)return;   // eligió otro producto mientras respondía
+    if(!j||!j.ok||j.aplica!==true||!(j.unidades>0))return;
+    rcState.cambioPend=j.unidades;
+    document.getElementById('rc-cambio-info').textContent='Pendientes de cambio con el proveedor: '+fmt1(j.unidades)+' u. Marca esto si lo que llegó es el cambio de esas unidades (no suma costo ni cambia el precio).';
+    document.getElementById('rc-cambio-box').classList.remove('hidden');
+    if(rcState.cambioAutoMarcar){rcState.cambioAutoMarcar=false;document.getElementById('rc-cambio').checked=true;rcCambioActualizar();}
+  }catch(e){/* sin conexión: no se ofrece el cambio; la recepción normal sigue igual */}
+}
+function rcCambioActualizar(){
+  const cb=document.getElementById('rc-cambio'),on=!!(cb&&cb.checked);
+  const ov=document.getElementById('rc-ov');if(ov)ov.classList.toggle('rc-cambio-on',on);
+  if(on){
+    const bf=document.getElementById('rc-bonif');if(bf&&bf.checked){bf.checked=false;try{rcBonifActualizar();}catch(e){}}
+    const dn=document.getElementById('rc-danadas');if(dn)dn.value='';
+    const cant=document.getElementById('rc-cantidad');
+    if(cant&&!cant.disabled&&!(Number(cant.value)>0)){cant.value=String(rcState.cambioPend);cant.dispatchEvent(new Event('input',{bubbles:true}));}
+  }
+  try{rcValidar();}catch(e){}
+}
+{const cb=document.getElementById('rc-cambio');if(cb)cb.onchange=rcCambioActualizar;}
+// Anti-doble: se recibe normal un producto que tiene pendientes de cambio. Si lo que llegó ES el cambio y se registra como compra,
+// el stock se suma dos veces. 'cambio' | 'compra' | 'cancelar' (descartar el cuadro nunca registra nada por sí solo).
+function rcPreguntarSiEsCambio(unid){
+  return new Promise(resolver=>{
+    confirmarAccion({titulo:'¿Es el cambio del proveedor?',
+      mensaje:'Este producto tiene '+fmt1(unid)+' u pendientes de cambio. Si lo que llegó es el cambio, márcalo como cambio para no sumar el stock dos veces.',
+      textoConfirmar:'Sí, es el cambio',textoCancelar:'No, es una compra',
+      onConfirm:()=>resolver('cambio'),
+      onCancel:async()=>{resolver(await dlgConfirm('Se registrará como COMPRA normal: las '+fmt1(unid)+' u seguirán pendientes de cambio.\n\n¿Continuar?')?'compra':'cancelar');}});
+  });
+}
+// Desde Vencimientos → Pendientes: abre Recepción con el producto elegido y el check de cambio puesto.
+function vcRecibirCambio(sku){
+  const it=(DB.items||[]).find(i=>i.ref===String(sku));
+  if(!it){showToast('No encontré el producto en el catálogo. Búscalo en Recepción.');return;}
+  try{closeVenc();}catch(e){}
+  openRecibir();
+  rcState.cambioAutoMarcar=true;
+  rcPick(it.ref);
+}
 function rcPick(ref){
   const it=(DB.items||[]).find(i=>i.ref===ref);
   if(!it)return;
@@ -15013,6 +15087,7 @@ function rcPick(ref){
   rcShowPicked(it);
   rcActualizarBotonInventario(it);
   rcAplicarVisibilidad();
+  rcCambioReset();rcCargarCambioPendiente(it);
   rcValidar();
   rcGuardarBorrador();
 }
@@ -15177,6 +15252,7 @@ function rcReset(){
   const cIn=document.getElementById('rc-cantidad');cIn.value='';cIn.disabled=true;cIn.placeholder='0';
   {const dn=document.getElementById('rc-danadas');if(dn)dn.value='';}
   {const bf=document.getElementById('rc-bonif');if(bf&&bf.checked){bf.checked=false;try{rcBonifActualizar();}catch(e){}}}
+  try{rcCambioReset();}catch(e){}
   document.getElementById('rc-unidad').textContent='u';
   document.getElementById('rc-fecha').value='';
   document.getElementById('rc-fecha-dd').value='';
@@ -15829,6 +15905,11 @@ document.getElementById('rc-guardar').onclick=async()=>{
   if(cantidad<0){showToast('Cantidad inválida');return;}
   const fecha=fmtDateInputToDDMMAAAA(document.getElementById('rc-fecha').value);
   // Unidades que llegaron dañadas (solo proveedores con cambio): se reciben y de inmediato se retiran a Pendientes (ver más abajo).
+  const esCambio=rcCambioMarcado();   // recepción de un CAMBIO con el proveedor (solo Pan Castaño): gratis, cierra pendientes
+  if(esCambio){
+    if(cantidad<=0){showToast('Indica cuántas unidades llegaron de cambio','error');return;}
+    if(cantidad>rcState.cambioPend){showToast('Solo hay '+fmt1(rcState.cambioPend)+' u pendientes de cambio. Si llegaron más, registra las demás como recepción normal (sin marcar "Es cambio del proveedor").','error');return;}
+  }
   const danadas=Math.round(Number((document.getElementById('rc-danadas')||{}).value)||0);
   if(danadas<0||danadas>cantidad){showToast('Las dañadas no pueden ser más que las recibidas ('+fmt1(cantidad)+')','error');return;}
   if(danadas>0&&!fecha){showToast('Para mandar las dañadas a Pendientes carga la fecha de vencimiento','error');const cf=document.getElementById('rc-fecha-dd');if(cf){cf.focus();cf.scrollIntoView({block:'center',behavior:'smooth'});}return;}
@@ -15851,7 +15932,13 @@ document.getElementById('rc-guardar').onclick=async()=>{
   // accidentales (doble tap sin querer) que sumaban stock de más. Solo se pregunta cuando
   // realmente va a sumar stock (cantidad>0) — guardar solo precio/costo/proveedor/sector
   // (cantidad=0, ver más abajo) no toca stock y no tiene ese riesgo.
-  if(cantidad>0&&!await dlgConfirm('¿Confirmar recepción'+((document.getElementById('rc-bonif')||{}).checked?' BONIFICADA (gratis)':'')+' en '+LOCAL_NOMBRE+' de '+fmt1(cantidad)+' '+(it.peso?'kg':'u')+' de "'+it.nombre+'"?'+(danadas>0?'\n\n⚠️ '+fmt1(danadas)+' llegaron dañadas: se reciben y pasan a Pendientes para cambio.':'')+'\n\nEl stock quedará en '+fmt1(Math.max(0,Number(it.stock)||0)+cantidad-danadas)+'.'))return;
+  // Anti-doble: producto con pendientes de cambio recibido como compra normal sin marcar el check.
+  if(cantidad>0&&!esCambio&&rcState.cambioPend>0){
+    const que=await rcPreguntarSiEsCambio(rcState.cambioPend);
+    if(que==='cambio'){const cb=document.getElementById('rc-cambio');if(cb){cb.checked=true;rcCambioActualizar();}showToast('Marcado como cambio del proveedor. Revisa los datos y toca Guardar de nuevo.');return;}
+    if(que!=='compra')return;
+  }
+  if(cantidad>0&&!await dlgConfirm('¿Confirmar '+(esCambio?'CAMBIO con el proveedor':'recepción'+((document.getElementById('rc-bonif')||{}).checked?' BONIFICADA (gratis)':''))+' en '+LOCAL_NOMBRE+' de '+fmt1(cantidad)+' '+(it.peso?'kg':'u')+' de "'+it.nombre+'"?'+(danadas>0?'\n\n⚠️ '+fmt1(danadas)+' llegaron dañadas: se reciben y pasan a Pendientes para cambio.':'')+'\n\nEl stock quedará en '+fmt1(Math.max(0,Number(it.stock)||0)+cantidad-danadas)+'.'))return;
   const provInput=(document.getElementById('rc-prov-input').value||'').trim().toUpperCase();
   const provActual=(it.prov&&it.prov!=='SIN PROVEEDOR')?it.prov:'';
   const provCambio=provInput!==provActual;
@@ -15872,8 +15959,8 @@ document.getElementById('rc-guardar').onclick=async()=>{
   const esBonif=!!(document.getElementById('rc-bonif')||{}).checked;
   const nuevoCosto=Math.round(rcCostoNeto());
   const nuevoPrecio=Number(document.getElementById('rc-precio').value)||0;
-  const costoCambio=!esBonif&&nuevoCosto>0;
-  const precioCambio=!esBonif&&nuevoPrecio>0;
+  const costoCambio=!esBonif&&!esCambio&&nuevoCosto>0;
+  const precioCambio=!esBonif&&!esCambio&&nuevoPrecio>0;
   rcGuardando=true;
   btn.disabled=true;btn.textContent='Guardando…';
   // Timeout de seguridad: si el servidor no responde en 25s, se corta y avisa
@@ -15885,11 +15972,11 @@ document.getElementById('rc-guardar').onclick=async()=>{
       snap:{id:it.id,vid:it.vid,nombre:it.nombre,prov:it.prov,peso:it.peso,precio:it.precio,costo:it.coste,stock:it.stock,track:it.track,barcode:it.barcode}};
     if(costoCambio)payload.costo=nuevoCosto;
     if(precioCambio)payload.precio=nuevoPrecio;
-    if(provCambio)payload.proveedor=provInput;
-    if(sectCambio)payload.sector=sectInput;
-    if(nombreNuevoRc)payload.nombre=nombreNuevoRc;
+    if(provCambio&&!esCambio)payload.proveedor=provInput;
+    if(sectCambio&&!esCambio)payload.sector=sectInput;
+    if(nombreNuevoRc&&!esCambio)payload.nombre=nombreNuevoRc;
     if(esBonif){payload.bonificado=true;payload.bonifProveedor=(document.getElementById('rc-bonif-prov')||{}).value||'';}
-    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'lote_nuevo',payload:payload}),signal:ctrl.signal});
+    const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:esCambio?'recibir_cambio':'lote_nuevo',payload:payload}),signal:ctrl.signal});
     let j;
     try{j=await res.json();}
     catch(parseErr){throw new Error('El servidor respondió '+res.status+' (no es una respuesta válida) — puede que el stock ya se haya guardado, revisa el producto antes de reintentar.');}
@@ -15931,7 +16018,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
       if(it.barcode&&DB.pendByBarcode)delete DB.pendByBarcode[it.barcode];
       try{refrescarProveedoresHoy();}catch(e){}
       let msg=cantidad>0
-        ?((esBonif?'Bonificado recibido (gratis): ':'Recibido: ')+it.nombre+' · +'+cantidad+' '+(it.peso?'kg':'u')+(fecha?(' · vence '+fecha):' · sin vencimiento'))
+        ?((esCambio?'Cambio recibido: ':esBonif?'Bonificado recibido (gratis): ':'Recibido: ')+it.nombre+' · +'+cantidad+' '+(it.peso?'kg':'u')+(fecha?(' · vence '+fecha):' · sin vencimiento'))
         :('Actualizado: '+it.nombre);
       const rcCambios=[];
       if(costoCambio)rcCambios.push('costo');
@@ -15939,10 +16026,15 @@ document.getElementById('rc-guardar').onclick=async()=>{
       if(provCambio)rcCambios.push('proveedor');
       if(sectCambio)rcCambios.push('sector');
       if(rcCambios.length)msg+=' · '+rcCambios.join(', ')+' actualizado'+(rcCambios.length>1?'s':'');
+      if(esCambio){
+        if(j.fila.pendientesRestantes!=null)msg+=' · '+(j.fila.pendientesRestantes>0?('quedan '+fmt1(j.fila.pendientesRestantes)+' u pendientes de cambio'):'sin pendientes de cambio');
+        if(j.fila.avisoCambio)msg+=' · '+j.fila.avisoCambio;
+        try{cargarVencidoParaCambio();}catch(e){}   // Armar pedido y Pendientes dejan de contar lo que ya se cambió
+      }
       if(j.fila.avisoStock)msg+=' · '+j.fila.avisoStock;
       sonidoGuardado();
       // Verde: se guardó bien. Rojo: el stock no se sumó (la recepción NO quedó guardada o hay que revisar el stock). Naranja: se guardó, pero algo menor falló (p. ej. costo/precio).
-      const tipoMsg=j.fila.avisoStock?(/NO quedó guardada|sumar el stock|no respondió a tiempo/i.test(j.fila.avisoStock)?'error':'aviso'):'ok';
+      const tipoMsg=j.fila.avisoStock?(/NO quedó guardada|sumar el stock|no respondió a tiempo/i.test(j.fila.avisoStock)?'error':'aviso'):(j.fila.avisoCambio?'aviso':'ok');
       msg+=msgDan;
       showToast(msg,falloDan?'error':tipoMsg);
       // No cerramos: reseteamos y dejamos la ventana lista para el siguiente producto,
