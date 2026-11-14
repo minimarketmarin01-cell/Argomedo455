@@ -5883,7 +5883,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-14.2';
+const APP_VERSION='2026-11-14.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -11453,8 +11453,10 @@ document.getElementById('cp-guardar').onclick=async()=>{
       proveedor_id:cpProveedorId,
       sector:cpSector,
       categoryId:cpCategoriaId,
-      categoriaNombre:cpCategoriaId?cpCategoriaNombre:null
+      categoriaNombre:cpCategoriaId?cpCategoriaNombre:null,
+      permitirNombreRepetido:_cpPermitirNombre===nombre
     };
+    _cpPermitirNombre=null;
     btn.disabled=true;btn.textContent='Creando…';
     showToast('Creando en Loyverse… (puede tardar unos segundos)');
     // Timeout: si el servidor no responde en 45s, avisa en vez de quedar colgado en silencio
@@ -11494,7 +11496,10 @@ document.getElementById('cp-guardar').onclick=async()=>{
       }
       try{render();}catch(_){}
     }else{
-      showToast('Error del servidor: '+((j&&j.error)?j.error:'no se pudo crear el producto'));
+      const err=(j&&j.error)?String(j.error):'';
+      const mDup=/DUPLICADO: Ya existe un producto con ese nombre \(SKU ([^)]+)\)/.exec(err);
+      if(mDup){cpAvisarNombreRepetido(nombre,mDup[1]);return;}
+      showToast('Error del servidor: '+(err||'no se pudo crear el producto'));
     }
   }catch(e){
     showToast(e&&e.name==='AbortError'?'El servidor tardó demasiado (timeout). Reintenta.':('Error al crear: '+(e&&e.message?e.message:String(e))));
@@ -11502,6 +11507,24 @@ document.getElementById('cp-guardar').onclick=async()=>{
     btn.disabled=false;btn.textContent='Crear producto';
   }
 };
+// Nombre ya usado por otro producto (p. ej. "Frugele" dulce de Carozzi vs. el helado Frugelé de
+// Bresler): antes solo salía el error rojo y no había salida. Ahora muestra cuál es el existente y
+// deja elegir: cambiar el nombre (recomendado, para no confundirlos en la caja) o crearlo igual.
+// "Crear igual" solo salta el control de NOMBRE: el de código de barras repetido sigue activo.
+let _cpPermitirNombre=null;
+function cpAvisarNombreRepetido(nombre,sku){
+  const ex=(DB.items||[]).find(i=>String(i.ref)===String(sku))||{};
+  const prov=(ex.proveedorNombre||(ex.prov&&ex.prov!=='SIN PROVEEDOR'?ex.prov:''))||'';
+  const det=['SKU '+sku,prov,ex.precio?('$'+Number(ex.precio).toLocaleString('es-CL')):''].filter(Boolean).join(' · ');
+  confirmarAccion({
+    titulo:'Ya existe «'+(ex.nombre||nombre)+'»',
+    mensaje:det+'. Si es otro producto, ponle un nombre que los distinga en la caja (ej: «'+nombre+' helado 1 L»).',
+    textoConfirmar:'Cambiar nombre',
+    textoCancelar:'Crear igual',
+    onConfirm:()=>{const inp=document.getElementById('cp-nombre');if(inp){inp.focus();try{inp.setSelectionRange(inp.value.length,inp.value.length);}catch(_){}}},
+    onCancel:()=>{_cpPermitirNombre=nombre;document.getElementById('cp-guardar').click();}
+  });
+}
 function cpAgregarLocal(p){
   const prov=p.prov||'SIN CATEGORÍA';
   const t=tagConOverride(p.nombre,prov,p.ref);

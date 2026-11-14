@@ -5975,7 +5975,9 @@ async function accionCrearProducto(env, payload) {
   // el mismo producto por un error de conexión aparente (ver el fix de accionCrearProducto
   // devolviendo la respuesta sin envolver en "producto") generaba varios SKUs distintos del
   // mismo producto, sin ningún aviso.
-  if (!payload.forzarDuplicado) {
+  // permitirNombreRepetido: el usuario confirmó que es OTRO producto con el mismo nombre (la app
+  // se lo pregunta). Solo salta este control: el de código de barras repetido sigue activo.
+  if (!payload.forzarDuplicado && !payload.permitirNombreRepetido) {
     const dupNombre = await get(env, "SELECT sku FROM productos WHERE UPPER(TRIM(nombre)) = UPPER(?)", nombre);
     if (dupNombre) throw new Error("DUPLICADO: Ya existe un producto con ese nombre (SKU " + dupNombre.sku + ")");
   }
