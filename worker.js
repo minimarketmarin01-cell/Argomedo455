@@ -3476,17 +3476,28 @@ async function accionLoteNuevo(env, payload) {
   // 4) Proveedor y/o sector (opcional): son campos solo locales (no existen en Loyverse),
   //    así que se actualizan directo en D1 sin tocar nada más del producto. Si el valor
   //    es nuevo, queda guardado también en el catálogo reutilizable para la próxima vez.
-  if (proveedorNuevo != null || sectorNuevo != null) {
+  //    Un valor VACÍO desde Recepción se ignora (no borra): la app llegó a mandar los campos
+  //    en blanco por un error de pantalla y eso dejaba productos sin proveedor/sector. Para
+  //    quitar un proveedor está la Ficha. El proveedor se guarda con su proveedor_id (antes
+  //    solo el texto, y el producto quedaba sin enlazar en Armar pedido).
+  const provAplicar = proveedorNuevo ? proveedorNuevo.toUpperCase() : null;
+  const sectAplicar = sectorNuevo ? sectorNuevo.toUpperCase() : null;
+  if (provAplicar || sectAplicar) {
     const sets = [], vals = [];
-    if (proveedorNuevo != null) { sets.push("proveedor = ?"); vals.push(proveedorNuevo || null); }
-    if (sectorNuevo != null) { sets.push("sector = ?"); vals.push(sectorNuevo || null); }
+    if (provAplicar) {
+      await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", provAplicar);
+      const pv = await get(env, "SELECT id FROM proveedores WHERE nombre = ?", provAplicar);
+      sets.push("proveedor = ?", "proveedor_id = ?"); vals.push(provAplicar, pv ? pv.id : null);
+    }
+    if (sectAplicar) {
+      await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sectAplicar);
+      sets.push("sector = ?"); vals.push(sectAplicar);
+    }
     vals.push(sku);
     await run(env, "UPDATE productos SET " + sets.join(", ") + " WHERE sku = ?", ...vals);
-    if (proveedorNuevo) await run(env, "INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)", proveedorNuevo);
-    if (sectorNuevo) await run(env, "INSERT OR IGNORE INTO sectores (nombre) VALUES (?)", sectorNuevo);
-    out.proveedorAplicado = proveedorNuevo != null ? proveedorNuevo : it.proveedor;
-    out.sectorAplicado = sectorNuevo != null ? sectorNuevo : it.sector;
   }
+  out.proveedorAplicado = provAplicar || it.proveedor;
+  out.sectorAplicado = sectAplicar || it.sector;
 
   return out;
 }

@@ -5883,7 +5883,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-14.1';
+const APP_VERSION='2026-11-14.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -9233,13 +9233,16 @@ function psLlenarSelects(provSelId,sectorSelId,provId,sector){
   if(provSel){
     provSel.innerHTML='<option value="">Sin proveedor</option>'+_psProveedores.map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('');
     provSel.value=provId?String(provId):'';
-    const provInput=document.getElementById(provSelId+'-input');
+    // El texto visible del combo: por convención <select>-input, y si no existe (Recepción usa
+    // rc-prov-input / rc-sect-input) el input del mismo .cat-combo. Sin esto el campo quedaba en
+    // blanco aunque el producto sí tuviera proveedor/sector.
+    const provInput=document.getElementById(provSelId+'-input')||(provSel.closest('.cat-combo')||{querySelector:()=>null}).querySelector('input.cat-combo-input');
     if(provInput){const hit=_psProveedores.find(p=>String(p.id)===String(provId));provInput.value=hit?hit.nombre:'';}
   }
   if(sectorSel){
     sectorSel.innerHTML='<option value="">Sin sector</option>'+_psSectores.map(s=>`<option value="${s}">${s}</option>`).join('');
     sectorSel.value=sector||'';
-    const sectorInput=document.getElementById(sectorSelId+'-input');
+    const sectorInput=document.getElementById(sectorSelId+'-input')||(sectorSel.closest('.cat-combo')||{querySelector:()=>null}).querySelector('input.cat-combo-input');
     if(sectorInput)sectorInput.value=sector||'';
   }
 }
@@ -14917,6 +14920,7 @@ function rcRenderProveedores(it){
     const rps=document.getElementById('rc-proveedor'),rss=document.getElementById('rc-sector');
     if(rps)rps.onchange=rcValidar;
     if(rss)rss.onchange=rcValidar;
+    rcValidar(); // los campos se llenan después de cargar las listas: recalcula el botón con los valores reales
   });
 }
 // Últimos 5 movimientos de stock del producto elegido en Recepción — reutiliza action=ficha_producto
