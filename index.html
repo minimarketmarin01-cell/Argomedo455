@@ -742,14 +742,16 @@ html.carrito-fijo #rc-ov .mm-sections{
 .calc-bar{width:100%;display:flex;justify-content:space-between;align-items:center;margin-top:6px}
 .calc-usar{background:#12a88a!important;color:#fff!important;font-weight:700;font-size:16px;padding:10px 18px!important;border-radius:var(--r-pill)!important}
 .calc-usar:active{filter:brightness(.9)}
+.calc-bar button[data-k=back]{margin-left:auto}
 .calc-usar.hidden{display:none}
-.calc-bar button{background:none;border:none;color:#12a88a;padding:8px 10px;cursor:pointer;border-radius:var(--r-md)}
+.calc-bar button{background:none;border:none;color:#12a88a;padding:14px 16px;margin:-6px 0;cursor:pointer;border-radius:var(--r-md)}
 .calc-bar button:active{background:#f0f0f2}
-.calc-keys{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding-top:10px;border-top:1px solid #ececef}
-.ck{height:clamp(50px,9.2vh,80px);border:none;border-radius:var(--r-pill);font-size:30px;font-weight:400;cursor:pointer;color:#111;background:#f2f2f4;-webkit-tap-highlight-color:transparent;user-select:none;touch-action:manipulation}
+.calc-keys{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin:0 -5px;padding-top:5px;border-top:1px solid #ececef}
+.ck{box-sizing:border-box;height:calc(clamp(50px,9.2vh,80px) + 10px);border:none;border-radius:0;font-size:30px;font-weight:400;cursor:pointer;color:#111;background:transparent;--ckbg:#f2f2f4;position:relative;isolation:isolate;-webkit-tap-highlight-color:transparent;user-select:none;touch-action:manipulation}
+.ck::before{content:'';position:absolute;inset:5px;border-radius:var(--r-pill);background:var(--ckbg);z-index:-1}
 .ck:active{filter:brightness(.88)}
 .ck-f{color:#12a88a;font-size:30px}
-.ck-eq{background:#12a88a;color:#fff;font-weight:500}
+.ck-eq{--ckbg:#12a88a;color:#fff;font-weight:500}
 .ck-eq:active{filter:brightness(.9)}
 .pc-input{width:100%;padding:11px 14px;border:1px solid var(--border-control);border-radius:var(--r-sm);font-size:14px;box-sizing:border-box;background:#fff}
 .pc-input-lg{font-size:16px;font-weight:700}
@@ -5881,7 +5883,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-13.3';
+const APP_VERSION='2026-11-14.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
