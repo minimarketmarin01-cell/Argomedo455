@@ -5883,7 +5883,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-14.3';
+const APP_VERSION='2026-11-17.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14779,6 +14779,17 @@ function rcGuardarBorrador(){
     }catch(e){}
   },150);
 }
+const RC_ILA_LS_KEY='lc_rc_ila_por_producto';
+function rcIlaGuardadoDe(ref){
+  try{const m=JSON.parse(localStorage.getItem(RC_ILA_LS_KEY)||'{}');return m[ref]||null;}catch(e){return null;}
+}
+function rcIlaRecordar(ref,ila,ila10,ivaModo){
+  try{
+    const m=JSON.parse(localStorage.getItem(RC_ILA_LS_KEY)||'{}');
+    if(ivaModo==='sin'&&ila)m[ref]='ila';else if(ivaModo==='sin'&&ila10)m[ref]='ila10';else delete m[ref];
+    localStorage.setItem(RC_ILA_LS_KEY,JSON.stringify(m));
+  }catch(e){}
+}
 function rcLimpiarBorrador(){clearTimeout(_rcDraftT);try{localStorage.removeItem(RC_DRAFT_LS_KEY);}catch(e){}}
 function rcCargarBorrador(){
   try{const raw=localStorage.getItem(RC_DRAFT_LS_KEY);return raw?JSON.parse(raw):null;}catch(e){return null;}
@@ -14789,6 +14800,7 @@ function rcCargarBorrador(){
 // del producto, así que el orden importa: primero elegir, después restaurar lo escrito).
 function rcAplicarBorrador(d){
   if(!d)return;
+  if(d.ref)rcPick(d.ref); // primero el producto: rcPick resetea modo/IVA/ILA y repinta el widget
   if(d.modo)rcSetModo(d.modo);
   if(d.ivaModo){
     rcState.ivaModo=d.ivaModo;
@@ -14803,7 +14815,6 @@ function rcAplicarBorrador(d){
     const chk=document.getElementById('rc-ila10');
     if(chk){chk.checked=true;chk.dispatchEvent(new Event('change',{bubbles:true}));}
   }
-  if(d.ref)rcPick(d.ref);
   if(d.unidadesCaja)document.getElementById('rc-unidades-caja').value=d.unidadesCaja;
   if(d.cantidad)document.getElementById('rc-cantidad').value=d.cantidad;
   if(d.margenObj){const m=document.getElementById('rc-margen-obj');if(m){m.value=d.margenObj;m.dispatchEvent(new Event('input',{bubbles:true}));}}
@@ -14877,6 +14888,9 @@ function rcShowPicked(it){
   rcState.ivaModo=_esProveedorConIva?'con':'sin';
   rcState.ilaAplica=false; // elegir un producto nuevo no debe heredar el ILA del anterior
   rcState.ila10Aplica=false;
+  // ...pero SÍ recuerda el ILA que se marcó la última vez que se guardó ESTE producto.
+  const _ilaPrev=rcIlaGuardadoDe(it.ref);
+  if(_ilaPrev&&rcState.ivaModo==='sin'){rcState.ilaAplica=_ilaPrev==='ila';rcState.ila10Aplica=_ilaPrev==='ila10';}
   rcState.margenTocado=false;
   rcState.modo='unidad';
   document.getElementById('rc-unidades-caja').value='';
@@ -14892,7 +14906,7 @@ function rcShowPicked(it){
     // "con IVA" (CCU/Coca-Cola/BOOM) se muestra tal cual. Ver rcConvertirCostoIva() para la
     // conversión al alternar el toggle después de elegido el producto.
     const _bruto=rcState.costoOriginal||0;
-    cIdx.value=_bruto?(rcState.ivaModo==='sin'?Math.round((_bruto/1.19)*100)/100:_bruto):'';
+    cIdx.value=_bruto?(rcState.ivaModo==='sin'?Math.round((_bruto/(1.19+(rcState.ilaAplica?0.18:0)+(rcState.ila10Aplica?0.10:0)))*100)/100:_bruto):'';
     cIdx.dispatchEvent(new Event('input',{bubbles:true}));
   }
   const pIdx=document.getElementById('rc-precio');if(pIdx){pIdx.value=rcState.precioOriginal||'';pIdx.dispatchEvent(new Event('input',{bubbles:true}));}
@@ -16071,6 +16085,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
       if(rcState.item&&rcState.item.ref!==it.ref){
         showToast(msg+' — sigues con "'+rcState.item.nombre+'"',tipoMsg);
       }else{
+        rcIlaRecordar(it.ref,rcState.ilaAplica,rcState.ila10Aplica,rcState.ivaModo);
         rcReset();
         rcLimpiarBorrador(); // ya se guardó de verdad — un F5 después de esto no debe revivirlo
         document.getElementById('rc-search').focus();
@@ -16124,6 +16139,7 @@ async function rcGuardarSoloPrecio(it){
         render();
       }
       if(!(rcState.item&&rcState.item.ref!==it.ref)){
+        rcIlaRecordar(it.ref,rcState.ilaAplica,rcState.ila10Aplica,rcState.ivaModo);
         rcReset();
         rcLimpiarBorrador();
         document.getElementById('rc-search').focus();
