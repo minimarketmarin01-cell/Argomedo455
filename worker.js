@@ -4774,9 +4774,15 @@ async function respaldoLoyverseSegundoPlano(env) {
         const viejos = recibos.filter(r => (r.receipt_number || r.id) && !_respVistos.has(String(r.receipt_number || r.id)) &&
           Date.parse(r.created_at || r.receipt_date || 0) <= ahora - 15000);
         if (viejos.length) {
-          const desdeDia = fechaISO(new Date(ahora - 2 * 86400000));
-          const { results } = await env.DB.prepare("SELECT DISTINCT receipt_id FROM ventas WHERE fecha_venta >= ?").bind(desdeDia).all();
-          const enD1 = new Set((results || []).map(x => String(x.receipt_id)));
+          // Se buscan solo los recibos pendientes por su clave (receipt_id). La versión anterior (DISTINCT receipt_id ... WHERE fecha_venta >= ?)
+          // hacía que SQLite recorriera el índice completo (≈43 mil filas por consulta) y agotaba la cuota diaria de lecturas de D1.
+          const ids = viejos.map(r => String(r.receipt_number || r.id));
+          const enD1 = new Set();
+          for (let i = 0; i < ids.length; i += 90) {
+            const lote = ids.slice(i, i + 90);
+            const { results } = await env.DB.prepare("SELECT DISTINCT receipt_id FROM ventas WHERE receipt_id IN (" + lote.map(() => "?").join(",") + ")").bind(...lote).all();
+            (results || []).forEach(x => enD1.add(String(x.receipt_id)));
+          }
           const faltan = viejos.filter(r => !enD1.has(String(r.receipt_number || r.id)));
           viejos.forEach(r => _respVistos.add(String(r.receipt_number || r.id)));
           if (_respVistos.size > 5000) _respVistos.clear();
