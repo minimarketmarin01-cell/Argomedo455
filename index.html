@@ -5889,7 +5889,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-19.1';
+const APP_VERSION='2026-11-20.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -18249,12 +18249,21 @@ function renderProvHoyReal(){
 // con la fecha del selector), esto responde directo "qué tengo pendiente de recibir" sin
 // tocar nada, agrupando "hoy" + atrasados de una. Mismo DB.pendBySku, mismo criterio de
 // exclusión que pendienteDe (estado==='recibido' no cuenta).
+// Un pedido (proveedor + fecha de llegada) cuenta como RECIBIDO apenas llega uno de sus productos:
+// el servidor ya marca el resto así; esto lo aplica también en pantalla (pedidos viejos o servidor sin actualizar).
+function _pedidosYaRecibidos(){
+  const pend=DB&&DB.pendBySku?DB.pendBySku:{};const set=new Set();
+  Object.keys(pend).forEach(k=>{const p=pend[k];if(p&&p.estado==='recibido'&&p.fecha_llegada_estimada)set.add(String(p.proveedor||'')+'|'+p.fecha_llegada_estimada);});
+  return set;
+}
 function calcularRecepcionarHoy(){
   const pend=DB&&DB.pendBySku?DB.pendBySku:{};
   const hoyISO=isoLocalDate(new Date());
   const grupos={};
+  const yaRec=_pedidosYaRecibidos();
   Object.keys(pend).forEach(sku=>{
     const p=pend[sku];
+    if(p&&yaRec.has(String(p.proveedor||'')+'|'+p.fecha_llegada_estimada))return;
     // 'incompleto' = pedido ya cerrado desde "Finalizar como incompleto": el artículo no
     // sigue en camino, no debe seguir apareciendo como "por recepcionar" (mismo criterio que
     // 'recibido', ver pendienteDe).
@@ -18274,8 +18283,9 @@ function calcularRecepcionarHoy(){
 function itemsPendientesPorProveedorHastaHoy(proveedor){
   const pend=DB&&DB.pendBySku?DB.pendBySku:{};
   const hoyISO=isoLocalDate(new Date());
+  const yaRec=_pedidosYaRecibidos();
   return Object.values(pend)
-    .filter(p=>p&&_proveedorRealDePendiente(p)===proveedor&&p.estado!=='recibido'&&p.estado!=='incompleto'&&p.fecha_llegada_estimada&&p.fecha_llegada_estimada<=hoyISO)
+    .filter(p=>p&&!yaRec.has(String(p.proveedor||'')+'|'+p.fecha_llegada_estimada)&&_proveedorRealDePendiente(p)===proveedor&&p.estado!=='recibido'&&p.estado!=='incompleto'&&p.fecha_llegada_estimada&&p.fecha_llegada_estimada<=hoyISO)
     .sort((a,b)=>String(a.nombre||'').localeCompare(String(b.nombre||''),'es'));
 }
 function renderRecepcionarHoy(elId){
