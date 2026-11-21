@@ -5889,7 +5889,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-21.1';
+const APP_VERSION='2026-11-21.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5928,9 +5928,9 @@ const APP_VERSION='2026-11-21.1';
 })();
 
 // ===================== SINCRONIZACIÓN — Cloudflare Worker (D1) =====================
-// Modo de prueba: abrir la app con ?bd=supabase hace que todo se lea de la copia de Supabase (solo lectura).
-const MODO_SUPABASE=/[?&]bd=supabase\b/.test(location.search);
-const SYNC_BASE='https://argomedo455.minimarketmarin01.workers.dev';
+// El servidor corre en Supabase (Edge Function argomedo-api). Vuelta de emergencia: abrir la app con ?bd=cloudflare.
+const MODO_SUPABASE=false;
+const SYNC_BASE=/[?&]bd=cloudflare\b/.test(location.search)?'https://argomedo455.minimarketmarin01.workers.dev':'https://znywepjclzhgkctzrjxb.supabase.co/functions/v1/argomedo-api';
 const SYNC_URL=SYNC_BASE+(MODO_SUPABASE?'/?db=supabase':'');
 // Aviso permanente cuando se está en el modo de prueba, para no confundirlo con la app real.
 if(MODO_SUPABASE){
