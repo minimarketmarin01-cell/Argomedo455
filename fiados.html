@@ -259,6 +259,11 @@ h1,h2,h3{font-family:'Roboto',system-ui,sans-serif}
   <div id="toast"></div>
 
 <script>
+// Las funciones de Supabase corren junto a la base de datos (São Paulo). Sin esto, desde algunos lugares la petición cae en una
+// región de EE. UU. y el catálogo tarda 5-10 s en vez de ~1 s. Se agrega a toda llamada hacia Supabase, sin tocar el resto del código.
+(function(){var o=window.fetch;window.fetch=function(u,i){try{if(typeof u==='string'&&u.indexOf('znywepjclzhgkctzrjxb.supabase.co/functions/v1/')>-1&&u.indexOf('forceFunctionRegion')<0)u+=(u.indexOf('?')<0?'?':'&')+'forceFunctionRegion=sa-east-1';}catch(e){}return o.call(this,u,i);};})();
+</script>
+<script>
 const SYNC_URL='https://znywepjclzhgkctzrjxb.supabase.co/functions/v1/argomedo-api'; // Argomedo corre en Supabase
 const fmt=new Intl.NumberFormat('es-CL');
 const peso=n=>'$'+fmt.format(Math.round(n||0));
