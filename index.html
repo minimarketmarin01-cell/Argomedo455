@@ -5889,7 +5889,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-20.1';
+const APP_VERSION='2026-11-21.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -5951,7 +5951,7 @@ const SYNC_MAX_AGE=3600000; // 1 hora en ms
 // origen — Access-Control-Allow-Origin: *), sin pasar por este backend.
 const LOCAL_NOMBRE='Argomedo 455';   // nombre de ESTE local (se muestra en Recepción para no equivocarse de local)
 const OTRO_LOCAL_NOMBRE='Marín 376';
-const OTRO_LOCAL_URL='https://marin376-api.minimarketmarin01.workers.dev';
+const OTRO_LOCAL_URL='https://znywepjclzhgkctzrjxb.supabase.co/functions/v1/marin-api'; // Marín ya corre en Supabase
 
 function lastSyncTime(){const t=localStorage.getItem('cumpas_last_sync');return t?+t:0;}
 function setLastSync(t){localStorage.setItem('cumpas_last_sync',String(t));}
