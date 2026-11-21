@@ -2504,7 +2504,7 @@ html.modo-bliss.carrito-fijo.vista-filas #prov-anchor .shc-row.shc-wrap{flex-wra
 .mm-search>.mm-x{position:absolute !important;top:50%;right:84px;transform:translateY(-50%)}
 #gp-prod-x,#gp-x{right:6px !important}
 /* X de borrar automática en los cuadros de texto que no la tenían (ver cxInstalar). */
-.cx-x{position:absolute;top:50%;transform:translateY(-50%);width:32px;height:32px;border:none;background:transparent;border-radius:50%;color:var(--text-sec,#616161);cursor:pointer;display:none;align-items:center;justify-content:center;padding:0;z-index:3;-webkit-tap-highlight-color:transparent}
+.cx-x{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;border:none;background:transparent;border-radius:50%;color:var(--text-sec,#616161);cursor:pointer;display:none;align-items:center;justify-content:center;padding:0;z-index:3;-webkit-tap-highlight-color:transparent}
 .cx-x:active{background:rgba(0,0,0,.08)}
 /* Vencimientos: fecha y stock siempre en filas separadas (antes el stock se quedaba al lado de la fecha cuando cabía y bajaba cuando no, y las tarjetas se veían distintas). */
 #vc-ov .vc-meta{flex-direction:column;align-items:flex-start;flex-wrap:nowrap;gap:4px}
@@ -5894,7 +5894,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-21.6';
+const APP_VERSION='2026-11-21.7';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15692,8 +15692,12 @@ document.getElementById('rc-scan').onclick=()=>{
 // ingresado en Recepción (costo y cantidad quedan guardados y se restauran al volver).
 async function rcProductoNoEncontrado(code){
   if(!await dlgConfirm('Producto no encontrado\n\nEste artículo no existe en el inventario.\n¿Deseas crearlo ahora?'))return;
+  const texto=String(code||'').trim();
+  // Lo tipeado en el buscador de Recepción puede ser un código de barras (solo dígitos) o un nombre escrito a mano
+  // (ej. "Paleta baileys und trendy"): antes SIEMPRE se mandaba a Código de barras, aunque fuera texto.
+  const esCodigoBarras=/^\d{4,}$/.test(texto);
   _rcPendiente={
-    barcode:code,
+    barcode:esCodigoBarras?texto:'',
     costo:document.getElementById('rc-costo').value||'',
     cantidad:document.getElementById('rc-cantidad').value||'',
     fecha:document.getElementById('rc-fecha').value||''
@@ -15701,8 +15705,12 @@ async function rcProductoNoEncontrado(code){
   _cpDesdeRecepcion=true;
   cerrarModal('rc-ov');
   cpAbrir();
-  document.getElementById('cp-barcode').value=code;
-  cpAutocompletarPorCodigo(code);
+  if(esCodigoBarras){
+    document.getElementById('cp-barcode').value=texto;
+    cpAutocompletarPorCodigo(texto);
+  }else{
+    document.getElementById('cp-nombre').value=texto;
+  }
   // La cantidad y el costo se vuelcan a los campos NUEVOS (cp-cantidad / cp-pr-costo); cp-stock
   // ya no se escribe a mano — lo completa cpRenderResumen() a partir de la cantidad.
   // También se hereda el modo Con/Sin IVA que venía elegido en Recepción, para no perderlo.
@@ -15718,14 +15726,7 @@ async function rcProductoNoEncontrado(code){
     if(ci)ci.dispatchEvent(new Event('input',{bubbles:true}));
   }catch(_){}
   try{cpRenderResumen();}catch(_){}
-  // Mantiene el proveedor: intenta preseleccionar la categoría igual al filtro activo en Pedidos
-  const provActual=(!state.allProv&&state.prov)?state.prov:null;
-  if(provActual){
-    cpCargarCatalogo().then(()=>{
-      const match=_cpCats.find(c=>c.name===provActual);
-      if(match)cpLlenarSelect(match.id);
-    });
-  }
+  // La categoría de Loyverse queda VACÍA para elegirla a mano (antes se preseleccionaba con el filtro activo de Pedidos).
   cpValidar();
 }
 document.getElementById('rc-mic').onclick=()=>voiceSearch(document.getElementById('rc-mic'),text=>{
@@ -18770,7 +18771,7 @@ autoSyncIfStale();
     const acomodar=()=>{
       // a la izquierda de los botones de micrófono / escáner / cámara que haya dentro de la caja
       let der=6;
-      caja.querySelectorAll('.mm-mic,.mm-scan,.cam-btn').forEach(b=>{if(b.offsetWidth)der=Math.max(der,(caja.getBoundingClientRect().right-b.getBoundingClientRect().left)+4);});
+      caja.querySelectorAll('.mm-mic,.mm-scan,.cam-btn,.cat-combo-chev').forEach(b=>{const rb=b.getBoundingClientRect();if(rb.width)der=Math.max(der,(caja.getBoundingClientRect().right-rb.left)+4);});   // incluye la flecha ⌄ de los desplegables
       x.style.right=der+'px';
       const pad=der+36;
       if((parseFloat(getComputedStyle(inp).paddingRight)||0)<pad)inp.style.paddingRight=pad+'px';
@@ -18781,10 +18782,10 @@ autoSyncIfStale();
     x.addEventListener('touchstart',e=>e.preventDefault(),{passive:false});
     const borrar=e=>{e.preventDefault();inp.value='';inp.dispatchEvent(new Event('input',{bubbles:true}));inp.dispatchEvent(new Event('change',{bubbles:true}));x.style.display='none';try{inp.focus();}catch(_){}};
     x.addEventListener('click',borrar);
-    lista.push({inp,x});
+    lista.push({inp,x,acomodar});
   });
   // Hay pantallas que vacían el campo por código (al guardar, al cambiar de producto): se esconde la X si quedó sola.
-  setInterval(()=>{lista.forEach(({inp,x})=>{if(!inp.value&&x.style.display!=='none')x.style.display='none';else if(inp.value&&x.style.display==='none'&&inp.offsetParent)x.style.display='flex';});},700);
+  setInterval(()=>{lista.forEach(({inp,x,acomodar})=>{if(!inp.value&&x.style.display!=='none')x.style.display='none';else if(inp.value&&x.style.display==='none'&&inp.offsetParent){acomodar();x.style.display='flex';}});},700);   // acomodar(): si el campo se llenó por código, la X se ubica antes de mostrarse (antes quedaba encima de la 1ª letra)
 })();
 </script>
 <script>
