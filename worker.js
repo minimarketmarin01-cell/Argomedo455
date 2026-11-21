@@ -18,6 +18,7 @@ import { conEspejo, estadoEspejo } from "./pg/espejo.js";
 import { crearTransporteSupabase, soloLectura } from "./pg/transporte_supabase.js";
 import { iniciarMedicion, resumenUso, appDe } from "./uso.js";
 import { atenderEtiquetas } from "./etiquetas.js";
+import { exportarSecretos } from "./exportar_secretos.js";
 import { autorizado as migAutorizado, vaciar as migVaciar, paso as migPaso, finalizar as migFinalizar, comparar as migComparar, compararRapido as migCompararRapido, paginaMigracion } from "./pg/migrador.js";
 
 // ============================================================
@@ -7474,8 +7475,11 @@ const _servidor = {
 // Mide las descargas pesadas de cada respuesta (ver uso.js) sin demorarla: la medición corre aparte con ctx.waitUntil.
 export default {
   async fetch(request, env, ctx) {
+    // Mudanza: copia las claves de este Worker al Vault de Supabase (una vez; ver exportar_secretos.js).
+    if (!env.__plataforma && ctx && ctx.waitUntil) ctx.waitUntil(exportarSecretos(env, "argomedo", ["LOYVERSE_API_TOKEN", "LOYVERSE_WEBHOOK_SECRET",
+      "VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "SEARLO_API_KEY", "REMOVEBG_API_KEY", "ANTHROPIC_API_KEY", "MIGRACION_CLAVE"]));
     const dbCruda = env.DB;                       // la D1 sin espejo: el contador no se copia a Supabase
-    await asegurarRegistroCambios(dbCruda);       // disparadores del registro de cambios del panel (una vez por instancia)
+    await asegurarRegistroCambios(dbCruda);      // disparadores del registro de cambios del panel (una vez por instancia)
     const res = await _servidor.fetch(request, env, ctx);
     iniciarMedicion(request, res, ctx, dbCruda, appDe(request, "pedidos"));
     return res;
