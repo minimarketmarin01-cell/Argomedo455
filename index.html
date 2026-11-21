@@ -5894,7 +5894,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-21.5';
+const APP_VERSION='2026-11-21.6';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -10641,6 +10641,9 @@ function cpReset(){
   const iva=document.getElementById('cp-iva');if(iva)iva.checked=true;
   const activo=document.getElementById('cp-activo');if(activo)activo.checked=true;
   const catNuevabox=document.getElementById('cp-cat-nuevabox');if(catNuevabox)catNuevabox.classList.add('hidden');
+  // La categoría NO debe quedar pegada del producto anterior: cada producto nuevo parte con el campo vacío.
+  const catSelReset=document.getElementById('cp-cat');if(catSelReset)catSelReset.value='';
+  const catInpReset=document.getElementById('cp-cat-input');if(catInpReset)catInpReset.value='';
   _cpImagenUrl=null;_cpImagenBase64=null;_cpImagenContentType='image/jpeg';
   const imgElegida=document.getElementById('cp-img-elegida');if(imgElegida)imgElegida.classList.add('hidden');
   _cpFotoTomadaB64=null;_cpFondoResultadoB64=null;
