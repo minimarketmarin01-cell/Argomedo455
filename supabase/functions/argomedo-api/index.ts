@@ -8,7 +8,7 @@ servir({
   worker,
   nombre: "argomedo-api",
   prefijoSecretos: "argomedo",
-  armarEnv: () => ({ DB: crearDB(transporteDirecto("ejecutar_sql_col_argomedo")), __transporte: transporteDirecto("ejecutar_sql_col_argomedo") }),
+  armarEnv: () => ({ GEMINI_API_KEY: Deno.env.get("GEMINI_API_KEY") || undefined, MODELO_GEMINI: Deno.env.get("MODELO_GEMINI") || undefined, DB: crearDB(transporteDirecto("ejecutar_sql_col_argomedo")), __transporte: transporteDirecto("ejecutar_sql_col_argomedo") }),
   tareasAdmin: {
     reapuntar_webhooks: (env: Record<string, string>) => reapuntarWebhooksLoyverse(env.LOYVERSE_API_TOKEN,
       "argomedo455.minimarketmarin01.workers.dev", Deno.env.get("SUPABASE_URL") + "/functions/v1/argomedo-api")

@@ -19,6 +19,7 @@ import { crearTransporteSupabase, soloLectura } from "./pg/transporte_supabase.j
 import { iniciarMedicion, resumenUso, appDe } from "./uso.js";
 import { atenderEtiquetas } from "./etiquetas.js";
 import { exportarSecretos } from "./exportar_secretos.js";
+import { hayIA, llamarIA, jsonDeIA } from "./ia.js";
 import { autorizado as migAutorizado, vaciar as migVaciar, paso as migPaso, finalizar as migFinalizar, comparar as migComparar, compararRapido as migCompararRapido, paginaMigracion } from "./pg/migrador.js";
 
 // ============================================================
@@ -3190,7 +3191,7 @@ async function accionClasificarProducto(env, payload) {
 
   // Sin patrón aprendido — recién acá hace falta IA (no antes, para no bloquear el
   // camino gratis con un secreto que la mayoría de las clasificaciones ni necesita).
-  requiereSecreto(env, "ANTHROPIC_API_KEY", "wrangler secret put ANTHROPIC_API_KEY");
+  if (!hayIA(env)) throw new Error("Falta la clave de IA: agrega GEMINI_API_KEY en Supabase (Edge Functions → Secrets)");
 
   const { results: proveedoresRows } = await env.DB.prepare("SELECT id, nombre FROM proveedores ORDER BY nombre").all();
   const listaProveedores = proveedoresRows.map(p => p.nombre).join(", ");
@@ -3204,38 +3205,22 @@ Proveedores conocidos: ${listaProveedores}
 Sectores válidos: ${sectoresCombinados.join(", ")}
 
 Responde SOLO JSON, sin texto adicional:
-{"proveedor":"nombre exacto de la lista, o null si no se puede determinar","sector":"uno de los sectores válidos","confianza":"alta"|"baja"}
-Si el producto no calza claramente con ningún proveedor conocido, usa null y confianza "baja".
-No inventes un proveedor que no esté en la lista.`;
+{"proveedor":"nombre exacto de la lista, o null si no se puede determinar","sector":"uno de los sectores válidos, o null si no se puede determinar","confianza":"alta"|"baja"}
+Si solo puedes determinar uno de los dos, completa ese y deja el otro en null. Si no puedes determinar ninguno, deja ambos en null.
+No inventes un proveedor que no esté en la lista ni un sector que no esté entre los válidos. No uses "OTROS" salvo que realmente corresponda.`;
 
-  let res;
-  try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 300, messages: [{ role: "user", content: prompt }] })
-    });
-  } catch (e) {
-    throw new Error("No se pudo conectar con Claude: " + e.message);
-  }
-  if (!res.ok) {
-    const errTxt = await res.text().catch(() => "");
-    throw new Error("Claude no pudo clasificar (" + res.status + "): " + errTxt.slice(0, 200));
-  }
-  const data = await res.json();
-  const textBlock = (data.content || []).find(b => b.type === "text");
-  if (!textBlock) throw new Error("Claude no devolvió una clasificación");
-  const raw = textBlock.text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
+const textoIA = await llamarIA(env, { prompt, maxTokens: 300, rapido: true });
   let out;
-  try { out = JSON.parse(raw); } catch (e) { throw new Error("No se pudo interpretar la respuesta de Claude"); }
+  try { out = jsonDeIA(textoIA); } catch (e) { throw new Error("No se pudo interpretar la respuesta de la IA"); }
 
-  const sectorSugerido = sectoresCombinados.includes(String(out.sector || "").toUpperCase()) ? String(out.sector).toUpperCase() : "OTROS";
+  // Lo que la IA no sabe queda en null (la app lo deja para llenar a mano); ya no se rellena "OTROS" por defecto.
+  const sectorSugerido = sectoresCombinados.includes(String(out.sector || "").toUpperCase()) ? String(out.sector).toUpperCase() : null;
   let proveedorSugerido = null, proveedorId = null;
   if (out.proveedor) {
     const match = proveedoresRows.find(p => String(p.nombre).trim().toUpperCase() === String(out.proveedor).trim().toUpperCase());
     if (match) { proveedorSugerido = match.nombre; proveedorId = match.id; }
   }
-  const confianza = (out.confianza === "alta" && proveedorSugerido) ? "alta" : "baja";
+  const confianza = (out.confianza === "alta" && proveedorSugerido && sectorSugerido) ? "alta" : (proveedorSugerido || sectorSugerido) ? "media" : "baja";
   return { proveedor: proveedorSugerido, proveedor_id: proveedorId, sector: sectorSugerido, confianza, origen: "ia" };
 }
 
@@ -6898,7 +6883,7 @@ const _servidor = {
           capacidades: {
             buscar_imagen: !!env.SEARLO_API_KEY,
             quitar_fondo: !!env.REMOVEBG_API_KEY,
-            clasificar_ia: !!env.ANTHROPIC_API_KEY
+            clasificar_ia: hayIA(env)
           }
         });
       }
