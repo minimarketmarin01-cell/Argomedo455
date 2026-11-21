@@ -5894,7 +5894,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-21.3';
+const APP_VERSION='2026-11-21.4';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -9541,11 +9541,16 @@ async function psSugerir(nombreProducto,categoria,provSelId,sectorSelId,hintId){
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'clasificar_producto',payload:{nombre:nombreProducto,categoria:categoria||''}})});
     const j=await res.json();
     if(!j||!j.ok)throw new Error((j&&j.error)||'Sin respuesta');
-    if(j.confianza==='alta'){
-      psLlenarSelects(provSelId,sectorSelId,j.proveedor_id,j.sector);
-      if(hint)hint.textContent='Sugerencia aplicada ('+(j.proveedor||'sin proveedor')+' · '+j.sector+') — revisa y guarda';
+    // Se llena lo que la IA sepa, aunque sea solo uno de los dos campos; el que no sepa queda como estaba (para llenarlo a mano).
+    const provSel=document.getElementById(provSelId),sectorSel=document.getElementById(sectorSelId);
+    const provNuevo=j.proveedor_id||null,sectorNuevo=j.sector||null;
+    if(provNuevo||sectorNuevo){
+      psLlenarSelects(provSelId,sectorSelId,provNuevo||(provSel&&provSel.value)||'',sectorNuevo||(sectorSel&&sectorSel.value)||'');
+      const falta=[];if(!provNuevo)falta.push('proveedor');if(!sectorNuevo)falta.push('sector');
+      if(hint)hint.textContent='Sugerencia aplicada ('+(j.proveedor||'sin proveedor')+' · '+(j.sector||'sin sector')+')'+
+        (falta.length?' — no pude identificar el '+falta.join(' ni el ')+': complétalo a mano':' — revisa y guarda');
     }else if(hint){
-      hint.textContent='Sugerencia (confianza baja, sin aplicar): '+(j.proveedor||'proveedor no identificado')+' · '+(j.sector||'—')+' — elige de la lista si corresponde';
+      hint.textContent='La IA no pudo identificar proveedor ni sector: elígelos a mano';
     }
     return j;
   }catch(e){
