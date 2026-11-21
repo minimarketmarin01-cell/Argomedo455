@@ -6256,6 +6256,7 @@ const _servidor = {
     }
 
     // ---------- Copia D1 -> Supabase (migración; protegida por el secreto MIGRACION_CLAVE) ----------
+    if (env.__plataforma && (/^migrar_/.test(accionUrl) || accionUrl === "espejo_comparar")) return json({ ok: false, error: "Ya no hay D1: el servidor corre en Supabase." }, 410);
     if (/^migrar_(ui|vaciar|paso|finalizar|comparar|espejo)$/.test(accionUrl) && request.method === "GET") {
       if (!migAutorizado(env, url.searchParams.get("clave") || "")) return json({ ok: false, error: "No autorizado" }, 403);
       try {
@@ -6271,8 +6272,13 @@ const _servidor = {
     // ---------- Modo de prueba con Supabase (?db=supabase), SOLO LECTURA ----------
     // Misma lógica del servidor pero leyendo de Supabase en vez de D1. Ignora los webhooks de Loyverse, no guarda nada
     // y no lanza el respaldo de fondo: así Supabase no se aparta de Cloudflare por cambios hechos solo en la prueba.
-    const modoSupabase = url.searchParams.get("db") === "supabase";
-    if (modoSupabase) {
+    // env.__soloLectura: la función de Supabase en modo sombra (para comparar con Cloudflare antes del corte).
+    const modoSupabase = url.searchParams.get("db") === "supabase" || env.__soloLectura === true;
+    if (modoSupabase && env.__plataforma) {
+      if (url.pathname === "/webhook/loyverse") return json({ ok: true, ignorado: "modo sombra" });
+      if (request.method === "POST") return json({ ok: false, error: "Modo sombra: solo lectura." }, 403);
+      env = { ...env, DB: crearDB(soloLectura(env.__transporte)), __modo: "supabase" };
+    } else if (modoSupabase) {
       if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) return json({ ok: false, error: "Supabase no está configurado en el servidor" }, 500);
       if (url.pathname === "/webhook/loyverse") return json({ ok: true, ignorado: "modo de prueba Supabase" });
       if (request.method === "POST") return json({ ok: false, error: "El modo de prueba (Supabase) es solo para mirar. Para guardar usa la app normal: se guarda en las dos bases." }, 403);
@@ -7482,11 +7488,19 @@ const _servidor = {
 // Mide las descargas pesadas de cada respuesta (ver uso.js) sin demorarla: la medición corre aparte con ctx.waitUntil.
 export default {
   async fetch(request, env, ctx) {
+    // Argomedo ya corre en Supabase (Edge Function argomedo-api). Este Worker solo reenvía lo que todavía le llega (apps
+    // Android, celulares con la versión vieja, webhooks atrasados) para que nadie lea ni escriba la D1 vieja. CPU < 1 ms:
+    // cabe en el plan gratuito. Emergencia: variable SIN_PROXY = "1" en el Worker para volver a Cloudflare.
+    if (!env.__plataforma && String(env.SIN_PROXY || "") !== "1") {
+      const u = new URL(request.url);
+      return fetch(new Request("https://znywepjclzhgkctzrjxb.supabase.co/functions/v1/argomedo-api" + (u.pathname === "/" ? "" : u.pathname) + u.search, request));
+    }
     // Mudanza: copia las claves de este Worker al Vault de Supabase (una vez; ver exportar_secretos.js).
     if (!env.__plataforma && ctx && ctx.waitUntil) ctx.waitUntil(exportarSecretos(env, "argomedo", ["LOYVERSE_API_TOKEN", "LOYVERSE_WEBHOOK_SECRET",
       "VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "SEARLO_API_KEY", "REMOVEBG_API_KEY", "ANTHROPIC_API_KEY", "MIGRACION_CLAVE"]));
     const dbCruda = env.DB;                       // la D1 sin espejo: el contador no se copia a Supabase
-    await asegurarRegistroCambios(dbCruda);      // disparadores del registro de cambios del panel (una vez por instancia)
+    // En Supabase (env.__plataforma) los disparadores del panel ya existen en Postgres (migración panel_cambios_triggers).
+    if (!env.__plataforma) await asegurarRegistroCambios(dbCruda); // disparadores del registro de cambios del panel (una vez por instancia)
     const res = await _servidor.fetch(request, env, ctx);
     iniciarMedicion(request, res, ctx, dbCruda, appDe(request, "pedidos"));
     return res;

@@ -14,5 +14,6 @@ class_name = "RealtimeHub"
 tag = "v1"
 new_sqlite_classes = ["RealtimeHub"]
 
+# Sin cron: las tareas programadas corren en Supabase (pg_cron → Edge Function argomedo-api). Este Worker solo reenvía.
 [triggers]
-crons = ["0 * * * *"]
+crons = []
