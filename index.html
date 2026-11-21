@@ -3370,9 +3370,15 @@ html:not(.vista-filas) .tbl-scroll{overflow-x:hidden}
             </div>
             <div class="cat" id="rc-proveedores" style="font-weight:700;color:var(--ink)">También pedir a: —</div>
             <div style="display:flex;gap:6px;margin-top:6px">
-              <select id="rc-provid-select" style="flex:1;min-width:0;padding:7px 9px;border:1px solid var(--border-control);border-radius:2px;font-size:12px"><option value="">Agregar proveedor…</option></select>
+              <div class="cat-combo" id="rc-provid-combo" style="flex:1;min-width:0">
+                <input id="rc-provid-input" class="cat-combo-input" placeholder="Escribe para buscar proveedor…" autocomplete="off" role="combobox" aria-expanded="false" aria-haspopup="listbox">
+                <svg class="cat-combo-chev" viewBox="0 0 24 24" fill="currentColor"><path d="M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z"/></svg>
+                <select id="rc-provid-select" style="display:none"><option value="">Agregar proveedor…</option></select>
+                <div class="cat-combo-menu hidden" id="rc-provid-menu" role="listbox"></div>
+              </div>
               <button class="loadbtn" id="rc-provid-add" type="button" style="white-space:nowrap;padding:7px 10px;font-size:12px"><svg width="12" height="12" viewBox="0 0 24 24" style="vertical-align:-2px" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg> Agregar</button>
             </div>
+            <button class="loadbtn" id="rc-provid-nuevo" type="button" style="width:100%;margin-top:6px;padding:9px 10px;font-size:13px">+ Nuevo proveedor</button>
           </section>
 
 
@@ -5883,7 +5889,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-14.3';
+const APP_VERSION='2026-11-20.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14779,6 +14785,17 @@ function rcGuardarBorrador(){
     }catch(e){}
   },150);
 }
+const RC_ILA_LS_KEY='lc_rc_ila_por_producto';
+function rcIlaGuardadoDe(ref){
+  try{const m=JSON.parse(localStorage.getItem(RC_ILA_LS_KEY)||'{}');return m[ref]||null;}catch(e){return null;}
+}
+function rcIlaRecordar(ref,ila,ila10,ivaModo){
+  try{
+    const m=JSON.parse(localStorage.getItem(RC_ILA_LS_KEY)||'{}');
+    if(ivaModo==='sin'&&ila)m[ref]='ila';else if(ivaModo==='sin'&&ila10)m[ref]='ila10';else delete m[ref];
+    localStorage.setItem(RC_ILA_LS_KEY,JSON.stringify(m));
+  }catch(e){}
+}
 function rcLimpiarBorrador(){clearTimeout(_rcDraftT);try{localStorage.removeItem(RC_DRAFT_LS_KEY);}catch(e){}}
 function rcCargarBorrador(){
   try{const raw=localStorage.getItem(RC_DRAFT_LS_KEY);return raw?JSON.parse(raw):null;}catch(e){return null;}
@@ -14789,6 +14806,7 @@ function rcCargarBorrador(){
 // del producto, así que el orden importa: primero elegir, después restaurar lo escrito).
 function rcAplicarBorrador(d){
   if(!d)return;
+  if(d.ref)rcPick(d.ref); // primero el producto: rcPick resetea modo/IVA/ILA y repinta el widget
   if(d.modo)rcSetModo(d.modo);
   if(d.ivaModo){
     rcState.ivaModo=d.ivaModo;
@@ -14803,7 +14821,6 @@ function rcAplicarBorrador(d){
     const chk=document.getElementById('rc-ila10');
     if(chk){chk.checked=true;chk.dispatchEvent(new Event('change',{bubbles:true}));}
   }
-  if(d.ref)rcPick(d.ref);
   if(d.unidadesCaja)document.getElementById('rc-unidades-caja').value=d.unidadesCaja;
   if(d.cantidad)document.getElementById('rc-cantidad').value=d.cantidad;
   if(d.margenObj){const m=document.getElementById('rc-margen-obj');if(m){m.value=d.margenObj;m.dispatchEvent(new Event('input',{bubbles:true}));}}
@@ -14877,6 +14894,9 @@ function rcShowPicked(it){
   rcState.ivaModo=_esProveedorConIva?'con':'sin';
   rcState.ilaAplica=false; // elegir un producto nuevo no debe heredar el ILA del anterior
   rcState.ila10Aplica=false;
+  // ...pero SÍ recuerda el ILA que se marcó la última vez que se guardó ESTE producto.
+  const _ilaPrev=rcIlaGuardadoDe(it.ref);
+  if(_ilaPrev&&rcState.ivaModo==='sin'){rcState.ilaAplica=_ilaPrev==='ila';rcState.ila10Aplica=_ilaPrev==='ila10';}
   rcState.margenTocado=false;
   rcState.modo='unidad';
   document.getElementById('rc-unidades-caja').value='';
@@ -14892,7 +14912,7 @@ function rcShowPicked(it){
     // "con IVA" (CCU/Coca-Cola/BOOM) se muestra tal cual. Ver rcConvertirCostoIva() para la
     // conversión al alternar el toggle después de elegido el producto.
     const _bruto=rcState.costoOriginal||0;
-    cIdx.value=_bruto?(rcState.ivaModo==='sin'?Math.round((_bruto/1.19)*100)/100:_bruto):'';
+    cIdx.value=_bruto?(rcState.ivaModo==='sin'?Math.round((_bruto/(1.19+(rcState.ilaAplica?0.18:0)+(rcState.ila10Aplica?0.10:0)))*100)/100:_bruto):'';
     cIdx.dispatchEvent(new Event('input',{bubbles:true}));
   }
   const pIdx=document.getElementById('rc-precio');if(pIdx){pIdx.value=rcState.precioOriginal||'';pIdx.dispatchEvent(new Event('input',{bubbles:true}));}
@@ -14914,6 +14934,7 @@ function rcShowPicked(it){
 // Reutiliza EXACTO el mismo mecanismo que ya usa la pestaña Proveedores de la Ficha del
 // producto (fpPaneProveedores/agregar_proveedor_id_extra) — no se duplica esa lógica, solo se
 // expone un atajo más corto acá.
+let _rcProvCombo=null;
 function rcRenderProveedores(it){
   const txt=document.getElementById('rc-proveedores');
   const sel=document.getElementById('rc-provid-select');
@@ -14924,6 +14945,21 @@ function rcRenderProveedores(it){
     const asignados=new Set((it.proveedorIdsTodos||[]).map(Number));
     sel.innerHTML='<option value="">Agregar proveedor…</option>'+
       _psProveedores.filter(p=>!asignados.has(Number(p.id))).map(p=>'<option value="'+p.id+'">'+p.nombre+'</option>').join('');
+    // Combo que filtra mientras se escribe (sin tildes ni mayúsculas) y ofrece "Crear proveedor" si no existe.
+    const inpProv=document.getElementById('rc-provid-input');
+    if(inpProv)inpProv.value='';
+    if(_rcProvCombo){try{_rcProvCombo.destroy();}catch(e){}_rcProvCombo=null;}
+    _rcProvCombo=crearComboBuscable({
+      wrapId:'rc-provid-combo',inputId:'rc-provid-input',menuId:'rc-provid-menu',selectId:'rc-provid-select',
+      getItems:()=>_psProveedores.filter(p=>!asignados.has(Number(p.id))).map(p=>({id:p.id,name:p.nombre})),
+      placeholderNueva:'Crear proveedor',
+      onCreateNueva:async texto=>{
+        const nuevo=await psCrearProveedorInline(texto);
+        if(!asignados.has(Number(nuevo.id)))await rcAgregarProveedorId(nuevo.id);   // se crea y queda asignado a este producto
+        try{pollFondo();}catch(e){}
+        return {};
+      }
+    });
     // Proveedor principal + Sector: campos nuevos, permiten asignar (o crear al vuelo, en
     // un toque) el proveedor/sector real del producto directo desde Recepción — antes solo
     // existía este selector de "también pedir a" (proveedores extra), que nunca tocaba el
@@ -15021,13 +15057,9 @@ async function rcEliminarMovimiento(id,cantidad,esCambio){
     }else showToast('Error: '+((j&&j.error)||'no se pudo eliminar el movimiento'));
   }catch(e){showToast('Error de conexión al eliminar el movimiento');}
 }
-document.getElementById('rc-provid-add').onclick=async()=>{
-  const it=rcState.item; if(!it)return;
-  const sel=document.getElementById('rc-provid-select');
-  const provId=sel&&sel.value;
-  if(!provId){showToast('Elige un proveedor primero');return;}
-  const btn=document.getElementById('rc-provid-add');
-  btn.disabled=true;
+// Asigna un proveedor (ya existente) al producto elegido en Recepción — lo usan "Agregar" y "+ Nuevo proveedor".
+async function rcAgregarProveedorId(provId){
+  const it=rcState.item; if(!it)return false;
   try{
     const r=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'agregar_proveedor_id_extra',payload:{sku:it.ref,proveedor_id:Number(provId)}})});
     const j=await r.json();
@@ -15041,8 +15073,36 @@ document.getElementById('rc-provid-add').onclick=async()=>{
       showToast('Ahora también se pide a '+j.proveedor_nombre);
       rcRenderProveedores(it);
       render();
-    }else{showToast(''+((j&&j.error)||'No se pudo agregar'));}
+      return true;
+    }
+    showToast(''+((j&&j.error)||'No se pudo agregar'));
   }catch(e){showToast('Error de conexión');}
+  return false;
+}
+document.getElementById('rc-provid-add').onclick=async()=>{
+  const it=rcState.item; if(!it)return;
+  const sel=document.getElementById('rc-provid-select');
+  const provId=sel&&sel.value;
+  if(!provId){showToast('Elige un proveedor primero');return;}
+  const btn=document.getElementById('rc-provid-add');
+  btn.disabled=true;
+  try{await rcAgregarProveedorId(provId);}finally{btn.disabled=false;}
+};
+// "+ Nuevo proveedor": lo crea (en mayúscula, sin duplicar uno que ya exista) y lo deja asignado a este producto de una vez.
+document.getElementById('rc-provid-nuevo').onclick=async()=>{
+  const it=rcState.item; if(!it){showToast('Primero elige un producto');return;}
+  const nombre=await dlgPrompt('Nombre del nuevo proveedor','');
+  if(nombre===null)return;
+  const limpio=String(nombre).trim();
+  if(!limpio){showToast('Escribe el nombre del proveedor');return;}
+  const btn=document.getElementById('rc-provid-nuevo');
+  btn.disabled=true;
+  try{
+    const prov=await psCrearProveedorInline(limpio);
+    if((it.proveedorIdsTodos||[]).map(Number).includes(Number(prov.id))){showToast(prov.nombre+' ya está asignado a este producto');return;}
+    const ok=await rcAgregarProveedorId(prov.id);
+    if(ok){try{pollFondo();}catch(e){}}
+  }catch(e){showToast(''+(e&&e.message?e.message:'No se pudo crear el proveedor'));}
   finally{btn.disabled=false;}
 };
 // ---- Cambio con el proveedor recibido por Recepción (solo Pan Castaño) ----
@@ -16071,6 +16131,7 @@ document.getElementById('rc-guardar').onclick=async()=>{
       if(rcState.item&&rcState.item.ref!==it.ref){
         showToast(msg+' — sigues con "'+rcState.item.nombre+'"',tipoMsg);
       }else{
+        rcIlaRecordar(it.ref,rcState.ilaAplica,rcState.ila10Aplica,rcState.ivaModo);
         rcReset();
         rcLimpiarBorrador(); // ya se guardó de verdad — un F5 después de esto no debe revivirlo
         document.getElementById('rc-search').focus();
@@ -16124,6 +16185,7 @@ async function rcGuardarSoloPrecio(it){
         render();
       }
       if(!(rcState.item&&rcState.item.ref!==it.ref)){
+        rcIlaRecordar(it.ref,rcState.ilaAplica,rcState.ila10Aplica,rcState.ivaModo);
         rcReset();
         rcLimpiarBorrador();
         document.getElementById('rc-search').focus();
@@ -18187,12 +18249,21 @@ function renderProvHoyReal(){
 // con la fecha del selector), esto responde directo "qué tengo pendiente de recibir" sin
 // tocar nada, agrupando "hoy" + atrasados de una. Mismo DB.pendBySku, mismo criterio de
 // exclusión que pendienteDe (estado==='recibido' no cuenta).
+// Un pedido (proveedor + fecha de llegada) cuenta como RECIBIDO apenas llega uno de sus productos:
+// el servidor ya marca el resto así; esto lo aplica también en pantalla (pedidos viejos o servidor sin actualizar).
+function _pedidosYaRecibidos(){
+  const pend=DB&&DB.pendBySku?DB.pendBySku:{};const set=new Set();
+  Object.keys(pend).forEach(k=>{const p=pend[k];if(p&&p.estado==='recibido'&&p.fecha_llegada_estimada)set.add(String(p.proveedor||'')+'|'+p.fecha_llegada_estimada);});
+  return set;
+}
 function calcularRecepcionarHoy(){
   const pend=DB&&DB.pendBySku?DB.pendBySku:{};
   const hoyISO=isoLocalDate(new Date());
   const grupos={};
+  const yaRec=_pedidosYaRecibidos();
   Object.keys(pend).forEach(sku=>{
     const p=pend[sku];
+    if(p&&yaRec.has(String(p.proveedor||'')+'|'+p.fecha_llegada_estimada))return;
     // 'incompleto' = pedido ya cerrado desde "Finalizar como incompleto": el artículo no
     // sigue en camino, no debe seguir apareciendo como "por recepcionar" (mismo criterio que
     // 'recibido', ver pendienteDe).
@@ -18212,8 +18283,9 @@ function calcularRecepcionarHoy(){
 function itemsPendientesPorProveedorHastaHoy(proveedor){
   const pend=DB&&DB.pendBySku?DB.pendBySku:{};
   const hoyISO=isoLocalDate(new Date());
+  const yaRec=_pedidosYaRecibidos();
   return Object.values(pend)
-    .filter(p=>p&&_proveedorRealDePendiente(p)===proveedor&&p.estado!=='recibido'&&p.estado!=='incompleto'&&p.fecha_llegada_estimada&&p.fecha_llegada_estimada<=hoyISO)
+    .filter(p=>p&&!yaRec.has(String(p.proveedor||'')+'|'+p.fecha_llegada_estimada)&&_proveedorRealDePendiente(p)===proveedor&&p.estado!=='recibido'&&p.estado!=='incompleto'&&p.fecha_llegada_estimada&&p.fecha_llegada_estimada<=hoyISO)
     .sort((a,b)=>String(a.nombre||'').localeCompare(String(b.nombre||''),'es'));
 }
 function renderRecepcionarHoy(elId){

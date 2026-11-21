@@ -3404,8 +3404,15 @@ async function accionLoteNuevo(env, payload) {
     // 2b) Si este producto tenía un pedido confirmado sin recibir ("Ya pedido a
     // X" en Armar pedido), pasa a 'recibido' — no se borra, queda como historial.
     try {
-      if (!esCambio)   // un cambio no es la llegada de un pedido
-      await run(env, "UPDATE pedidos_pendientes SET estado = 'recibido' WHERE sku = ? AND estado = 'confirmado'", sku);
+      if (!esCambio) {   // un cambio no es la llegada de un pedido
+        // Basta que llegue UN producto de un pedido (mismo proveedor y fecha de llegada) para que todo el pedido
+        // pase a 'recibido': así la lista de Recepción no se llena de atrasados. Se lee ANTES de marcar el sku.
+        const filaPed = await get(env, "SELECT proveedor, fecha_llegada_estimada FROM pedidos_pendientes WHERE sku = ? AND estado = 'confirmado'", sku);
+        await run(env, "UPDATE pedidos_pendientes SET estado = 'recibido' WHERE sku = ? AND estado = 'confirmado'", sku);
+        if (filaPed && filaPed.proveedor && filaPed.fecha_llegada_estimada) {
+          await run(env, "UPDATE pedidos_pendientes SET estado = 'recibido' WHERE estado = 'confirmado' AND proveedor = ? AND fecha_llegada_estimada = ?", filaPed.proveedor, filaPed.fecha_llegada_estimada);
+        }
+      }
     } catch (e) {
       // no crítico: si falla, el chip "Ya pedido" simplemente sigue mostrándose.
     }
