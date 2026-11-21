@@ -5894,7 +5894,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-21.4';
+const APP_VERSION='2026-11-21.5';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -9230,13 +9230,23 @@ document.getElementById('sm-del').onclick=smEliminar;
 // Ojo: esto es la tabla dedicada `proveedores` (nueva) — no confundir con DB.provs, que es el
 // agrupador por categoría de Loyverse que ya usa "Proveedores de hoy" (el campo mezclado viejo).
 let _psProveedores=[], _psSectores=[], _psCargado=false;
+let _psCargando=null;
 async function psCargarListas(force){
   if(_psCargado&&!force)return;
-  try{
-    const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=proveedores');
-    const j=await res.json();
-    if(j&&j.ok){_psProveedores=(j.proveedores||[]).slice().sort((a,b)=>a.nombre.localeCompare(b.nombre));_psSectores=j.sectores||[];_psCargado=true;}
-  }catch(e){}
+  if(_psCargando)return _psCargando;   // ya hay una carga en curso: se espera esa
+  // Antes un solo fallo de red dejaba la lista vacía hasta reabrir la pantalla (el campo no mostraba nombres al escribir).
+  // Ahora reintenta hasta 3 veces con una pausa corta.
+  _psCargando=(async()=>{
+    for(let i=0;i<3;i++){
+      try{
+        const res=await fetch(SYNC_URL+(SYNC_URL.indexOf('?')<0?'?':'&')+'action=proveedores');
+        const j=await res.json();
+        if(j&&j.ok){_psProveedores=(j.proveedores||[]).slice().sort((a,b)=>a.nombre.localeCompare(b.nombre));_psSectores=j.sectores||[];_psCargado=true;return;}
+      }catch(e){}
+      await new Promise(r=>setTimeout(r,1000*(i+1)));
+    }
+  })().finally(()=>{_psCargando=null;});
+  return _psCargando;
 }
 function psLlenarSelects(provSelId,sectorSelId,provId,sector){
   const provSel=document.getElementById(provSelId);
@@ -9382,7 +9392,8 @@ function psInitCombo(key,wrapId,inputId,menuId,selectId,tipo,onCreateNueva){
   if(_psCombosVivos[key]){_psCombosVivos[key].destroy();delete _psCombosVivos[key];}
   const inst=crearComboBuscable({
     wrapId,inputId,menuId,selectId,
-    getItems:()=>tipo==='proveedor'?_psProveedores.map(p=>({id:p.id,name:p.nombre})):_psSectores.map(s=>({id:s,name:s})),
+    getItems:()=>{if(!_psProveedores.length&&!_psSectores.length&&!_psCargando)psCargarListas(true);   // lista vacía (falló la carga): se recarga sola
+      return tipo==='proveedor'?_psProveedores.map(p=>({id:p.id,name:p.nombre})):_psSectores.map(s=>({id:s,name:s}));},
     onCreateNueva,
     placeholderNueva:tipo==='proveedor'?'Crear proveedor':(tipo==='sector'?'Crear sector':null)
   });
@@ -9544,6 +9555,10 @@ async function psSugerir(nombreProducto,categoria,provSelId,sectorSelId,hintId){
     // Se llena lo que la IA sepa, aunque sea solo uno de los dos campos; el que no sepa queda como estaba (para llenarlo a mano).
     const provSel=document.getElementById(provSelId),sectorSel=document.getElementById(sectorSelId);
     const provNuevo=j.proveedor_id||null,sectorNuevo=j.sector||null;
+    // Asegura que el proveedor/sector sugeridos estén en las listas del formulario (si la carga inicial falló o quedó vieja).
+    if(!_psCargado||(provNuevo&&!_psProveedores.some(p=>String(p.id)===String(provNuevo)))||(sectorNuevo&&!_psSectores.includes(sectorNuevo)))await psCargarListas(true);
+    if(provNuevo&&j.proveedor&&!_psProveedores.some(p=>String(p.id)===String(provNuevo))){_psProveedores.push({id:provNuevo,nombre:j.proveedor});_psProveedores.sort((a,b)=>a.nombre.localeCompare(b.nombre));}
+    if(sectorNuevo&&!_psSectores.includes(sectorNuevo))_psSectores.push(sectorNuevo);
     if(provNuevo||sectorNuevo){
       psLlenarSelects(provSelId,sectorSelId,provNuevo||(provSel&&provSel.value)||'',sectorNuevo||(sectorSel&&sectorSel.value)||'');
       const falta=[];if(!provNuevo)falta.push('proveedor');if(!sectorNuevo)falta.push('sector');
