@@ -19,7 +19,7 @@ import { crearTransporteSupabase, soloLectura } from "./pg/transporte_supabase.j
 import { iniciarMedicion, resumenUso, appDe } from "./uso.js";
 import { atenderEtiquetas } from "./etiquetas.js";
 import { exportarSecretos } from "./exportar_secretos.js";
-import { hayIA, llamarIA, jsonDeIA, quitarFondoConCloudflare, ajustarColorConIA } from "./ia.js";
+import { hayIA, llamarIA, jsonDeIA, quitarFondoConCloudflare, ajustarColorConIA, embellecerFotoConIA } from "./ia.js";
 import { autorizado as migAutorizado, vaciar as migVaciar, paso as migPaso, finalizar as migFinalizar, comparar as migComparar, compararRapido as migCompararRapido, paginaMigracion } from "./pg/migrador.js";
 
 // ============================================================
@@ -6871,6 +6871,11 @@ const _servidor = {
       // POST { action:'quitar_fondo_producto', payload:{image_base64} } → recorte con
       // remove.bg (requiere REMOVEBG_API_KEY). Devuelve un preview, no sube nada solo.
       // POST { action:'ajustar_color_producto', payload:{image_base64} } → la IA (Gemini, gratis) sugiere brillo/contraste/color.
+      // POST { action:'embellecer_foto_producto', payload:{image_base64} } → IA generativa de Cloudflare (FLUX.2): opcional, puede alterar textos.
+      if (action === "embellecer_foto_producto") {
+        const r = await embellecerFotoConIA(env, { imagenB64: payload && payload.image_base64, mediaType: payload && payload.media_type });
+        return json({ ok: true, ...r });
+      }
       if (action === "ajustar_color_producto") {
         const ajustes = await ajustarColorConIA(env, { imagenB64: payload && payload.image_base64, mediaType: payload && payload.media_type });
         return json({ ok: true, ajustes });

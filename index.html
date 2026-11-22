@@ -5894,7 +5894,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-22.1';
+const APP_VERSION='2026-11-22.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -7476,6 +7476,9 @@ function fpPaneGeneral(f){
     _fpFondoResultadoB64=aplicarAjusteColorProducto(_fpFondoCanvasBase,ajustes);
     document.getElementById('fp-fondo-resultado-img').src='data:image/png;base64,'+_fpFondoResultadoB64;
   });
+  wireEmbellecerFoto('fp',{ui:_fpAjustesFotoUI,
+    fiel:()=>_fpFondoCanvasBase?aplicarAjusteColorProducto(_fpFondoCanvasBase,_fpAjustesFotoUI.leer()):null,
+    mostrar:b64=>{_fpFondoResultadoB64=b64;document.getElementById('fp-fondo-resultado-img').src='data:image/png;base64,'+b64;}});
   document.getElementById('fp-img-camara-btn').onclick=()=>document.getElementById('fp-img-camara').click();
   document.getElementById('fp-img-camara').addEventListener('change',async(ev)=>{
     const file=ev.target.files&&ev.target.files[0];
@@ -10823,6 +10826,11 @@ function htmlAjustesFoto(prefix){
   return '<div style="margin-bottom:6px">'+
     '<div id="'+prefix+'-adj-nota" style="font-size:11px;color:var(--muted);margin:0 0 4px;min-height:14px"></div>'+
     fila('brillo','Brillo')+fila('contraste','Contraste')+fila('saturacion','Color')+
+    '<div style="margin:8px 0 2px">'+
+      '<button type="button" id="'+prefix+'-emb-btn" class="loadbtn" style="width:100%;padding:9px 10px;font-size:13px">✨ Embellecer con IA (puede alterar textos)</button>'+
+      '<button type="button" id="'+prefix+'-emb-volver" class="loadbtn hidden" style="width:100%;padding:9px 10px;font-size:13px;margin-top:6px">↩ Volver a la versión fiel (sin IA generativa)</button>'+
+      '<div id="'+prefix+'-emb-aviso" style="font-size:11.5px;color:var(--muted);margin-top:5px;min-height:14px"></div>'+
+    '</div>'+
     '<button type="button" id="'+prefix+'-adj-reset" style="background:none;border:none;color:var(--wa-d);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;padding:0">↺ Restablecer automático</button>'+
   '</div>';
 }
@@ -10860,6 +10868,31 @@ async function ajusteColorAuto(promesa,ui,aplicar,ms){
   if(r==='tarde'){promesa.then(a=>{if(a&&!ui.tocado()){ui.fijar(a);aplicar(a);}});return AJUSTAR_FOTO_DEFAULT;}
   return r||AJUSTAR_FOTO_DEFAULT;
 }
+// ---- Embellecer con IA generativa (FLUX.2 de Cloudflare) — OPCIONAL: la IA redibuja el producto y puede alterar textos y logos ----
+// Parte siempre de la versión fiel actual (píxeles reales); "Volver" la restaura. El resultado reemplaza a la imagen que se usa al confirmar.
+function embLimpiar(prefix){
+  const v=document.getElementById(prefix+'-emb-volver'),a=document.getElementById(prefix+'-emb-aviso');
+  if(v)v.classList.add('hidden');if(a)a.textContent='';
+}
+function wireEmbellecerFoto(prefix,cfg){
+  const btn=document.getElementById(prefix+'-emb-btn'),vol=document.getElementById(prefix+'-emb-volver'),av=document.getElementById(prefix+'-emb-aviso');
+  if(!btn)return;
+  btn.onclick=async()=>{
+    const fiel=cfg.fiel();
+    if(!fiel){showToast('Primero procesa la foto');return;}
+    btn.disabled=true;btn.textContent='✨ Embelleciendo… (puede tardar ~10 s)';av.textContent='';
+    try{
+      const r=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'embellecer_foto_producto',payload:{image_base64:fiel,media_type:'image/png'}})});
+      const j=await r.json();
+      if(j&&j.ok&&j.image_base64){
+        cfg.mostrar(j.image_base64);cfg.ui.marcarTocado();vol.classList.remove('hidden');
+        av.textContent='⚠️ La IA redibujó el producto: revisa que los textos, logos y fechas del envase sigan correctos. Si algo cambió, vuelve a la versión fiel (o prueba otra vez).';
+      }else{av.textContent=''+((j&&j.error)||'No se pudo embellecer la foto');}
+    }catch(e){av.textContent='Error de conexión con la IA';}
+    finally{btn.disabled=false;btn.textContent='✨ Embellecer con IA (puede alterar textos)';}
+  };
+  vol.onclick=()=>{const f=cfg.fiel();if(f)cfg.mostrar(f);vol.classList.add('hidden');av.textContent='Versión fiel restaurada.';};
+}
 function wireAjustesFotoProducto(prefix,onCambio){
   const claves=['brillo','contraste','saturacion'];
   function leerAjustes(){
@@ -10884,7 +10917,7 @@ function wireAjustesFotoProducto(prefix,onCambio){
   }
   function nota(t){const n=document.getElementById(prefix+'-adj-nota');if(n)n.textContent=t||'';}
   function restablecer(){   // foto nueva: vuelve a los valores base y olvida lo que sugirió la IA
-    auto=Object.assign({},AJUSTAR_FOTO_DEFAULT);tocado=false;nota('');
+    auto=Object.assign({},AJUSTAR_FOTO_DEFAULT);tocado=false;nota('');embLimpiar(prefix);
     ponerSliders(auto);
   }
   function fijar(a){   // la IA sugirió estos valores: se ponen en los controles y pasan a ser el "automático"
@@ -10893,12 +10926,12 @@ function wireAjustesFotoProducto(prefix,onCambio){
   }
   claves.forEach(k=>{
     const el=document.getElementById(prefix+'-adj-'+k);
-    if(el)el.oninput=()=>{tocado=true;actualizarEtiquetas();onCambio(leerAjustes());};
+    if(el)el.oninput=()=>{tocado=true;embLimpiar(prefix);actualizarEtiquetas();onCambio(leerAjustes());};
   });
   const resetBtn=document.getElementById(prefix+'-adj-reset');
-  if(resetBtn)resetBtn.onclick=()=>{tocado=false;ponerSliders(auto);onCambio(Object.assign({},auto));};
+  if(resetBtn)resetBtn.onclick=()=>{tocado=false;embLimpiar(prefix);ponerSliders(auto);onCambio(Object.assign({},auto));};
   actualizarEtiquetas();
-  return {restablecer,fijar,tocado:()=>tocado};
+  return {restablecer,fijar,tocado:()=>tocado,leer:leerAjustes,marcarTocado:()=>{tocado=true;}};
 }
 // Afinado de nitidez simple (unsharp mask con un solo paso de blur): calcula una versión
 // desenfocada del lienzo actual y la resta ponderadamente del original para realzar bordes.
@@ -10985,6 +11018,9 @@ const _cpAjustesFotoUI=wireAjustesFotoProducto('cp',ajustes=>{
   _cpFondoResultadoB64=aplicarAjusteColorProducto(_cpFondoCanvasBase,ajustes);
   document.getElementById('cp-fondo-resultado-img').src='data:image/png;base64,'+_cpFondoResultadoB64;
 });
+wireEmbellecerFoto('cp',{ui:_cpAjustesFotoUI,
+  fiel:()=>_cpFondoCanvasBase?aplicarAjusteColorProducto(_cpFondoCanvasBase,_cpAjustesFotoUI.leer()):null,
+  mostrar:b64=>{_cpFondoResultadoB64=b64;document.getElementById('cp-fondo-resultado-img').src='data:image/png;base64,'+b64;}});
 document.getElementById('cp-img-camara-btn').onclick=()=>document.getElementById('cp-img-camara').click();
 document.getElementById('cp-img-camara').addEventListener('change',async(ev)=>{
   const file=ev.target.files&&ev.target.files[0];

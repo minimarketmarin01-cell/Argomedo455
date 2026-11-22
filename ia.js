@@ -129,3 +129,32 @@ export async function ajustarColorConIA(env, { imagenB64, mediaType }) {
   const lim = (v, a, b, def) => { v = Number(v); return Number.isFinite(v) ? Math.max(a, Math.min(b, Math.round(v))) : def; };
   return { brillo: lim(j.brillo, 85, 130, 108), contraste: lim(j.contraste, 90, 130, 110), saturacion: lim(j.saturacion, 85, 125, 112) };
 }
+
+// ---- Embellecer la foto con IA generativa (FLUX.2 Klein 4B en Workers AI, vía el Worker "quitafondos") ----
+// OPCIONAL y distinta del flujo normal: la IA REDIBUJA el producto, así que puede alterar textos, logos y detalles del envase.
+// Por eso en la app va detrás de un botón con aviso, y siempre se puede volver a la versión fiel (píxeles reales).
+// Gratis: ~125 neurons por foto de los 10.000 diarios (~80 fotos al día). El filtro de seguridad de Cloudflare a veces bloquea (422).
+const PROMPT_EMBELLECER =
+  "This is a catalog photo of a retail product on a white background. Improve it like a professional product photographer: " +
+  "vivid but true-to-life colors, even soft studio lighting, crisp sharp details, a clean pure white background and a subtle soft contact shadow. " +
+  "Keep the product EXACTLY the same: identical shape and proportions, packaging design, logos, brand names and every printed word, letter and number. " +
+  "Do not redraw, translate, rewrite or invent any text or graphics. Keep the whole product visible and centered.";
+export async function embellecerFotoConIA(env, { imagenB64, mediaType }) {
+  if (!env.QUITAFONDOS_CLAVE) throw new Error("Falta la clave del Worker de Cloudflare (QUITAFONDOS_CLAVE en el Vault de Supabase)");
+  if (!imagenB64) throw new Error("Falta la foto a procesar");
+  const base = (env.QUITAFONDOS_URL || "https://quitafondos.minimarketmarin01.workers.dev").replace(/\/$/, "");
+  const bytes = Uint8Array.from(atob(imagenB64), c => c.charCodeAt(0));
+  let r;
+  try {
+    r = await fetch(base + "/embellecer?prompt=" + encodeURIComponent(PROMPT_EMBELLECER), {
+      method: "POST", headers: { "x-clave": env.QUITAFONDOS_CLAVE, "x-tipo": mediaType || "image/png", "content-type": "application/octet-stream" },
+      body: bytes, signal: AbortSignal.timeout(90000)
+    });
+  } catch (e) { throw new Error("No se pudo conectar con la IA de Cloudflare: " + String((e && e.message) || e).slice(0, 100)); }
+  if (r.status === 422) throw new Error("El filtro de seguridad de Cloudflare bloqueó esta foto. Usa la versión normal o prueba con otra toma.");
+  if (!r.ok) throw new Error("La IA de Cloudflare respondió " + r.status + ": " + (await r.text().catch(() => "")).slice(0, 150));
+  const buf = new Uint8Array(await r.arrayBuffer());
+  let s = "";
+  for (let i = 0; i < buf.length; i += 8192) s += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
+  return { image_base64: btoa(s), content_type: "image/png" };
+}
