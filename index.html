@@ -5894,7 +5894,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-22.2';
+const APP_VERSION='2026-11-22.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -10829,6 +10829,7 @@ function htmlAjustesFoto(prefix){
     '<div style="margin:8px 0 2px">'+
       '<button type="button" id="'+prefix+'-emb-btn" class="loadbtn" style="width:100%;padding:9px 10px;font-size:13px">✨ Embellecer con IA (puede alterar textos)</button>'+
       '<button type="button" id="'+prefix+'-emb-volver" class="loadbtn hidden" style="width:100%;padding:9px 10px;font-size:13px;margin-top:6px">↩ Volver a la versión fiel (sin IA generativa)</button>'+
+      '<div id="'+prefix+'-emb-barra" class="emb-barra hidden"><span></span></div>'+
       '<div id="'+prefix+'-emb-aviso" style="font-size:11.5px;color:var(--muted);margin-top:5px;min-height:14px"></div>'+
     '</div>'+
     '<button type="button" id="'+prefix+'-adj-reset" style="background:none;border:none;color:var(--wa-d);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;padding:0">↺ Restablecer automático</button>'+
@@ -10872,15 +10873,36 @@ async function ajusteColorAuto(promesa,ui,aplicar,ms){
 // Parte siempre de la versión fiel actual (píxeles reales); "Volver" la restaura. El resultado reemplaza a la imagen que se usa al confirmar.
 function embLimpiar(prefix){
   const v=document.getElementById(prefix+'-emb-volver'),a=document.getElementById(prefix+'-emb-aviso');
-  if(v)v.classList.add('hidden');if(a)a.textContent='';
+  if(v)v.classList.add('hidden');if(a&&!/^Esto puede tardar/.test(a.textContent))a.textContent='';
+}
+function embEstilos(){
+  if(document.getElementById('emb-css'))return;
+  const s=document.createElement('style');s.id='emb-css';
+  s.textContent='@keyframes embGiro{to{transform:rotate(360deg)}}'+
+    '@keyframes embBarra{0%{left:-40%}100%{left:100%}}'+
+    '@keyframes embPulso{0%,100%{opacity:.35}50%{opacity:.75}}'+
+    '.emb-spin{display:inline-block;width:14px;height:14px;border:2.5px solid currentColor;border-right-color:transparent;border-radius:50%;animation:embGiro .8s linear infinite;vertical-align:-2px;margin-right:8px}'+
+    '.emb-barra{position:relative;height:4px;margin-top:6px;border-radius:2px;background:rgba(0,0,0,.1);overflow:hidden}'+
+    '.emb-barra.hidden{display:none}'+
+    '.emb-barra>span{position:absolute;top:0;left:-40%;width:40%;height:100%;border-radius:2px;background:var(--wa,#1E88E5);animation:embBarra 1.1s linear infinite}'+
+    '.emb-cargando{animation:embPulso 1.2s ease-in-out infinite;filter:blur(1.5px)}'+
+    '@media (prefers-reduced-motion:reduce){.emb-spin,.emb-barra>span,.emb-cargando{animation-duration:3s}}';
+  document.head.appendChild(s);
 }
 function wireEmbellecerFoto(prefix,cfg){
+  embEstilos();
   const btn=document.getElementById(prefix+'-emb-btn'),vol=document.getElementById(prefix+'-emb-volver'),av=document.getElementById(prefix+'-emb-aviso');
+  const barra=document.getElementById(prefix+'-emb-barra'),img=document.getElementById(prefix+'-fondo-resultado-img');
   if(!btn)return;
   btn.onclick=async()=>{
     const fiel=cfg.fiel();
     if(!fiel){showToast('Primero procesa la foto');return;}
-    btn.disabled=true;btn.textContent='✨ Embelleciendo… (puede tardar ~10 s)';av.textContent='';
+    // Animación: se ve que está trabajando (círculo + segundos, barra que se desliza y la imagen parpadeando)
+    let seg=0;
+    const pintarBtn=()=>{btn.innerHTML='<span class="emb-spin"></span>Embelleciendo con IA… '+seg+' s';};
+    btn.disabled=true;av.textContent='Esto puede tardar entre 5 y 15 segundos, no cierres la pantalla.';
+    pintarBtn();if(barra)barra.classList.remove('hidden');if(img)img.classList.add('emb-cargando');
+    const reloj=setInterval(()=>{seg++;pintarBtn();},1000);
     try{
       const r=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'embellecer_foto_producto',payload:{image_base64:fiel,media_type:'image/png'}})});
       const j=await r.json();
@@ -10889,7 +10911,7 @@ function wireEmbellecerFoto(prefix,cfg){
         av.textContent='⚠️ La IA redibujó el producto: revisa que los textos, logos y fechas del envase sigan correctos. Si algo cambió, vuelve a la versión fiel (o prueba otra vez).';
       }else{av.textContent=''+((j&&j.error)||'No se pudo embellecer la foto');}
     }catch(e){av.textContent='Error de conexión con la IA';}
-    finally{btn.disabled=false;btn.textContent='✨ Embellecer con IA (puede alterar textos)';}
+    finally{clearInterval(reloj);btn.disabled=false;btn.textContent='✨ Embellecer con IA (puede alterar textos)';if(barra)barra.classList.add('hidden');if(img)img.classList.remove('emb-cargando');}
   };
   vol.onclick=()=>{const f=cfg.fiel();if(f)cfg.mostrar(f);vol.classList.add('hidden');av.textContent='Versión fiel restaurada.';};
 }
