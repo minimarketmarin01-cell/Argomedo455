@@ -19,7 +19,7 @@ import { crearTransporteSupabase, soloLectura } from "./pg/transporte_supabase.j
 import { iniciarMedicion, resumenUso, appDe } from "./uso.js";
 import { atenderEtiquetas } from "./etiquetas.js";
 import { exportarSecretos } from "./exportar_secretos.js";
-import { hayIA, llamarIA, jsonDeIA } from "./ia.js";
+import { hayIA, llamarIA, jsonDeIA, quitarFondoConCloudflare, ajustarColorConIA } from "./ia.js";
 import { autorizado as migAutorizado, vaciar as migVaciar, paso as migPaso, finalizar as migFinalizar, comparar as migComparar, compararRapido as migCompararRapido, paginaMigracion } from "./pg/migrador.js";
 
 // ============================================================
@@ -3076,6 +3076,16 @@ async function accionBuscarImagenProducto(env, payload) {
 // SEPARADO de subir_imagen_producto: esto solo devuelve un preview; el usuario decide si
 // lo aplica. Secreto: REMOVEBG_API_KEY.
 async function accionQuitarFondoProducto(env, payload) {
+  const imageBase64 = payload && payload.image_base64;
+  if (!imageBase64) throw new Error("Falta la foto a procesar");
+  // 1) Cloudflare Images (gratis, IA de segmentación). 2) Si falla y todavía hay clave de remove.bg (cierra el 1-dic-2026), ese respaldo.
+  let falloCloudflare = null;
+  try { return await quitarFondoConCloudflare(env, imageBase64); } catch (e) { falloCloudflare = e; }
+  if (!env.REMOVEBG_API_KEY) throw falloCloudflare;
+  try { return await quitarFondoConRemoveBg(env, payload); }
+  catch (e) { throw new Error(falloCloudflare.message + " | respaldo remove.bg: " + e.message); }
+}
+async function quitarFondoConRemoveBg(env, payload) {
   requiereSecreto(env, "REMOVEBG_API_KEY", "wrangler secret put REMOVEBG_API_KEY");
   const imageBase64 = payload && payload.image_base64;
   if (!imageBase64) throw new Error("Falta la foto a procesar");
@@ -6860,6 +6870,11 @@ const _servidor = {
 
       // POST { action:'quitar_fondo_producto', payload:{image_base64} } → recorte con
       // remove.bg (requiere REMOVEBG_API_KEY). Devuelve un preview, no sube nada solo.
+      // POST { action:'ajustar_color_producto', payload:{image_base64} } → la IA (Gemini, gratis) sugiere brillo/contraste/color.
+      if (action === "ajustar_color_producto") {
+        const ajustes = await ajustarColorConIA(env, { imagenB64: payload && payload.image_base64, mediaType: payload && payload.media_type });
+        return json({ ok: true, ajustes });
+      }
       if (action === "quitar_fondo_producto") {
         const resultado = await accionQuitarFondoProducto(env, payload);
         return json({ ok: true, ...resultado });

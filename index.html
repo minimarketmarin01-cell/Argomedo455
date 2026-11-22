@@ -5894,7 +5894,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-21.7';
+const APP_VERSION='2026-11-22.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -7499,6 +7499,7 @@ function fpPaneGeneral(f){
     document.getElementById('fp-camara-preview-box').classList.add('hidden');
     document.getElementById('fp-fondo-procesando').classList.remove('hidden');
     try{
+      const _pColor=pedirAjusteColorIA(_fpFotoTomadaB64);   // la IA decide el color mientras se quita el fondo
       const r=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'quitar_fondo_producto',payload:{image_base64:_fpFotoTomadaB64}})});
       const j=await r.json();
       document.getElementById('fp-fondo-procesando').classList.add('hidden');
@@ -7506,8 +7507,11 @@ function fpPaneGeneral(f){
         try{
           _fpFondoCanvasBase=await prepararLienzoBaseProducto(j.image_base64,j.content_type);
           _fpAjustesFotoUI.restablecer();
-          _fpFondoResultadoB64=aplicarAjusteColorProducto(_fpFondoCanvasBase,AJUSTAR_FOTO_DEFAULT);
-          document.getElementById('fp-fondo-resultado-img').src='data:image/png;base64,'+_fpFondoResultadoB64;
+          const _fpBaseEsta=_fpFondoCanvasBase;
+          const _fpAplicar=aj=>{if(_fpFondoCanvasBase!==_fpBaseEsta)return;_fpFondoResultadoB64=aplicarAjusteColorProducto(_fpBaseEsta,aj);document.getElementById('fp-fondo-resultado-img').src='data:image/png;base64,'+_fpFondoResultadoB64;};
+          const _fpAj=await ajusteColorAuto(_pColor,_fpAjustesFotoUI,_fpAplicar,12000);
+          if(_fpAj!==AJUSTAR_FOTO_DEFAULT)_fpAjustesFotoUI.fijar(_fpAj);
+          _fpAplicar(_fpAj);
         }catch(e){
           _fpFondoCanvasBase=null;
           _fpFondoResultadoB64=j.image_base64;
@@ -10690,7 +10694,7 @@ var _cpImagenContentType='image/jpeg'; // tipo real de _cpImagenBase64: jpeg (ga
 // valores que antes vivían fijos dentro del filtro; ahora también son el punto de partida de
 // los sliders manuales (ver AJUSTAR_FOTO_DEFAULT/aplicarAjusteColorProducto más abajo), y el
 // botón "↺ Restablecer automático" vuelve exactamente a estos valores.
-const AJUSTAR_FOTO_DEFAULT={contraste:118,saturacion:135,brillo:118};
+const AJUSTAR_FOTO_DEFAULT={contraste:108,saturacion:112,brillo:108};   // respaldo suave si la IA de color no responde (antes 118/135/118: saturaba de más)
 // Prepara el lienzo base de catálogo (recorte exacto por bbox + centrado ~85% + fondo blanco +
 // sombra), SIN aplicar todavía la corrección de color — separado de aplicarAjusteColorProducto
 // para que los sliders manuales de brillo/contraste/color puedan reaplicar solo el filtro de
@@ -10817,6 +10821,7 @@ function htmlAjustesFoto(prefix){
       '<span id="'+prefix+'-adj-'+clave+'-val" style="font-size:12px;color:var(--ink);font-family:\'JetBrains Mono\';width:38px;text-align:right;flex:none">'+AJUSTAR_FOTO_DEFAULT[clave]+'%</span>'+
     '</div>';
   return '<div style="margin-bottom:6px">'+
+    '<div id="'+prefix+'-adj-nota" style="font-size:11px;color:var(--muted);margin:0 0 4px;min-height:14px"></div>'+
     fila('brillo','Brillo')+fila('contraste','Contraste')+fila('saturacion','Color')+
     '<button type="button" id="'+prefix+'-adj-reset" style="background:none;border:none;color:var(--wa-d);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;padding:0">↺ Restablecer automático</button>'+
   '</div>';
@@ -10828,6 +10833,33 @@ function htmlAjustesFoto(prefix){
 // la imagen final a partir de SU lienzo base cacheado (prepararLienzoBaseProducto) y actualiza
 // su propio <img> de resultado y su variable _*FondoResultadoB64 — este wiring no toca eso,
 // solo lee los sliders y expone un helper para resetearlos al tomar una foto nueva.
+// Pide a la IA (Gemini, gratis) cuánto brillo/contraste/color necesita ESTA foto. Se lanza EN PARALELO con el quitafondos, así no suma espera.
+function pedirAjusteColorIA(fotoB64){
+  return new Promise(resolve=>{
+    try{
+      const img=new Image();
+      img.onload=async()=>{
+        try{
+          const s=Math.min(1,384/Math.max(img.width,img.height));
+          const c=document.createElement('canvas');c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);
+          c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+          const mini=c.toDataURL('image/jpeg',0.8).split(',')[1];
+          const r=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'ajustar_color_producto',payload:{image_base64:mini,media_type:'image/jpeg'}})});
+          const j=await r.json();
+          resolve(j&&j.ok&&j.ajustes?j.ajustes:null);
+        }catch(e){resolve(null);}
+      };
+      img.onerror=()=>resolve(null);
+      img.src='data:image/jpeg;base64,'+fotoB64;
+    }catch(e){resolve(null);}
+  });
+}
+// Espera la sugerencia hasta `ms`. Si llega después, igual se aplica mientras el usuario no haya movido los controles.
+async function ajusteColorAuto(promesa,ui,aplicar,ms){
+  const r=await Promise.race([promesa,new Promise(res=>setTimeout(()=>res('tarde'),ms))]);
+  if(r==='tarde'){promesa.then(a=>{if(a&&!ui.tocado()){ui.fijar(a);aplicar(a);}});return AJUSTAR_FOTO_DEFAULT;}
+  return r||AJUSTAR_FOTO_DEFAULT;
+}
 function wireAjustesFotoProducto(prefix,onCambio){
   const claves=['brillo','contraste','saturacion'];
   function leerAjustes(){
@@ -10845,21 +10877,28 @@ function wireAjustesFotoProducto(prefix,onCambio){
       if(el&&lbl)lbl.textContent=el.value+'%';
     });
   }
-  function restablecer(){
-    claves.forEach(k=>{
-      const el=document.getElementById(prefix+'-adj-'+k);
-      if(el)el.value=AJUSTAR_FOTO_DEFAULT[k];
-    });
+  let auto=Object.assign({},AJUSTAR_FOTO_DEFAULT), tocado=false;   // auto: lo que sugirió la IA para ESTA foto
+  function ponerSliders(a){
+    claves.forEach(k=>{const el=document.getElementById(prefix+'-adj-'+k);if(el)el.value=a[k];});
     actualizarEtiquetas();
+  }
+  function nota(t){const n=document.getElementById(prefix+'-adj-nota');if(n)n.textContent=t||'';}
+  function restablecer(){   // foto nueva: vuelve a los valores base y olvida lo que sugirió la IA
+    auto=Object.assign({},AJUSTAR_FOTO_DEFAULT);tocado=false;nota('');
+    ponerSliders(auto);
+  }
+  function fijar(a){   // la IA sugirió estos valores: se ponen en los controles y pasan a ser el "automático"
+    auto=Object.assign({},AJUSTAR_FOTO_DEFAULT,a);
+    ponerSliders(auto);nota('✨ Colores ajustados por IA — puedes moverlos');
   }
   claves.forEach(k=>{
     const el=document.getElementById(prefix+'-adj-'+k);
-    if(el)el.oninput=()=>{actualizarEtiquetas();onCambio(leerAjustes());};
+    if(el)el.oninput=()=>{tocado=true;actualizarEtiquetas();onCambio(leerAjustes());};
   });
   const resetBtn=document.getElementById(prefix+'-adj-reset');
-  if(resetBtn)resetBtn.onclick=()=>{restablecer();onCambio(Object.assign({},AJUSTAR_FOTO_DEFAULT));};
+  if(resetBtn)resetBtn.onclick=()=>{tocado=false;ponerSliders(auto);onCambio(Object.assign({},auto));};
   actualizarEtiquetas();
-  return {restablecer};
+  return {restablecer,fijar,tocado:()=>tocado};
 }
 // Afinado de nitidez simple (unsharp mask con un solo paso de blur): calcula una versión
 // desenfocada del lienzo actual y la resta ponderadamente del original para realzar bordes.
@@ -10969,6 +11008,7 @@ document.getElementById('cp-camara-confirmar').onclick=async()=>{
   document.getElementById('cp-camara-preview-box').classList.add('hidden');
   document.getElementById('cp-fondo-procesando').classList.remove('hidden');
   try{
+    const _pColor=pedirAjusteColorIA(_cpFotoTomadaB64);   // la IA decide el color mientras se quita el fondo
     const r=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'quitar_fondo_producto',payload:{image_base64:_cpFotoTomadaB64}})});
     const j=await r.json();
     document.getElementById('cp-fondo-procesando').classList.add('hidden');
@@ -10976,8 +11016,11 @@ document.getElementById('cp-camara-confirmar').onclick=async()=>{
       try{
         _cpFondoCanvasBase=await prepararLienzoBaseProducto(j.image_base64,j.content_type);
         _cpAjustesFotoUI.restablecer();
-        _cpFondoResultadoB64=aplicarAjusteColorProducto(_cpFondoCanvasBase,AJUSTAR_FOTO_DEFAULT);
-        document.getElementById('cp-fondo-resultado-img').src='data:image/png;base64,'+_cpFondoResultadoB64;
+        const _cpBaseEsta=_cpFondoCanvasBase;
+        const _cpAplicar=aj=>{if(_cpFondoCanvasBase!==_cpBaseEsta)return;_cpFondoResultadoB64=aplicarAjusteColorProducto(_cpBaseEsta,aj);document.getElementById('cp-fondo-resultado-img').src='data:image/png;base64,'+_cpFondoResultadoB64;};
+        const _cpAj=await ajusteColorAuto(_pColor,_cpAjustesFotoUI,_cpAplicar,12000);
+        if(_cpAj!==AJUSTAR_FOTO_DEFAULT)_cpAjustesFotoUI.fijar(_cpAj);
+        _cpAplicar(_cpAj);
       }catch(e){
         _cpFondoCanvasBase=null;
         _cpFondoResultadoB64=j.image_base64;

@@ -94,3 +94,38 @@ export function jsonDeIA(texto) {
   const raw = String(texto || "").trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
   return JSON.parse(raw);
 }
+
+// ---- Foto de producto: quitar el fondo (Cloudflare Images, gratis) y ajustar el color (Gemini, gratis) ----
+// remove.bg cierra el 1-dic-2026. El Worker "quitafondos" de Cloudflare usa el modelo de segmentación de Cloudflare Images
+// (plan gratuito: 5.000 imágenes distintas al mes). Devuelve un PNG con transparencia, igual que remove.bg.
+export async function quitarFondoConCloudflare(env, imagenB64) {
+  if (!env.QUITAFONDOS_CLAVE) throw new Error("Falta la clave del quitafondos (QUITAFONDOS_CLAVE en el Vault de Supabase)");
+  const url = env.QUITAFONDOS_URL || "https://quitafondos.minimarketmarin01.workers.dev";
+  const bytes = Uint8Array.from(atob(imagenB64), c => c.charCodeAt(0));
+  let r;
+  try {
+    r = await fetch(url, { method: "POST", headers: { "x-clave": env.QUITAFONDOS_CLAVE, "content-type": "application/octet-stream" }, body: bytes, signal: AbortSignal.timeout(45000) });
+  } catch (e) { throw new Error("No se pudo conectar con el quitafondos: " + String((e && e.message) || e).slice(0, 100)); }
+  if (!r.ok) throw new Error("El quitafondos respondió " + r.status + ": " + (await r.text().catch(() => "")).slice(0, 150));
+  const buf = new Uint8Array(await r.arrayBuffer());
+  if (buf.byteLength > 6 * 1024 * 1024) throw new Error("La imagen procesada quedó demasiado pesada");
+  let s = "";
+  for (let i = 0; i < buf.length; i += 8192) s += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
+  return { image_base64: btoa(s), content_type: "image/png" };
+}
+
+// La IA mira la foto ya armada (producto sobre fondo blanco) y sugiere brillo, contraste y color. Porcentajes: 100 = sin cambio.
+const PROMPT_COLOR_FOTO =
+  "You are a product photo retoucher preparing a catalog image of a retail product. The background of this photo WILL BE REMOVED and replaced by pure white, " +
+  "so ignore the background, the table and the lighting around the product: judge ONLY the product itself (its packaging). " +
+  "Decide the adjustments needed so the product, once on a white background, looks bright, clean and true-to-life, WITHOUT oversaturating. " +
+  "A product that looks dim or dark compared to a white background needs a clear brightness increase. " +
+  "Reply ONLY with JSON: {\"brillo\":number,\"contraste\":number,\"saturacion\":number}. Values are percentages where 100 means no change. " +
+  "Allowed ranges: brillo 85-130, contraste 90-130, saturacion 85-125. Guidance: underexposed or dark product -> raise brillo; flat or hazy -> raise contraste; " +
+  "dull or washed out colors -> raise saturacion a little; already vivid or reddish/yellow cast -> keep saturacion at or below 100.";
+export async function ajustarColorConIA(env, { imagenB64, mediaType }) {
+  const texto = await llamarIA(env, { prompt: PROMPT_COLOR_FOTO, imagenB64, mediaType: mediaType || "image/jpeg", maxTokens: 120, rapido: true });
+  const j = jsonDeIA(texto);
+  const lim = (v, a, b, def) => { v = Number(v); return Number.isFinite(v) ? Math.max(a, Math.min(b, Math.round(v))) : def; };
+  return { brillo: lim(j.brillo, 85, 130, 108), contraste: lim(j.contraste, 90, 130, 110), saturacion: lim(j.saturacion, 85, 125, 112) };
+}
