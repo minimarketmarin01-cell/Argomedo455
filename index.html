@@ -4660,7 +4660,8 @@ async function cargarVencidoParaCambio(){
 // Pan Castaño NO maneja vencimientos: se recibe solo por stock (sin fecha ni lotes) y no aparece en Vencimientos.
 function esSinVencimiento(x){
   const t=(x&&typeof x==='object')?(x.prov||x.categoria||''):x;
-  return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toUpperCase()==='PAN CASTANO';
+  const n=String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toUpperCase();
+  return n==='PAN CASTANO'||n==='EVERCRISP';
 }
 const _sinPanCastano=l=>!esSinVencimiento(l&&l.categoria);
 function esCategoriaCambio(prov){return !esSinVencimiento(prov)&&CATEGORIAS_CAMBIO.indexOf(prov)>=0;}
@@ -5895,7 +5896,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-26.5';
+const APP_VERSION='2026-11-26.6';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -14193,7 +14194,7 @@ document.getElementById('vc-fecha').oninput=vcValidar;
 document.getElementById('vc-guardar').onclick=async()=>{
   const btn=document.getElementById('vc-guardar');
   const it=vcNew.item;if(!it)return;
-  if(esSinVencimiento(it.prov)){showToast('Pan Castaño ya no maneja vencimientos: ingresa la mercadería por Recepción (solo stock).','error');return;}
+  if(esSinVencimiento(it.prov)){showToast('Este producto ya no maneja vencimientos: ingrésalo por Recepción (solo stock).','error');return;}
   const cantidad=Number(document.getElementById('vc-cantidad').value)||0;
   const fecha=fmtDateInputToDDMMAAAA(document.getElementById('vc-fecha').value);
   const lote=document.getElementById('vc-lote').value.trim();
@@ -15257,10 +15258,13 @@ function rcAplicarSinVencimiento(it){
   const sin=!!(it&&esSinVencimiento(it.prov));
   if(sec)sec.classList.toggle('hidden',sin);
   // Pan Castaño e Ideal: proveedor fijo y sin bonificados → se ocultan "Es bonificado" y la sección Proveedor.
-  const simple=!!(it&&(sin||String(it.prov||'').trim().toUpperCase()==='IDEAL'));
+  // Evercrisp: sin vencimientos ni bonificados (la sección Proveedor se mantiene).
+  const catN=String(it&&it.prov||'').trim().toUpperCase();
+  const esIdeal=catN==='IDEAL',esPC=esSinVencimiento(it&&it.prov)&&catN!=='EVERCRISP';
+  const simple=!!(it&&(sin||esIdeal));
   const bx=document.getElementById('rc-bonif-box'),ps=document.getElementById('rc-prov-sec');
   if(bx)bx.classList.toggle('hidden',simple);
-  if(ps)ps.classList.toggle('hidden',simple);
+  if(ps)ps.classList.toggle('hidden',!!(it&&(esPC||esIdeal)));
   if(simple){const bf=document.getElementById('rc-bonif');if(bf&&bf.checked){bf.checked=false;try{rcBonifActualizar();}catch(e){}}}
   if(sin){['rc-fecha','rc-fecha-dd','rc-fecha-mm','rc-fecha-aaaa'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});}
 }

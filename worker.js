@@ -3313,8 +3313,8 @@ async function accionLoteNuevo(env, payload) {
     throw new Error("Indica una cantidad recibida, o un cambio de precio/costo/proveedor/sector");
   }
 
-  // PAN CASTAÑO no maneja vencimientos: se recibe solo por stock (sin fecha ni lote en Vencimientos).
-  const sinVenc = String(it.categoria || "").trim().toUpperCase().replace(/\s+/g, " ") === "PAN CASTAÑO";
+  // PAN CASTAÑO y EVERCRISP no manejan vencimientos: se reciben solo por stock (sin fecha ni lote en Vencimientos).
+  const sinVenc = ["PAN CASTAÑO", "EVERCRISP"].indexOf(String(it.categoria || "").trim().toUpperCase().replace(/\s+/g, " ")) >= 0;
   const fechaTxt = sinVenc ? "" : String(payload.fechaVencimiento || "").trim();
   const tieneFecha = fechaTxt !== "";
   if (tieneFecha && !parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha de vencimiento inválida (usa DD/MM/AAAA)");
