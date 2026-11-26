@@ -506,8 +506,7 @@ async function asegurarTablas(env) {
     ["COLUN", 5, "corta", null],
     ["CONGELADOS", 15, "larga", null],
     ["ABARROTES", 30, "larga", null],
-    ["IDEAL", 15, "cambio", "Siempre hacen cambio de producto, nunca rebaja"],
-    ["PAN CASTAÑO", 15, "cambio", "Siempre hacen cambio de producto, nunca rebaja"]
+    ["IDEAL", 15, "cambio", "Siempre hacen cambio de producto, nunca rebaja"]
   ];
   for (const [categoria, dias, tipo, nota] of semillaVidaUtil) {
     await run(env, `INSERT OR IGNORE INTO config_vida_util (categoria, dias_alerta, tipo, nota) VALUES (?,?,?,?)`,
@@ -3314,7 +3313,9 @@ async function accionLoteNuevo(env, payload) {
     throw new Error("Indica una cantidad recibida, o un cambio de precio/costo/proveedor/sector");
   }
 
-  const fechaTxt = String(payload.fechaVencimiento || "").trim();
+  // PAN CASTAÑO no maneja vencimientos: se recibe solo por stock (sin fecha ni lote en Vencimientos).
+  const sinVenc = String(it.categoria || "").trim().toUpperCase().replace(/\s+/g, " ") === "PAN CASTAÑO";
+  const fechaTxt = sinVenc ? "" : String(payload.fechaVencimiento || "").trim();
   const tieneFecha = fechaTxt !== "";
   if (tieneFecha && !parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha de vencimiento inválida (usa DD/MM/AAAA)");
 
@@ -3350,13 +3351,14 @@ async function accionLoteNuevo(env, payload) {
     } else {
       calc = { estado: "Sin fecha", prioridad: "—", accion: "Sin vencimiento", precioRecomendado: null, costoUsado: null, costoOrigen: "" };
     }
-    const insertRes = await run(env,
+    // Sin vencimientos (Pan Castaño): no se crea lote, solo se suma stock.
+    const insertRes = sinVenc ? { meta: { last_row_id: null } } : await run(env,
       `INSERT INTO vencimientos (fecha_ingreso, sku, producto, categoria, unidad, lote, cantidad, fecha_vencimiento, estado, prioridad, accion, precio_recomendado, costo_usado, costo_origen, fecha_revision, revisado_por)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       fechaIngreso, sku, it.nombre, it.categoria, unidad, payload.lote || "", cantidad,
       fechaTxt, calc.estado, calc.prioridad, calc.accion, calc.precioRecomendado || null,
       calc.costoUsado || null, calc.costoOrigen, "", "");
-    out.filaIndex = insertRes.meta.last_row_id;
+    if (insertRes.meta.last_row_id != null) out.filaIndex = insertRes.meta.last_row_id;
 
     // 2) Sumar stock en Loyverse (el paso más importante — si falla, se avisa pero no
     //    se corta el resto: el lote de vencimiento ya quedó guardado igual). Único
@@ -4175,76 +4177,12 @@ async function accionRevisarLote(env, payload) {
 // no está en 'Retirado' (ya se cerró antes), corta ANTES de tocar stock. Admite cambio
 // PARCIAL (`cantidadCambiada` menor al total): cierra solo esa cantidad y deja el resto
 // en una fila nueva, todavía 'Retirado', para seguir apareciendo en Pendientes.
-// ===== Cambio con proveedor recibido por Recepción (solo PAN CASTAÑO repone producto; misma lógica que Marín 376) =====
-// Ideal y San Jorge no reponen: solo dan descuento en factura.
-const CATEGORIAS_CAMBIO_REPOSICION = ["PAN CASTANO"];   // comparadas sin tildes ni mayúsculas
-function esCategoriaCambioReposicion(cat) {
-  const n = String(cat || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
-  return CATEGORIAS_CAMBIO_REPOSICION.indexOf(n) >= 0;
-}
+// ===== Cambio con proveedor: se conserva el cierre por 'cambio' para poder reabrir movimientos viejos =====
 let _auditoriaCambioCierraOk = false;
 async function asegurarColumnaAuditoriaCambioCierra(env) {
   if (_auditoriaCambioCierraOk) return;
   try { await run(env, "ALTER TABLE auditoria ADD COLUMN cambio_cierra TEXT"); } catch (e) { /* columna ya existe */ }
   _auditoriaCambioCierraOk = true;
-}
-async function repCambiosPendientes(env, sku) {
-  const it = await get(env, "SELECT * FROM productos WHERE sku = ?", String(sku));
-  if (!it) return { aplica: false, unidades: 0, lotes: [] };
-  if (!esCategoriaCambioReposicion(it.categoria)) return { aplica: false, categoria: it.categoria || "", unidades: 0, lotes: [] };
-  const { results } = await env.DB.prepare("SELECT id, cantidad, fecha_vencimiento, fecha_retiro FROM vencimientos WHERE sku = ? AND estado = 'Retirado' ORDER BY id ASC").bind(String(sku)).all();
-  const lotes = (results || []).map(r => ({ id: r.id, cantidad: Number(r.cantidad) || 0, fechaVencimiento: r.fecha_vencimiento || "", fechaRetiro: r.fecha_retiro || "" }));
-  return { aplica: true, categoria: it.categoria || "", unidades: lotes.reduce((a, l) => a + l.cantidad, 0), lotes };
-}
-// 1) Recepción marcada como cambio (stock +N una sola vez, lote nuevo con su vencimiento, un movimiento).
-// 2) Cierra los pendientes ('Retirado') más antiguos primero SIN volver a sumar stock.
-// 3) El movimiento guarda qué cerró, para poder deshacerlo.
-async function accionRecibirCambio(env, payload) {
-  payload = payload || {};
-  await asegurarColumnaAuditoriaCambioCierra(env);
-  const sku = String(payload.sku || "").trim();
-  if (!sku) throw new Error("Falta el producto");
-  const pend = await repCambiosPendientes(env, sku);
-  if (!pend.aplica) throw new Error("Solo PAN CASTAÑO hace cambios: este producto no tiene cambio con proveedor.");
-  if (pend.unidades <= 0) throw new Error("Este producto no tiene unidades pendientes de cambio.");
-  const cantidad = Number(payload.cantidad);
-  if (!cantidad || cantidad <= 0) throw new Error("Cantidad inválida");
-  if (cantidad > pend.unidades) throw new Error("Solo hay " + pend.unidades + " unidad(es) pendientes de cambio. Registra las demás como recepción normal (sin marcar 'Es cambio').");
-  const fechaTxt = String(payload.fechaVencimiento || "").trim();
-  if (!fechaTxt) throw new Error("Indica la fecha de vencimiento del producto repuesto.");
-  if (!parseFechaDDMMAAAA(fechaTxt)) throw new Error("Fecha de vencimiento inválida (usa DD/MM/AAAA)");
-
-  const rec = await accionLoteNuevo(env, Object.assign({}, payload, { esCambio: true, bonificado: false, costo: null, precio: null, nombre: "", proveedor: null, sector: null }));
-  if (rec.loteRevertido || rec.nuevoStock == null) {
-    rec.cambioCerrado = false;
-    rec.avisoCambio = "⚠️ Los pendientes de cambio NO se cerraron porque el stock no quedó confirmado. Revisa el stock y repite el cambio.";
-    return rec;
-  }
-  let restante = cantidad;
-  const cerrados = [];
-  for (const lote of pend.lotes) {
-    if (restante <= 0) break;
-    const toma = Math.min(restante, lote.cantidad);
-    if (toma <= 0) continue;
-    try {
-      await accionMarcarCambiado(env, { filaIndex: lote.id, cantidadCambiada: toma, sinSumarStock: true, revisadoPor: payload.responsable || "" });
-      cerrados.push({ id: lote.id, cantidad: toma });
-      restante -= toma;
-    } catch (e) {
-      await logMsg(env, "⚠️ No se pudo cerrar el lote pendiente " + lote.id + " de " + sku + " al recibir el cambio: " + e.message);
-    }
-  }
-  if (rec.auditoriaId) {
-    try {
-      await run(env, "UPDATE auditoria SET cambio_cierra = ? WHERE id = ?", JSON.stringify({ cerrados, loteNuevo: rec.filaIndex || null }), rec.auditoriaId);
-    } catch (e) { await logMsg(env, "⚠️ No se pudo guardar el vínculo del cambio de " + sku + ": " + e.message); }
-  }
-  rec.cambioCerrado = restante <= 0;
-  rec.unidadesCerradas = cantidad - restante;
-  rec.pendientesRestantes = Math.max(0, pend.unidades - (cantidad - restante));
-  if (restante > 0) rec.avisoCambio = "⚠️ Quedaron " + restante + " unidad(es) sin cerrar en Pendientes. Revísalas en Vencimientos.";
-  await logMsg(env, "🔁 Cambio con proveedor recibido: " + (rec.nombre || sku) + " · +" + cantidad + " · cerró " + cerrados.length + " lote(s) pendiente(s)");
-  return rec;
 }
 
 async function accionMarcarCambiado(env, payload) {
@@ -6607,12 +6545,6 @@ const _servidor = {
       // POST { action:'marcar_cambiado', payload:{filaIndex,cantidadCambiada?,nuevaFechaVencimiento?,revisadoPor} }
       // → cierra un lote "Retirado" porque el proveedor ya lo repuso (portado de Marín
       // 376, Fase 2 — ver accionMarcarCambiado).
-      // POST { action:'recibir_cambio', payload:{sku,cantidad,fechaVencimiento,...} } → cambio con proveedor por Recepción (solo Pan Castaño).
-      if (action === "recibir_cambio") {
-        const resultado = await accionRecibirCambio(env, payload);
-        await marcarCatalogoActualizado(env);
-        return json({ ok: true, fila: resultado });
-      }
       if (action === "marcar_cambiado") {
         const resultado = await accionMarcarCambiado(env, payload);
         await marcarCatalogoActualizado(env);
@@ -6948,12 +6880,6 @@ const _servidor = {
 
       // GET /?action=config_categorias  →  categorías marcadas para gestionarse
       // por "cambio con proveedor" al vencer.
-      // GET /?action=cambios_pendientes&sku=  →  unidades 'Retirado' del producto (solo aplica a Pan Castaño).
-      if (action === "cambios_pendientes") {
-        const skuQ = url.searchParams.get("sku");
-        if (!skuQ) return json({ ok: false, error: "Falta el parámetro sku" }, 400);
-        return json({ ok: true, ...(await repCambiosPendientes(env, skuQ)) });
-      }
       if (action === "config_categorias") {
         const categoriasCambio = await repCategoriasCambio(env);
         return json({ ok: true, categoriasCambio });
