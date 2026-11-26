@@ -3341,7 +3341,7 @@ html:not(.vista-filas) .tbl-scroll{overflow-x:hidden}
             </div>
           </section>
 
-          <section class="mm-section">
+          <section class="mm-section" id="rc-prov-sec">
             <div class="mm-section-head"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 9V7c0-1.1-.9-2-2-2h-3c0-1.66-1.34-3-3-3S9 3.34 9 5H6c-1.1 0-2 .9-2 2v2c-1.66 0-3 1.34-3 3s1.34 3 3 3v4c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-4c1.66 0 3-1.34 3-3s-1.34-3-3-3zM7.5 11.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5S9.83 13 9 13s-1.5-.67-1.5-1.5zM16 17H8v-2h8v2zm-1-4c-.83 0-1.5-.67-1.5-1.5S14.17 10 15 10s1.5.67 1.5 1.5S15.83 13 15 13z"/></svg>Proveedor</div>
             <div class="mm-field" style="margin-bottom:8px">
               <label>Proveedor principal</label>
@@ -5891,7 +5891,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-26.1';
+const APP_VERSION='2026-11-26.2';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15234,6 +15234,12 @@ function rcAplicarSinVencimiento(it){
   const sec=document.getElementById('rc-fecha-sec');
   const sin=!!(it&&esSinVencimiento(it.prov));
   if(sec)sec.classList.toggle('hidden',sin);
+  // Pan Castaño e Ideal: proveedor fijo y sin bonificados → se ocultan "Es bonificado" y la sección Proveedor.
+  const simple=!!(it&&(sin||String(it.prov||'').trim().toUpperCase()==='IDEAL'));
+  const bx=document.getElementById('rc-bonif-box'),ps=document.getElementById('rc-prov-sec');
+  if(bx)bx.classList.toggle('hidden',simple);
+  if(ps)ps.classList.toggle('hidden',simple);
+  if(simple){const bf=document.getElementById('rc-bonif');if(bf&&bf.checked){bf.checked=false;try{rcBonifActualizar();}catch(e){}}}
   if(sin){['rc-fecha','rc-fecha-dd','rc-fecha-mm','rc-fecha-aaaa'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});}
 }
 function rcPick(ref){
