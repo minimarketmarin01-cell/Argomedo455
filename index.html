@@ -3248,7 +3248,10 @@ html:not(.vista-filas) .tbl-scroll{overflow-x:hidden}
                   <div style="flex:1;min-width:0">
                     <div class="nom" id="rc-nom">—</div>
                     <div class="cat" id="rc-cat">—</div>
-                    <div class="cat" id="rc-stock" style="font-weight:700;color:var(--ink);margin-top:3px">Stock actual: —</div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:3px">
+                      <div class="cat" id="rc-stock" style="font-weight:700;color:var(--ink);margin:0">Stock actual: —</div>
+                      <button type="button" class="loadbtn" id="rc-ir-ajustar" style="white-space:nowrap;padding:6px 10px;font-size:12px">Ajustar stock</button>
+                    </div>
                   </div>
                 </div>
                 <div class="mm-field hidden" id="rc-nombre-box" style="margin-top:6px">
@@ -5891,7 +5894,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-26.2';
+const APP_VERSION='2026-11-26.3';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15441,6 +15444,7 @@ function rcReset(){
 // reinicia la búsqueda, solo qué bloque de campos se muestra debajo.
 function rcSetModoPantalla(modo){
   rcModoPantalla=modo;
+  {const ba=document.getElementById('rc-ir-ajustar');if(ba)ba.classList.toggle('hidden',modo==='ajustar');}
   try{rcPendPlegar(true);}catch(e){}
   document.querySelectorAll('#rc-modo-seg button').forEach(b=>b.classList.toggle('active',b.dataset.modo===modo));
   document.getElementById('rc-titulo').textContent=modo==='ajustar'?'Ajustar stock':'Recibir mercadería';
@@ -15465,6 +15469,7 @@ function rcAplicarVisibilidad(){
     }
   }
 }
+{const ba=document.getElementById('rc-ir-ajustar');if(ba)ba.onclick=()=>{rcSetModoPantalla('ajustar');const ab=document.getElementById('rc-ajustar-box');if(ab&&ab.scrollIntoView)ab.scrollIntoView({block:'center',behavior:'smooth'});};}
 document.querySelectorAll('#rc-modo-seg button').forEach(btn=>{
   if(!btn.dataset.modo)return;   // la pestaña de pedidos no cambia de modo: solo abre/pliega la lista
   btn.onclick=()=>rcSetModoPantalla(btn.dataset.modo);
