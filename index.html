@@ -1899,13 +1899,12 @@ html.carrito-fijo .cart-resizer:hover .grip::before,html.carrito-fijo .cart-resi
 .campo-falta{outline:3px solid var(--rojo);outline-offset:2px;border-radius:var(--r-md);animation:campoFalta .5s ease 2}
 @keyframes campoFalta{0%,100%{outline-color:var(--rojo)}50%{outline-color:transparent}}
 /* Recepción → Ajustar stock: casillas bien visibles (cantidad contada y nombre) */
-#rc-ajustar-box{background:#EAF3E4;border:2px solid var(--verde);border-radius:var(--r-md);padding:14px !important;margin-top:6px}
-#rc-ajustar-box label{display:block;font-size:16px !important;font-weight:700 !important;color:var(--verde) !important;text-transform:none !important;letter-spacing:0 !important;margin-bottom:8px !important}
-#rc-ajustar-box label::before{content:'✍️ '}
-#rc-ajustar-cantidad{height:64px;font-size:30px !important;font-weight:700;text-align:center;background:#fff !important;border:3px solid var(--verde) !important;border-radius:var(--r-md) !important;box-shadow:0 2px 8px rgba(46,125,50,.18)}
-#rc-ajustar-cantidad::placeholder{font-size:16px;font-weight:500;color:#6B8F63}
-#rc-ajustar-cantidad:focus{outline:none;box-shadow:0 0 0 4px rgba(46,125,50,.25)}
-#rc-ajustar-guardar{background:var(--verde) !important;color:#fff !important;border-color:var(--verde) !important;font-size:16px !important;padding:13px !important}
+#rc-ajustar-inline{display:flex;align-items:center;gap:6px;flex:none}
+#rc-ajustar-cantidad{width:78px;height:36px;padding:0 6px;font-size:16px;font-weight:700;text-align:center;background:#fff;border:1.5px solid var(--verde);border-radius:2px;box-sizing:border-box}
+#rc-ajustar-cantidad::placeholder{font-size:12px;font-weight:500;color:#6B8F63}
+#rc-ajustar-cantidad:focus{outline:none;box-shadow:0 0 0 3px rgba(46,125,50,.25)}
+#rc-ajustar-guardar{height:36px;padding:0 12px;font-size:13px;font-weight:700;white-space:nowrap;border-radius:2px;border:1.5px solid var(--verde);background:var(--verde);color:#fff;cursor:pointer}
+#rc-ajustar-guardar:disabled{opacity:.6}
 #rc-nombre-box{background:#FFF7DD;border:2px solid #E2B93B;border-radius:var(--r-md);padding:10px 12px !important;margin-top:10px !important}
 #rc-nombre-box label{display:block;font-size:14px !important;font-weight:700 !important;color:#8A6A00 !important;text-transform:none !important;letter-spacing:0 !important;margin-bottom:6px !important}
 #rc-nombre-box label::before{content:'✏️ '}
@@ -3226,7 +3225,6 @@ html:not(.vista-filas) .tbl-scroll{overflow-x:hidden}
         <div class="seg" id="rc-modo-seg" style="width:100%;margin-bottom:10px">
           <button type="button" class="active" data-modo="recibir" style="flex:1">Recibir</button>
           <button type="button" id="rc-pend-tab" style="flex:1"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg> Pedidos <span id="rc-pend-n"></span></button>
-          <button type="button" data-modo="ajustar" style="flex:1">Ajustar stock</button>
         </div>
 
         <div class="mm-sections">
@@ -3250,7 +3248,7 @@ html:not(.vista-filas) .tbl-scroll{overflow-x:hidden}
                     <div class="cat" id="rc-cat">—</div>
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:3px">
                       <div class="cat" id="rc-stock" style="font-weight:700;color:var(--ink);margin:0">Stock actual: —</div>
-                      <button type="button" class="loadbtn" id="rc-ir-ajustar" style="white-space:nowrap;padding:6px 10px;font-size:12px">Ajustar stock</button>
+                      <div id="rc-ajustar-inline"><input id="rc-ajustar-cantidad" type="number" inputmode="decimal" placeholder="Stock real" aria-label="Stock real contado"><button type="button" id="rc-ajustar-guardar">Ajustar</button></div>
                     </div>
                   </div>
                 </div>
@@ -3271,14 +3269,6 @@ html:not(.vista-filas) .tbl-scroll{overflow-x:hidden}
           </section>
         </div>
 
-        <!-- Modo "Ajustar stock": solo aparece cuando ya se eligió un producto (rc-picked),
-             independiente de si tiene seguimiento activado o no — a diferencia de Recibir,
-             corregir un stock mal ingresado no depende de sumar unidades nuevas. -->
-        <div class="mm-field hidden" id="rc-ajustar-box" style="margin-bottom:8px">
-          <label>Nueva cantidad contada</label>
-          <input id="rc-ajustar-cantidad" type="number" inputmode="decimal" placeholder="Nueva cantidad contada" style="width:100%;padding:11px 14px;border:1px solid var(--border-control);border-radius:2px;font-size:14px;font-family:'JetBrains Mono';box-sizing:border-box">
-          <button type="button" id="rc-ajustar-guardar" style="width:100%;margin-top:8px;padding:10px;border-radius:2px;border:1.5px solid var(--gold);background:var(--gold-bg);color:var(--gold);font-weight:700;font-size:14px;cursor:pointer">Guardar stock</button>
-        </div>
 
         <!-- Todo lo que sigue solo tiene sentido cuando ya se eligió un producto (por
              búsqueda o escaneo) — permanece oculto hasta entonces, así el módulo abre
@@ -5894,7 +5884,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-26.3';
+const APP_VERSION='2026-11-26.4';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -15435,7 +15425,6 @@ function rcReset(){
   rcSetModo('unidad');
   document.getElementById('rc-guardar').disabled=true;
   document.getElementById('rc-ajustar-cantidad').value='';
-  document.getElementById('rc-ajustar-box').classList.add('hidden');
   rcSetModoPantalla('recibir');
   _rcSuprimirBorrador=false;
 }
@@ -15443,33 +15432,21 @@ function rcReset(){
 // stock mal ingresado). Mismo producto elegido sirve para ambas — cambiar de pestaña no
 // reinicia la búsqueda, solo qué bloque de campos se muestra debajo.
 function rcSetModoPantalla(modo){
-  rcModoPantalla=modo;
-  {const ba=document.getElementById('rc-ir-ajustar');if(ba)ba.classList.toggle('hidden',modo==='ajustar');}
+  rcModoPantalla='recibir';
   try{rcPendPlegar(true);}catch(e){}
-  document.querySelectorAll('#rc-modo-seg button').forEach(b=>b.classList.toggle('active',b.dataset.modo===modo));
-  document.getElementById('rc-titulo').textContent=modo==='ajustar'?'Ajustar stock':'Recibir mercadería';
+  document.querySelectorAll('#rc-modo-seg button').forEach(b=>b.classList.toggle('active',b.dataset.modo==='recibir'));
+  document.getElementById('rc-titulo').textContent='Recibir mercadería';
   rcAplicarVisibilidad();
 }
 function rcAplicarVisibilidad(){
-  const hayProducto=!!rcState.item;
-  const ajustarBox=document.getElementById('rc-ajustar-box');
   const detalle=document.getElementById('rc-detalle');
   const btnGuardar=document.getElementById('rc-guardar');
-  if(rcModoPantalla==='ajustar'){
-    detalle.classList.add('hidden');
-    btnGuardar.classList.add('hidden');
-    document.getElementById('rc-activar-inv').classList.add('hidden');
-    ajustarBox.classList.toggle('hidden',!hayProducto);
-  }else{
-    ajustarBox.classList.add('hidden');
-    if(hayProducto){
-      detalle.classList.remove('hidden');
-      btnGuardar.classList.remove('hidden');
-      rcActualizarBotonInventario(rcState.item);
-    }
+  if(rcState.item){
+    detalle.classList.remove('hidden');
+    btnGuardar.classList.remove('hidden');
+    rcActualizarBotonInventario(rcState.item);
   }
 }
-{const ba=document.getElementById('rc-ir-ajustar');if(ba)ba.onclick=()=>{rcSetModoPantalla('ajustar');const ab=document.getElementById('rc-ajustar-box');if(ab&&ab.scrollIntoView)ab.scrollIntoView({block:'center',behavior:'smooth'});};}
 document.querySelectorAll('#rc-modo-seg button').forEach(btn=>{
   if(!btn.dataset.modo)return;   // la pestaña de pedidos no cambia de modo: solo abre/pliega la lista
   btn.onclick=()=>rcSetModoPantalla(btn.dataset.modo);
@@ -15488,7 +15465,7 @@ async function rcAjustarGuardar(){
   const nuevo=Number(val);
   if(isNaN(nuevo)||nuevo<0){showToast('Cantidad inválida');return;}
   const btn=document.getElementById('rc-ajustar-guardar');
-  btn.disabled=true;btn.textContent='Guardando…';
+  btn.disabled=true;btn.textContent='…';
   try{
     const res=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'ajustar_stock',payload:{sku:it.ref,stockNuevo:nuevo,responsable:''}})});
     const j=await res.json();
@@ -15509,7 +15486,7 @@ async function rcAjustarGuardar(){
   }catch(e){
     showToast('Error de conexión al guardar');
   }finally{
-    btn.disabled=false;btn.textContent='Guardar stock';
+    btn.disabled=false;btn.textContent='Ajustar';
   }
 }
 document.getElementById('rc-ajustar-guardar').onclick=rcAjustarGuardar;
@@ -15698,7 +15675,6 @@ document.getElementById('rc-search').oninput=e=>{
     document.getElementById('rc-guardar').classList.add('hidden');
     document.getElementById('rc-guardar').disabled=true;
     document.getElementById('rc-activar-inv').classList.add('hidden');
-    document.getElementById('rc-ajustar-box').classList.add('hidden');
   }
   const list=mmFindItems(q);
   if(list.length){
