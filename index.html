@@ -5896,7 +5896,7 @@ function sonidoGuardado(){
 // misma cada cierto tiempo contra la copia publicada — si detecta una versión distinta,
 // limpia caché, actualiza el Service Worker (si algún día existe uno) y se recarga sola,
 // sin pedirle nada al usuario. No interrumpe si hay algo abierto (un formulario, etc.).
-const APP_VERSION='2026-11-26.6';
+const APP_VERSION='2026-11-27.1';
 (function(){const v=document.getElementById('mas-version');if(v)v.textContent='v'+APP_VERSION;})();
 (function(){
   async function hayAlgoAbierto(){
@@ -8240,7 +8240,7 @@ function fpPaneProveedores(f){
         '</div>'+
         '<button class="loadbtn" id="fp-pv-prov-nueva" type="button" style="white-space:nowrap"><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg> Nuevo</button>'+
       '</div>'+
-      (p.proveedorId?'<span class="fp-chip-principal"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" style="vertical-align:-1px"><polygon points="12 2 15 9 22 9.5 17 14.5 18.5 22 12 18 5.5 22 7 14.5 2 9.5 9 9"/></svg> Principal</span>':'')+
+      (p.proveedorId?'<span class="fp-chip-principal"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" style="vertical-align:-1px"><polygon points="12 2 15 9 22 9.5 17 14.5 18.5 22 12 18 5.5 22 7 14.5 2 9.5 9 9"/></svg> Principal<button type="button" id="fp-pv-quitar-principal" aria-label="Quitar proveedor principal" style="margin-left:4px;border:none;background:transparent;color:inherit;font-size:14px;line-height:1;cursor:pointer;padding:0 2px">×</button></span>':'')+
       '<div id="fp-pv-prov-nuevabox" class="hidden" style="display:flex;gap:8px;margin-top:8px">'+
         '<input id="fp-pv-prov-nuevonom" placeholder="Nombre del proveedor nuevo" autocomplete="off" style="flex:1;min-width:0;padding:10px 12px;border:1px solid var(--border-control);border-radius:2px;font-size:14px">'+
         '<button class="btn-ok loadbtn" id="fp-pv-prov-crear" type="button" style="white-space:nowrap">Crear</button>'+
@@ -8319,6 +8319,24 @@ function fpPaneProveedores(f){
     }catch(e){showToast('Error de conexión');}
     finally{fpPIAdd.disabled=false;}
   };
+  {const bq=document.getElementById('fp-pv-quitar-principal');
+  if(bq)bq.onclick=async()=>{
+    if(!await dlgConfirm('¿Quitar el proveedor principal de este producto?'))return;
+    bq.disabled=true;
+    try{
+      const r=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify({action:'editar_producto',payload:{sku:p.sku,proveedor_id:'',responsable:''}})});
+      const j=await r.json();
+      if(j&&j.ok){
+        const idAnt=Number(p.proveedorId);
+        p.proveedorId=null;p.proveedorNombre=null;
+        const itLocal=DB.items.find(x=>x.ref===p.sku);
+        if(itLocal){itLocal.proveedorId=null;itLocal.proveedorNombre=null;itLocal.proveedorIdsTodos=(itLocal.proveedorIdsTodos||[]).filter(x=>Number(x)!==idAnt);}
+        persist();showToast('Proveedor principal quitado');
+        fpPaneProveedores(f);render();
+        try{pollFondo();}catch(e){}
+      }else{showToast(''+((j&&j.error)||'No se pudo quitar'),'error');bq.disabled=false;}
+    }catch(e){showToast('Error de conexión','error');bq.disabled=false;}
+  };}
   document.querySelectorAll('.fp-provid-quitar').forEach(b=>b.onclick=async()=>{
     const provId=Number(b.dataset.id);
     b.disabled=true;
@@ -15082,12 +15100,43 @@ function rcShowPicked(it){
 // producto (fpPaneProveedores/agregar_proveedor_id_extra) — no se duplica esa lógica, solo se
 // expone un atajo más corto acá.
 let _rcProvCombo=null;
+// Proveedores del producto como chips con ✕ para quitarlos (principal y adicionales).
+function rcPintarChipsProveedores(it,txt){
+  const nomDe=id=>{const x=(typeof _psProveedores!=='undefined'?_psProveedores:[]).find(p=>Number(p.id)===Number(id));return x?x.nombre:null;};
+  const chips=[];
+  (it.proveedorIdsExtra||[]).forEach((id,i)=>chips.push({id:Number(id),nombre:nomDe(id)||(it.proveedorNombresExtra||[])[i]||'Proveedor',principal:false}));
+  if(!chips.length){txt.textContent='También pedir a: —';return;}
+  const esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  txt.innerHTML='También pedir a:<div class="fp-chip-row">'+chips.map(c=>'<span class="fp-chip">'+esc(c.nombre)+'<button type="button" class="rc-prov-quitar" data-id="'+c.id+'" data-principal="'+(c.principal?1:0)+'" data-nombre="'+esc(c.nombre)+'" aria-label="Quitar proveedor '+esc(c.nombre)+'"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></span>').join('')+'</div>';
+  txt.querySelectorAll('.rc-prov-quitar').forEach(b=>b.onclick=()=>rcQuitarProveedor(Number(b.dataset.id),b.dataset.principal==='1',b.dataset.nombre));
+}
+async function rcQuitarProveedor(provId,esPrincipal,nombre){
+  const it=rcState.item; if(!it)return;
+  if(!await dlgConfirm('¿Quitar el proveedor "'+nombre+'" de este producto?'))return;
+  try{
+    const body=esPrincipal
+      ?{action:'editar_producto',payload:{sku:it.ref,proveedor_id:'',responsable:''}}
+      :{action:'quitar_proveedor_id_extra',payload:{sku:it.ref,proveedor_id:provId}};
+    const r=await fetch(SYNC_URL,{method:'POST',body:JSON.stringify(body)});
+    const j=await r.json();
+    if(j&&j.ok){
+      if(esPrincipal){it.proveedorId=null;it.proveedorNombre=null;}
+      else{
+        const i=(it.proveedorIdsExtra||[]).indexOf(provId);
+        if(i>=0){it.proveedorIdsExtra.splice(i,1);if(it.proveedorNombresExtra&&i<it.proveedorNombresExtra.length)it.proveedorNombresExtra.splice(i,1);}
+      }
+      it.proveedorIdsTodos=(it.proveedorIdsTodos||[]).filter(x=>Number(x)!==provId);
+      persist();sonidoGuardado();showToast('Proveedor quitado: '+nombre);
+      rcRenderProveedores(it);render();
+      try{pollFondo();}catch(e){}
+    }else showToast(''+((j&&j.error)||'No se pudo quitar el proveedor'),'error');
+  }catch(e){showToast('Error de conexión','error');}
+}
 function rcRenderProveedores(it){
   const txt=document.getElementById('rc-proveedores');
   const sel=document.getElementById('rc-provid-select');
   if(!txt||!sel)return;
-  const nombres=(it.proveedorNombresExtra||[]).filter(Boolean);
-  txt.textContent='También pedir a: '+(nombres.length?nombres.join(', '):'—');
+  rcPintarChipsProveedores(it,txt);
   psCargarListas().then(()=>{
     const asignados=new Set((it.proveedorIdsTodos||[]).map(Number));
     sel.innerHTML='<option value="">Agregar proveedor…</option>'+
@@ -15564,7 +15613,13 @@ async function rcDescartar(){
   const buscador=document.getElementById('rc-search');
   const hayAlgo=!!rcState.item||!!(buscador&&buscador.value.trim());
   if(hayAlgo&&!await dlgConfirm('¿Descartar la recepción a medio cargar?\n\nSe pierde el producto elegido y lo que hayas ingresado.\n\nSi solo quieres salir sin perderla, usa la barra de abajo o el botón atrás.'))return;
-  closeRecibir();
+  if(!hayAlgo){closeRecibir();return;}   // pantalla ya vacía: sale
+  // Con algo cargado: se limpia y se queda en Recepción, listo para ingresar otro producto.
+  rcReset();
+  rcLimpiarBorrador();
+  try{rcSetModoPantalla('recibir');}catch(e){}
+  try{rcPendPlegar(true);}catch(e){}
+  const bu=document.getElementById('rc-search');if(bu){bu.value='';bu.focus();}
 }
 
 document.getElementById('btn-recibir').onclick=openRecibir;
